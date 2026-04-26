@@ -1,0 +1,30 @@
+entrypoint = "apps/web/app/page.tsx"
+hidden = [".config", ".next", "node_modules", "pnpm-lock.yaml", ".turbo"]
+modules = ["nodejs-22"]
+
+# Local dev (Run button). Replit Deployments use the [deployment] block below.
+run = "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @arvya/web dev -- -H 0.0.0.0 -p ${PORT:-3000}"
+
+[nix]
+channel = "stable-24_11"
+
+[env]
+# Default to a stable Node-friendly port; Replit Deployments override PORT at runtime.
+PORT = "3000"
+NEXT_TELEMETRY_DISABLED = "1"
+NODE_ENV = "production"
+PNPM_HOME = "/home/runner/.local/share/pnpm"
+PATH = "/home/runner/.local/share/pnpm:/home/runner/$REPL_SLUG/.config/npm/node_global/bin:$PATH"
+
+[deployment]
+deploymentTarget = "cloudrun"
+build = ["bash", "-lc", "corepack enable && pnpm install --frozen-lockfile && pnpm build"]
+run = ["bash", "-lc", "pnpm --filter @arvya/web start -- -H 0.0.0.0 -p ${PORT:-3000}"]
+ignorePorts = false
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix"]

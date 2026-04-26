@@ -1,0 +1,13 @@
+{
+  "name": "@arvya/prompts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./source-ingestion": "./src/source-ingestion.ts",
+    "./ask-brain": "./src/ask-brain.ts",
+    "./daily-brief": "./src/daily-brief.ts",
+    "./follow-up": "./src/follow-up.ts",
+    ".": "./src/index.ts"
+  }
+}

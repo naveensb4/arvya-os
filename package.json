@@ -2,25 +2,32 @@
   "name": "arvya-os",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.12.4",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "next": "16.2.4",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "dev": "pnpm --filter @arvya/web dev",
+    "build": "pnpm --filter @arvya/web build",
+    "start": "pnpm --filter @arvya/web start",
+    "lint": "pnpm --filter @arvya/web lint",
+    "typecheck": "pnpm --filter @arvya/web typecheck",
+    "verify:foundation": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-foundation.ts",
+    "verify:batch-ingestion": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-batch-ingestion.ts",
+    "verify:scheduler-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-scheduler-mock.ts",
+    "verify:always-on": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-always-on.ts",
+    "verify:open-loop-review": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-open-loop-review.ts",
+    "verify:google-drive-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-google-drive-mock.ts",
+    "verify:email-connectors-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-email-connectors-mock.ts",
+    "verify:notetaker-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-notetaker-mock.ts",
+    "verify:notetaker-calendar-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-notetaker-mock.ts",
+    "verify:supabase": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-supabase.ts",
+    "verify:deployment": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-deployment.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.4",
-    "tailwindcss": "^4",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

@@ -1,0 +1,41 @@
+{
+  "name": "@arvya/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "@arvya/agents": "workspace:*",
+    "@arvya/core": "workspace:*",
+    "@arvya/prompts": "workspace:*",
+    "@langchain/core": "^1.1.41",
+    "@langchain/langgraph": "^1.2.9",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.104.1",
+    "drizzle-orm": "^0.45.2",
+    "inngest": "^4.2.4",
+    "nanoid": "^5.1.9",
+    "next": "16.2.4",
+    "openai": "^6.34.0",
+    "postgres": "^3.4.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

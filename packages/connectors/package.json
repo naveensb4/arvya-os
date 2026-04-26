@@ -1,0 +1,10 @@
+{
+  "name": "@arvya/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts",
+    ".": "./src/index.ts"
+  }
+}

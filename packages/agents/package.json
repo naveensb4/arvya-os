@@ -1,0 +1,19 @@
+{
+  "name": "@arvya/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./ingestion-agent": "./src/ingestion-agent.ts",
+    "./ask-brain-agent": "./src/ask-brain-agent.ts",
+    "./daily-brief-agent": "./src/daily-brief-agent.ts",
+    "./follow-up-agent": "./src/follow-up-agent.ts",
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@arvya/core": "workspace:*",
+    "@arvya/prompts": "workspace:*",
+    "@langchain/langgraph": "^1.2.9",
+    "nanoid": "^5.1.9"
+  }
+}
