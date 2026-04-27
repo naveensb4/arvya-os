@@ -5,13 +5,24 @@ import { getRepository } from "@/lib/db/repository";
 import { retrieveRelevantContext } from "@/lib/retrieval";
 import { ingestSourceIntoBrain } from "@/lib/workflows/source-ingestion";
 
+export class BrainNotFoundError extends Error {
+  constructor(brainId: string) {
+    super(`Brain not found: ${brainId}`);
+    this.name = "BrainNotFoundError";
+  }
+}
+
+export function isBrainNotFoundError(error: unknown): error is BrainNotFoundError {
+  return error instanceof BrainNotFoundError;
+}
+
 export async function selectedBrainOrDefault(brainId?: string) {
   const repository = getRepository();
   const brains = await repository.listBrains();
-  const selectedBrain =
-    (brainId ? await repository.getBrain(brainId) : null) ?? brains[0];
+  const selectedBrain = brainId ? await repository.getBrain(brainId) : brains[0];
 
   if (!selectedBrain) {
+    if (brainId) throw new BrainNotFoundError(brainId);
     throw new Error("No Brain exists yet.");
   }
 

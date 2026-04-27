@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const autoJoinEnabled = formData.get("autoJoinEnabled") === "on" || formData.get("autoJoinEnabled") === "true";
   const recallCalendarId = String(formData.get("recallCalendarId") ?? "").trim();
   const externalCalendarId = String(formData.get("externalCalendarId") ?? "").trim();
+  const returnTo = String(formData.get("returnTo") ?? "").trim();
 
   if (!brainId) return NextResponse.json({ error: "brainId is required" }, { status: 400 });
   if (!providers.includes(provider)) return NextResponse.json({ error: "Unsupported notetaker provider" }, { status: 400 });
@@ -24,12 +25,19 @@ export async function POST(request: Request) {
   const repository = getRepository();
 
   if (calendarId) {
+    const existing = (await repository.listNotetakerCalendars({ brainId: selectedBrain.id }))
+      .find((item) => item.id === calendarId);
+    const credentialsConnected = Boolean(
+      existing?.config?.credentials && typeof existing.config.credentials === "object",
+    );
+    const nextStatus =
+      !credentialsConnected ? "disabled" : autoJoinEnabled ? "connected" : "disabled";
     await repository.updateNotetakerCalendar(calendarId, {
       autoJoinEnabled,
       autoJoinMode,
       recallCalendarId: recallCalendarId || null,
       externalCalendarId: externalCalendarId || null,
-      status: autoJoinEnabled ? "connected" : "disabled",
+      status: nextStatus,
       lastError: null,
     });
   } else {
@@ -40,9 +48,10 @@ export async function POST(request: Request) {
       autoJoinMode,
       recallCalendarId: recallCalendarId || null,
       externalCalendarId: externalCalendarId || null,
-      status: autoJoinEnabled ? "connected" : "disabled",
+      status: "disabled",
       config: {
         source: "connections_ui",
+        oauth_pending: true,
         note: "Recall Calendar V2 is preferred. Fallback direct scheduling can use external calendar event config.",
       },
     });
@@ -50,5 +59,6 @@ export async function POST(request: Request) {
 
   revalidatePath(`/brains/${selectedBrain.id}/connections`);
   revalidatePath(`/brains/${selectedBrain.id}/notetaker`);
-  return NextResponse.redirect(new URL(`/brains/${selectedBrain.id}/connections`, request.url));
+  const fallback = `/brains/${selectedBrain.id}/notetaker`;
+  return NextResponse.redirect(new URL(returnTo || fallback, request.url));
 }

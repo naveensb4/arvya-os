@@ -1,9 +1,13 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import type { MemoryObject, OpenLoop } from "@arvya/core";
 import { SectionShell } from "@/components/layout/section-shell";
 import { AgentRunCard } from "@/components/brain/agent-run-card";
 import { MemoryCard } from "@/components/memory/memory-card";
 import { OpenLoopCard } from "@/components/open-loops/open-loop-card";
 import { SourceCard } from "@/components/sources/source-card";
-import { getBrainSnapshot } from "@/lib/brain/store";
+import { buildDashboardModel } from "@/lib/brain/dashboard";
+import { getBrainSnapshot, isBrainNotFoundError } from "@/lib/brain/store";
 import { getRepository } from "@/lib/db/repository";
 
 type PageProps = {
@@ -12,7 +16,7 @@ type PageProps = {
 
 export default async function Page({ params }: PageProps) {
   const { brainId } = await params;
-  const snapshot = await getBrainSnapshot(brainId);
+  const snapshot = await getDashboardSnapshot(brainId);
   const selectedBrainId = snapshot.selectedBrain.id;
   const repository = getRepository();
   const [alerts, syncRuns, connectorConfigs] = await Promise.all([
@@ -21,40 +25,45 @@ export default async function Page({ params }: PageProps) {
     repository.listConnectorConfigs(selectedBrainId),
   ]);
   const sourceById = new Map(snapshot.sourceItems.map((source) => [source.id, source]));
-  const latestDailyBrief = snapshot.sourceItems.find((source) => source.metadata?.domain_type === "daily_brief");
-  const currentTime = new Date().getTime();
-  const newSources24h = snapshot.sourceItems.filter(
-    (source) => currentTime - new Date(source.createdAt).getTime() < 24 * 60 * 60 * 1000,
-  ).length;
-  const overdueLoops = snapshot.openLoops.filter(
-    (loop) =>
-      loop.dueDate &&
-      loop.status !== "needs_review" &&
-      new Date(loop.dueDate).getTime() < currentTime,
-  );
-  const failedSyncs = syncRuns.filter((run) => run.status === "failed").length;
-  const enabledConnectors = connectorConfigs.filter((config) => config.syncEnabled);
-  const failingConnectors = connectorConfigs.filter((config) => config.status === "error");
-  const connectorHealth = failingConnectors.length > 0
-    ? `${failingConnectors.length} failing`
-    : `${enabledConnectors.length} always-on`;
-  const brainHealth = failedSyncs > 0 || overdueLoops.length > 0 || failingConnectors.length > 0 ? "Warning" : "Healthy";
+  const dashboard = buildDashboardModel({ snapshot, syncRuns, connectorConfigs });
   return (
-    <SectionShell brainId={selectedBrainId} title="Brain Overview" description="Snapshot of this Brain, its sources, open loops, memory, and recent agent activity.">
+    <SectionShell brainId={selectedBrainId} title="Brain Overview" description="Founder command center for source capture, action loops, memory, and agent health.">
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Brain Health" value={brainHealth} />
-        <Metric label="Last Ingestion" value={formatDate(snapshot.sourceItems[0]?.createdAt)} />
-        <Metric label="New Sources 24h" value={newSources24h} />
-        <Metric label="Overdue Loops" value={overdueLoops.length} />
-        <Metric label="Failed Syncs" value={failedSyncs} />
-        <Metric label="Connector Health" value={connectorHealth} />
+        <Metric label="Brain Health" value={dashboard.brainHealth} />
+        <Metric label="Last Source Ingestion" value={formatDate(dashboard.latestOperationalSource?.createdAt)} />
+        <Metric label="New User Sources 24h" value={dashboard.newOperationalSources24h} />
+        <Metric label="Overdue Action Loops" value={dashboard.overdueLoops.length} />
+        <Metric label="Loops To Review" value={dashboard.reviewBacklog.length} />
+        <Metric label="Due Next 7 Days" value={dashboard.dueSoonLoops.length} />
+      </div>
+
+      <section className="mt-6 rounded-2xl bg-stone-950 p-5 text-white">
+        <p className="eyebrow text-amber-300">Today&apos;s Operating Read</p>
+        <h2 className="mt-2 text-2xl font-semibold">{dashboard.commandSummary}</h2>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href={`/brains/${selectedBrainId}/sources/new`} className="button bg-white text-stone-950 hover:bg-stone-100">
+            Add Source
+          </Link>
+          <Link href={`/brains/${selectedBrainId}/open-loops`} className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20">
+            Review Open Loops
+          </Link>
+          <Link href={`/brains/${selectedBrainId}/ask`} className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20">
+            Ask Brain
+          </Link>
+        </div>
+      </section>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <Metric label="Failed Sync Runs" value={dashboard.failedSyncs} />
+        <Metric label="Connector Health" value={dashboard.connectorHealth} />
+        <Metric label="Stored User Sources" value={dashboard.operationalSources.length} />
       </div>
 
       <section className="mt-6 rounded-2xl bg-stone-50 p-5">
         <p className="eyebrow text-amber-700">Daily Brief</p>
-        <h2 className="mt-2 text-2xl font-semibold">{latestDailyBrief?.title ?? "No daily brief stored yet"}</h2>
+        <h2 className="mt-2 text-2xl font-semibold">{dashboard.latestDailyBrief?.title ?? "No daily brief stored yet"}</h2>
         <p className="mt-2 whitespace-pre-line leading-7 text-stone-700">
-          {latestDailyBrief?.content ?? "The daily-founder-brief job will store the morning brief here."}
+          {dashboard.latestDailyBrief?.content ?? "The always-on daily-founder-brief job will store the morning brief here after it runs."}
         </p>
       </section>
 
@@ -71,11 +80,48 @@ export default async function Page({ params }: PageProps) {
         </div>
       </section>
 
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <FounderActionPanel
+          title="Naveen Actions"
+          loops={dashboard.naveenActions}
+          emptyText="No approved actions assigned to Naveen."
+        />
+        <FounderActionPanel
+          title="PB Actions"
+          loops={dashboard.pbActions}
+          emptyText="No approved actions assigned to PB."
+        />
+        <FounderActionPanel
+          title="Suggested Next Actions"
+          loops={dashboard.suggestedActions}
+          emptyText="No suggested actions yet. Approve or ingest more open loops."
+          showSuggestion
+        />
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <MemoryListPanel
+          title="Risks / Dropped Balls"
+          items={dashboard.risks}
+          emptyText="No risks captured yet."
+        />
+        <MemoryListPanel
+          title="Questions To Resolve"
+          items={dashboard.questions}
+          emptyText="No open strategic questions captured yet."
+        />
+        <MemoryListPanel
+          title="Product / Market Signals"
+          items={dashboard.productInsights}
+          emptyText="No product insights captured yet."
+        />
+      </div>
+
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <section>
-          <h2 className="text-xl font-semibold">Open Loops</h2>
+          <h2 className="text-xl font-semibold">Action Queue</h2>
           <div className="mt-4 space-y-3">
-            {snapshot.openLoops.slice(0, 3).map((loop) => (
+            {dashboard.actionQueue.slice(0, 3).map((loop) => (
               <OpenLoopCard
                 key={loop.id}
                 brainId={selectedBrainId}
@@ -84,7 +130,7 @@ export default async function Page({ params }: PageProps) {
                 showReviewControls={false}
               />
             ))}
-            {snapshot.openLoops.length === 0 ? <Empty text="No open loops yet." /> : null}
+            {dashboard.actionQueue.length === 0 ? <Empty text="No open loops yet." /> : null}
           </div>
         </section>
         <section>
@@ -98,17 +144,19 @@ export default async function Page({ params }: PageProps) {
                 showEvidence={false}
               />
             ))}
+            {snapshot.memoryObjects.length === 0 ? <Empty text="No memory captured yet." /> : null}
           </div>
         </section>
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <section>
-          <h2 className="text-xl font-semibold">Recent Sources</h2>
+          <h2 className="text-xl font-semibold">Recent User Sources</h2>
           <div className="mt-4 space-y-3">
-            {snapshot.sourceItems.slice(0, 3).map((source) => (
+            {dashboard.operationalSources.slice(0, 3).map((source) => (
               <SourceCard key={source.id} source={source} />
             ))}
+            {dashboard.operationalSources.length === 0 ? <Empty text="No user-ingested sources yet." /> : null}
           </div>
         </section>
         <section>
@@ -117,11 +165,21 @@ export default async function Page({ params }: PageProps) {
             {snapshot.agentRuns.slice(0, 3).map((run) => (
               <AgentRunCard key={run.id} run={run} />
             ))}
+            {snapshot.agentRuns.length === 0 ? <Empty text="No agent runs yet." /> : null}
           </div>
         </section>
       </div>
     </SectionShell>
   );
+}
+
+async function getDashboardSnapshot(brainId: string) {
+  try {
+    return await getBrainSnapshot(brainId);
+  } catch (error) {
+    if (isBrainNotFoundError(error)) notFound();
+    throw error;
+  }
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) {
@@ -140,9 +198,71 @@ function formatDate(value?: string | null) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "UTC",
   }).format(new Date(value));
 }
 
 function Empty({ text }: { text: string }) {
   return <p className="rounded-2xl bg-stone-50 p-4 text-sm text-stone-500">{text}</p>;
+}
+
+function FounderActionPanel({
+  title,
+  loops,
+  emptyText,
+  showSuggestion = false,
+}: {
+  title: string;
+  loops: OpenLoop[];
+  emptyText: string;
+  showSuggestion?: boolean;
+}) {
+  return (
+    <section className="rounded-2xl bg-stone-50 p-5">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      <div className="mt-4 space-y-3">
+        {loops.map((loop) => (
+          <div key={loop.id} className="rounded-xl bg-white p-3 text-sm">
+            <p className="font-medium">{loop.title}</p>
+            <p className="mt-1 text-stone-600">{showSuggestion ? loop.suggestedAction : loop.description}</p>
+            <p className="mt-2 text-xs uppercase tracking-widest text-stone-400">
+              {loop.priority} · {loop.status}
+              {loop.dueDate ? ` · Due ${formatDate(loop.dueDate)}` : ""}
+            </p>
+          </div>
+        ))}
+        {loops.length === 0 ? <p className="rounded-xl bg-white p-3 text-sm text-stone-500">{emptyText}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function MemoryListPanel({
+  title,
+  items,
+  emptyText,
+}: {
+  title: string;
+  items: MemoryObject[];
+  emptyText: string;
+}) {
+  return (
+    <section className="rounded-2xl bg-stone-50 p-5">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      <div className="mt-4 space-y-3">
+        {items.map((item) => (
+          <div key={item.id} className="rounded-xl bg-white p-3 text-sm">
+            <p className="font-medium">{item.name}</p>
+            <p className="mt-1 leading-6 text-stone-600">{item.description}</p>
+            {item.sourceQuote ? (
+              <blockquote className="mt-2 border-l-2 border-amber-600 pl-3 text-xs text-stone-500">
+                {item.sourceQuote}
+              </blockquote>
+            ) : null}
+          </div>
+        ))}
+        {items.length === 0 ? <p className="rounded-xl bg-white p-3 text-sm text-stone-500">{emptyText}</p> : null}
+      </div>
+    </section>
+  );
 }

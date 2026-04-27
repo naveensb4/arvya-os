@@ -14,6 +14,7 @@
     "verify:scheduler-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-scheduler-mock.ts",
     "verify:always-on": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-always-on.ts",
     "verify:open-loop-review": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-open-loop-review.ts",
+    "verify:dashboard": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-dashboard.ts",
     "verify:google-drive-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-google-drive-mock.ts",
     "verify:email-connectors-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-email-connectors-mock.ts",
     "verify:notetaker-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-notetaker-mock.ts",

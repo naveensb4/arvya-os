@@ -689,6 +689,16 @@ export class InMemoryRepository implements BrainRepository {
     return clone(calendar);
   }
 
+  async deleteNotetakerCalendar(calendarId: string): Promise<boolean> {
+    const state = loadState();
+    const before = state.notetakerCalendars.length;
+    state.notetakerCalendars = state.notetakerCalendars.filter((item) => item.id !== calendarId);
+    for (const meeting of state.notetakerMeetings) {
+      if (meeting.notetakerCalendarId === calendarId) meeting.notetakerCalendarId = null;
+    }
+    return state.notetakerCalendars.length !== before;
+  }
+
   async listNotetakerMeetings(
     input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
   ): Promise<NotetakerMeeting[]> {

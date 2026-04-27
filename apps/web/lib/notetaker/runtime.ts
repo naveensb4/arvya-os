@@ -1,7 +1,51 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { getRepository, type NotetakerAutoJoinMode, type NotetakerCalendar, type NotetakerMeeting } from "@/lib/db/repository";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { getRepository, type BrainRepository, type NotetakerAutoJoinMode, type NotetakerCalendar, type NotetakerMeeting, type NotetakerProvider } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
 import { listProviderCalendarEvents } from "./calendar-providers";
+
+export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
+  const creds = calendar.config?.credentials;
+  return Boolean(creds && typeof creds === "object" && (creds as { access_token?: string }).access_token);
+}
+
+export function notetakerRecallConfigured() {
+  return Boolean(process.env.RECALL_API_KEY?.trim());
+}
+
+export async function reuseOrCreateNotetakerCalendar(input: {
+  repository: BrainRepository;
+  brainId: string;
+  provider: NotetakerProvider;
+  defaultExternalCalendarId: string | null;
+  defaultConfig: Record<string, unknown>;
+}): Promise<NotetakerCalendar> {
+  const existing = (await input.repository.listNotetakerCalendars({ brainId: input.brainId }))
+    .filter((calendar) => calendar.provider === input.provider);
+
+  if (existing.length === 0) {
+    return input.repository.createNotetakerCalendar({
+      brainId: input.brainId,
+      provider: input.provider,
+      status: "disabled",
+      autoJoinEnabled: false,
+      autoJoinMode: "all_calls",
+      externalCalendarId: input.defaultExternalCalendarId,
+      config: input.defaultConfig,
+    });
+  }
+
+  const sorted = [...existing].sort((a, b) => {
+    const aHas = notetakerCalendarHasCredentials(a) ? 1 : 0;
+    const bHas = notetakerCalendarHasCredentials(b) ? 1 : 0;
+    if (aHas !== bHas) return bHas - aHas;
+    return (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt);
+  });
+  const [primary, ...duplicates] = sorted;
+  for (const duplicate of duplicates) {
+    await input.repository.deleteNotetakerCalendar(duplicate.id);
+  }
+  return primary;
+}
 
 export type NotetakerCalendarEvent = {
   id: string;
@@ -72,21 +116,41 @@ function hasRecallApiKey() {
   return Boolean(process.env.RECALL_API_KEY?.trim());
 }
 
-export function verifyRecallWebhookSignature(input: { body: string; signature?: string | null }) {
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
+
+export function verifyRecallWebhookSignature(input: {
+  body: string;
+  signature?: string | null;
+  webhookId?: string | null;
+  webhookTimestamp?: string | null;
+  now?: number;
+}) {
   const secret = process.env.RECALL_WEBHOOK_SECRET?.trim();
   if (!secret) return true;
   if (!input.signature) return false;
+  if (!input.webhookId || !input.webhookTimestamp) return false;
+  if (!secret.startsWith("whsec_")) return false;
 
-  const expectedHex = createHash("sha256").update(`${secret}.${input.body}`).digest("hex");
-  const candidates = [
-    input.signature,
-    input.signature.replace(/^sha256=/, ""),
-  ];
-  return candidates.some((candidate) => {
-    const expected = Buffer.from(expectedHex);
-    const received = Buffer.from(candidate);
-    return expected.length === received.length && timingSafeEqual(expected, received);
-  });
+  const timestampSeconds = Number.parseInt(input.webhookTimestamp, 10);
+  if (!Number.isFinite(timestampSeconds)) return false;
+  const nowSeconds = Math.floor((input.now ?? Date.now()) / 1000);
+  if (Math.abs(nowSeconds - timestampSeconds) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
+    return false;
+  }
+
+  const key = Buffer.from(secret.slice("whsec_".length), "base64");
+  const toSign = `${input.webhookId}.${input.webhookTimestamp}.${input.body}`;
+  const expected = createHmac("sha256", key).update(toSign).digest();
+
+  const passedSignatures = input.signature.split(" ").map((part) => part.trim()).filter(Boolean);
+  for (const versionedSig of passedSignatures) {
+    const [version, signature] = versionedSig.split(",");
+    if (version !== "v1" || !signature) continue;
+    const received = Buffer.from(signature, "base64");
+    if (received.length !== expected.length) continue;
+    if (timingSafeEqual(new Uint8Array(expected), new Uint8Array(received))) return true;
+  }
+  return false;
 }
 
 export function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
@@ -152,8 +216,29 @@ class RecallApiClient implements RecallClient {
         ...(init?.headers ?? {}),
       },
     });
-    const json = await response.json().catch(() => ({})) as T & { detail?: string; error?: string };
-    if (!response.ok) throw new Error(json.detail ?? json.error ?? `Recall request failed: ${path}`);
+    const rawText = await response.text();
+    let json: T & { detail?: string; error?: string };
+    try {
+      json = JSON.parse(rawText);
+    } catch {
+      json = {} as T & { detail?: string; error?: string };
+    }
+    if (!response.ok) {
+      const detail = (json as { detail?: string }).detail;
+      const error = (json as { error?: string }).error;
+      let fieldErrors = "";
+      try {
+        fieldErrors = Object.entries(json as Record<string, unknown>)
+          .filter(([, v]) => Array.isArray(v) || typeof v === "string")
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).join(", ") : v}`)
+          .join("; ");
+      } catch {
+        fieldErrors = "";
+      }
+      const reason = detail || error || fieldErrors || rawText.slice(0, 300);
+      console.error("[recall] api error", { status: response.status, path, body: rawText });
+      throw new Error(`Recall ${response.status} ${path}${reason ? ` — ${reason}` : ""}`);
+    }
     return json;
   }
 
@@ -168,17 +253,25 @@ class RecallApiClient implements RecallClient {
 
   async scheduleBot(input: { meeting: NotetakerMeeting; joinAt: string }): Promise<RecallScheduleResult> {
     if (!input.meeting.meetingUrl) throw new Error("Cannot schedule Recall bot without a meeting URL.");
+    const metadata: Record<string, string> = {
+      brain_id: input.meeting.brainId,
+      notetaker_meeting_id: input.meeting.id,
+    };
+    if (input.meeting.externalEventId) metadata.external_event_id = input.meeting.externalEventId;
     const json = await this.request<{ id?: string; bot_id?: string; status?: string }>("/bot", {
       method: "POST",
       body: JSON.stringify({
         meeting_url: input.meeting.meetingUrl,
         bot_name: "Arvya Notetaker",
         join_at: input.joinAt,
-        metadata: {
-          brain_id: input.meeting.brainId,
-          notetaker_meeting_id: input.meeting.id,
-          external_event_id: input.meeting.externalEventId,
+        recording_config: {
+          transcript: {
+            provider: {
+              recallai_streaming: { mode: "prioritize_accuracy" },
+            },
+          },
         },
+        metadata,
       }),
     });
     return {
@@ -191,13 +284,82 @@ class RecallApiClient implements RecallClient {
   async fetchTranscript(input: { botId?: string | null; transcriptId?: string | null; payload?: Record<string, unknown> }) {
     const inline = transcriptFromPayload(input.payload ?? {});
     if (inline.text) return inline;
-    const id = input.transcriptId ?? input.botId;
-    if (!id) throw new Error("Recall transcript fetch requires a botId or transcriptId.");
-    const json = await this.request<Record<string, unknown>>(`/bot/${encodeURIComponent(id)}/transcript`);
-    const normalized = transcriptFromPayload(json);
-    if (!normalized.text) throw new Error("Recall transcript response did not include transcript text.");
-    return normalized;
+
+    let downloadUrl: string | undefined;
+    let transcriptId = input.transcriptId ?? undefined;
+
+    if (transcriptId) {
+      const artifact = await this.request<RecallTranscriptArtifact>(`/transcript/${encodeURIComponent(transcriptId)}/`);
+      downloadUrl = artifact.data?.download_url;
+    } else if (input.botId) {
+      const bot = await this.request<RecallBotResponse>(`/bot/${encodeURIComponent(input.botId)}/`);
+      const transcriptArtifact = (bot.recordings ?? [])
+        .flatMap((recording) => (recording.media_shortcuts?.transcript ? [recording.media_shortcuts.transcript] : []))
+        .find((t) => t.data?.download_url);
+      if (!transcriptArtifact) {
+        const status = bot.status_changes?.[bot.status_changes.length - 1]?.code ?? "unknown";
+        throw new Error(`Transcript not ready yet (bot status: ${status}). Wait for the meeting to end and try again.`);
+      }
+      transcriptId = transcriptArtifact.id;
+      downloadUrl = transcriptArtifact.data?.download_url;
+    } else {
+      throw new Error("Recall transcript fetch requires a botId or transcriptId.");
+    }
+
+    if (!downloadUrl) throw new Error("Recall transcript artifact has no download URL yet.");
+
+    const downloadResponse = await fetch(downloadUrl);
+    if (!downloadResponse.ok) {
+      throw new Error(`Recall transcript download failed: ${downloadResponse.status}`);
+    }
+    const downloadJson = await downloadResponse.json() as RecallTranscriptDownload;
+    const utterances = flattenRecallTranscriptDownload(downloadJson);
+    const text = formatUtterances(utterances);
+    if (!text) throw new Error("Recall transcript download returned no words.");
+    return {
+      transcriptId,
+      text,
+      utterances,
+      metadata: { transcript_id: transcriptId, raw_artifact: downloadJson },
+    };
   }
+}
+
+type RecallTranscriptArtifact = {
+  id?: string;
+  data?: { download_url?: string };
+  status?: { code?: string };
+};
+
+type RecallBotResponse = {
+  id?: string;
+  status_changes?: Array<{ code?: string }>;
+  recordings?: Array<{
+    id?: string;
+    media_shortcuts?: {
+      transcript?: RecallTranscriptArtifact;
+    };
+  }>;
+};
+
+type RecallTranscriptDownload = Array<{
+  participant?: { name?: string | null; email?: string | null };
+  language_code?: string;
+  words?: Array<{
+    text?: string;
+    start_timestamp?: { absolute?: string | null; relative?: number };
+  }>;
+}>;
+
+function flattenRecallTranscriptDownload(payload: RecallTranscriptDownload) {
+  if (!Array.isArray(payload)) return [];
+  return payload.flatMap((segment) => {
+    const speaker = segment.participant?.name ?? segment.participant?.email ?? undefined;
+    const text = (segment.words ?? []).map((word) => word.text ?? "").join(" ").replace(/\s+/g, " ").trim();
+    if (!text) return [];
+    const timestamp = segment.words?.[0]?.start_timestamp?.absolute ?? undefined;
+    return [{ speaker, timestamp, text }];
+  });
 }
 
 export class MockRecallClient implements RecallClient {
@@ -334,6 +496,17 @@ export async function runNotetakerCalendarSync(options: { client?: RecallClient 
     let itemsFound = 0;
     let scheduled = 0;
     let skipped = 0;
+    if (!calendar.recallCalendarId && !notetakerCalendarHasCredentials(calendar)) {
+      summaries.push({
+        calendarId: calendar.id,
+        status: "skipped",
+        itemsFound,
+        scheduled,
+        skipped,
+        reason: "oauth_not_completed",
+      });
+      continue;
+    }
     try {
       const events = (await client.listCalendarEvents(calendar)).filter((event) => isWithinLookahead(event));
       itemsFound = events.length;
@@ -437,6 +610,24 @@ export async function scheduleNotetakerBotForMeeting(input: {
   return updated ?? meeting;
 }
 
+export async function fetchNotetakerTranscriptForMeeting(input: {
+  brainId: string;
+  meetingId: string;
+  client?: RecallClient;
+}) {
+  const repository = getRepository();
+  const meeting = (await repository.listNotetakerMeetings({ brainId: input.brainId, limit: 500 }))
+    .find((item) => item.id === input.meetingId);
+  if (!meeting) throw new Error(`Notetaker meeting not found: ${input.meetingId}`);
+  if (!meeting.recallBotId) throw new Error("This meeting has no Recall bot. Schedule a bot or wait for it to join the call first.");
+  return ingestNotetakerTranscript({
+    brainId: input.brainId,
+    meeting,
+    botId: meeting.recallBotId,
+    client: input.client,
+  });
+}
+
 export async function skipNotetakerMeeting(input: { brainId: string; meetingId: string; reason?: string }) {
   const repository = getRepository();
   const meeting = (await repository.listNotetakerMeetings({ brainId: input.brainId, limit: 500 }))
@@ -532,55 +723,161 @@ export async function ingestNotetakerTranscript(input: {
   return { duplicate: false, sourceItem, ingested };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+const RECALL_STATUS_MAP: Record<string, NotetakerMeeting["botStatus"]> = {
+  joining_call: "joining",
+  in_waiting_room: "joining",
+  in_call_not_recording: "in_call",
+  in_call_recording: "in_call",
+  call_ended: "in_call",
+  recording_done: "completed",
+  done: "completed",
+  analysis_done: "completed",
+  fatal: "failed",
+  failed: "failed",
+  bot_kicked_from_call: "canceled",
+  canceled: "canceled",
+  ready: "scheduled",
+  scheduled: "scheduled",
+  joining: "joining",
+  in_call: "in_call",
+  completed: "completed",
+};
+
+function mapRecallStatus(code: string | undefined): NotetakerMeeting["botStatus"] | undefined {
+  if (!code) return undefined;
+  return RECALL_STATUS_MAP[code.toLowerCase()];
+}
+
+type ExtractedRecallPayload = {
+  eventType: string;
+  providerEventId?: string;
+  botId?: string;
+  transcriptId?: string;
+  recordingId?: string;
+  calendarEventId?: string;
+  externalEventId?: string;
+  status?: string;
+  inlineTranscript?: string;
+  transcriptDownloadUrl?: string;
+  brainHint?: string;
+};
+
+function extractRecallWebhook(payload: Record<string, unknown>): ExtractedRecallPayload {
+  const data = asRecord(payload.data) ?? {};
+  const innerData = asRecord(data.data) ?? {};
+  const bot = asRecord(payload.bot) ?? asRecord(data.bot);
+  const transcript = asRecord(payload.transcript) ?? asRecord(data.transcript);
+  const recording = asRecord(payload.recording) ?? asRecord(data.recording);
+  const status = asRecord(payload.status) ?? asRecord(data.status) ?? innerData;
+
+  const eventType =
+    stringValue(payload.event) ??
+    stringValue(payload.event_type) ??
+    stringValue(payload.type) ??
+    "recall.webhook";
+
+  const botMetadata = asRecord(bot?.metadata) ?? asRecord(payload.metadata);
+
+  return {
+    eventType,
+    providerEventId:
+      stringValue(payload.eventId) ??
+      stringValue(payload.event_id) ??
+      stringValue(payload.id) ??
+      stringValue(data.event_id) ??
+      stringValue(transcript?.id) ??
+      stringValue(payload.transcript_id) ??
+      stringValue(payload.bot_id),
+    botId:
+      stringValue(payload.botId) ??
+      stringValue(payload.bot_id) ??
+      stringValue(bot?.id) ??
+      stringValue(botMetadata?.bot_id),
+    transcriptId:
+      stringValue(payload.transcriptId) ??
+      stringValue(payload.transcript_id) ??
+      stringValue(transcript?.id),
+    recordingId:
+      stringValue(payload.recording_id) ??
+      stringValue(recording?.id),
+    calendarEventId:
+      stringValue(payload.calendar_event_id) ??
+      stringValue(payload.recall_calendar_event_id) ??
+      stringValue(asRecord(data.calendar_event)?.id),
+    externalEventId:
+      stringValue(payload.external_event_id) ??
+      stringValue(botMetadata?.external_event_id),
+    status: stringValue(status?.code) ?? stringValue(payload.status),
+    inlineTranscript:
+      stringValue(payload.transcript) ??
+      stringValue(payload.text) ??
+      stringValue(payload.content),
+    transcriptDownloadUrl:
+      stringValue(asRecord(transcript?.data)?.download_url) ??
+      stringValue(asRecord(data.data)?.download_url) ??
+      stringValue(asRecord(payload.data)?.download_url),
+    brainHint:
+      stringValue(payload.brainId) ??
+      stringValue(payload.brain_id) ??
+      stringValue(botMetadata?.brain_id),
+  };
+}
+
 export async function handleNotetakerWebhook(payload: Record<string, unknown>, options: { client?: RecallClient } = {}) {
   const repository = getRepository();
-  const brainId = stringValue(payload.brainId) ?? stringValue(payload.brain_id) ?? (await repository.listBrains())[0]?.id;
+  const extracted = extractRecallWebhook(payload);
+  const brainId = extracted.brainHint ?? (await repository.listBrains())[0]?.id;
   if (!brainId) throw new Error("No Brain exists for Recall webhook ingestion.");
 
-  const eventType = stringValue(payload.event) ?? stringValue(payload.event_type) ?? stringValue(payload.type) ?? "recall.webhook";
-  const providerEventId =
-    stringValue(payload.eventId) ??
-    stringValue(payload.event_id) ??
-    stringValue(payload.id) ??
-    stringValue(payload.transcript_id) ??
-    stringValue(payload.bot_id);
-  const existingEvent = providerEventId
-    ? (await repository.listNotetakerEvents({ brainId, providerEventId, limit: 1 }))[0]
+  const existingEvent = extracted.providerEventId
+    ? (await repository.listNotetakerEvents({ brainId, providerEventId: extracted.providerEventId, limit: 1 }))[0]
     : undefined;
   if (existingEvent?.processedAt) return { duplicate: true, event: existingEvent };
 
-  const botId = stringValue(payload.botId) ?? stringValue(payload.bot_id) ?? stringValue((payload.bot as Record<string, unknown> | undefined)?.id);
-  const transcriptId = stringValue(payload.transcriptId) ?? stringValue(payload.transcript_id);
-  const calendarEventId = stringValue(payload.calendar_event_id) ?? stringValue(payload.recall_calendar_event_id);
-  const externalEventId = stringValue(payload.external_event_id);
-  const meeting = await findMeetingForEvent({ brainId, botId, calendarEventId, externalEventId });
+  const meeting = await findMeetingForEvent({
+    brainId,
+    botId: extracted.botId,
+    calendarEventId: extracted.calendarEventId,
+    externalEventId: extracted.externalEventId,
+  });
   const event = existingEvent ?? await repository.createNotetakerEvent({
     brainId,
     notetakerMeetingId: meeting?.id ?? null,
-    providerEventId,
-    eventType,
+    providerEventId: extracted.providerEventId,
+    eventType: extracted.eventType,
     payload,
   });
 
   let result: unknown = null;
-  if (meeting && eventType.includes("bot")) {
-    const status = stringValue(payload.status);
-    if (status === "joining" || status === "in_call" || status === "failed" || status === "canceled" || status === "completed") {
-      await repository.updateNotetakerMeeting(meeting.id, { botStatus: status });
+  if (meeting && (extracted.eventType.includes("bot") || extracted.eventType.includes("status"))) {
+    const mapped = mapRecallStatus(extracted.status);
+    if (mapped) {
+      await repository.updateNotetakerMeeting(meeting.id, { botStatus: mapped });
     }
   }
-  if (
-    eventType.includes("transcript") ||
-    eventType.includes("recording.done") ||
-    stringValue(payload.transcript) ||
-    stringValue(payload.text)
-  ) {
+
+  const isTranscriptEvent =
+    extracted.eventType.includes("transcript") ||
+    extracted.eventType.includes("recording.done") ||
+    Boolean(extracted.inlineTranscript) ||
+    Boolean(extracted.transcriptDownloadUrl);
+
+  if (isTranscriptEvent) {
+    const ingestionPayload: Record<string, unknown> = { ...payload };
+    if (extracted.inlineTranscript) ingestionPayload.transcript = extracted.inlineTranscript;
+    if (extracted.transcriptId) ingestionPayload.transcript_id = extracted.transcriptId;
     result = await ingestNotetakerTranscript({
       brainId,
       meeting,
-      botId,
-      transcriptId,
-      payload,
+      botId: extracted.botId,
+      transcriptId: extracted.transcriptId,
+      payload: ingestionPayload,
       client: options.client,
     });
   }

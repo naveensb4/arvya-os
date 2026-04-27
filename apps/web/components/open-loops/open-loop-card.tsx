@@ -43,7 +43,7 @@ export function OpenLoopCard({
           {loop.owner || loop.dueDate ? (
             <p className="mt-2 text-xs text-stone-500">
               {loop.owner ? `Owner: ${loop.owner}` : "Owner unassigned"}
-              {loop.dueDate ? ` · Due: ${new Date(loop.dueDate).toLocaleDateString()}` : ""}
+              {loop.dueDate ? ` · Due: ${formatDateOnly(loop.dueDate)}` : ""}
             </p>
           ) : null}
           {loop.suggestedAction ? (
@@ -143,6 +143,15 @@ export function OpenLoopCard({
       ) : null}
     </article>
   );
+}
+
+function formatDateOnly(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
 }
 
 function QuickAction({

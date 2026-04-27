@@ -195,15 +195,20 @@ export async function connectNotetakerCalendar(input: {
   credentials: OAuthCredentials;
   externalCalendarId?: string | null;
 }) {
+  const providerDefault = input.calendar.provider === "google_calendar" ? "primary" : null;
+  const externalCalendarId =
+    input.externalCalendarId ?? input.calendar.externalCalendarId ?? providerDefault;
+  const remainingConfig = { ...(input.calendar.config ?? {}) };
+  delete remainingConfig.oauth_pending;
   await getRepository().updateNotetakerCalendar(input.calendar.id, {
-    externalCalendarId: input.externalCalendarId ?? input.calendar.externalCalendarId ?? "primary",
+    externalCalendarId,
     config: {
-      ...input.calendar.config,
+      ...remainingConfig,
       credentials: input.credentials,
       connected_at: new Date().toISOString(),
     },
     status: "connected",
-    autoJoinEnabled: input.calendar.autoJoinEnabled,
+    autoJoinEnabled: true,
     autoJoinMode: input.calendar.autoJoinMode || "all_calls",
     lastError: null,
   });
@@ -316,12 +321,13 @@ function normalizeGoogleEvent(event: GoogleCalendarEvent): NotetakerCalendarEven
 
 async function listOutlookCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
   const calendarSegment = calendar.externalCalendarId
-    ? `/me/calendars/${encodeURIComponent(calendar.externalCalendarId)}/events`
-    : "/me/events";
+    ? `/me/calendars/${encodeURIComponent(calendar.externalCalendarId)}/calendarView`
+    : "/me/calendarView";
   const url = new URL(`${MICROSOFT_GRAPH}${calendarSegment}`);
+  url.searchParams.set("startDateTime", new Date().toISOString());
+  url.searchParams.set("endDateTime", new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString());
   url.searchParams.set("$top", "100");
   url.searchParams.set("$select", "id,subject,bodyPreview,body,location,isCancelled,isAllDay,sensitivity,start,end,attendees,onlineMeeting,onlineMeetingUrl,webLink");
-  url.searchParams.set("$filter", `start/dateTime ge '${new Date().toISOString()}' and start/dateTime le '${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()}'`);
   url.searchParams.set("$orderby", "start/dateTime asc");
   const response = await fetch(url, {
     headers: {
@@ -351,10 +357,22 @@ type OutlookCalendarEvent = {
   webLink?: string;
 };
 
+function outlookDateToIso(value: string | undefined, timeZone: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(trimmed);
+  if (hasZone) return new Date(trimmed).toISOString();
+  if (!timeZone || timeZone.toUpperCase() === "UTC") {
+    return new Date(`${trimmed}Z`).toISOString();
+  }
+  return new Date(trimmed).toISOString();
+}
+
 function normalizeOutlookEvent(event: OutlookCalendarEvent): NotetakerCalendarEvent[] {
   const id = event.id;
-  const start = event.start?.dateTime;
-  const end = event.end?.dateTime;
+  const start = outlookDateToIso(event.start?.dateTime, event.start?.timeZone);
+  const end = outlookDateToIso(event.end?.dateTime, event.end?.timeZone);
   if (!id || !start || !end) return [];
   const description = event.bodyPreview ?? event.body?.content;
   const meetingUrl = extractMeetingUrl({
@@ -368,8 +386,8 @@ function normalizeOutlookEvent(event: OutlookCalendarEvent): NotetakerCalendarEv
     title: event.subject ?? "Untitled meeting",
     description,
     meetingUrl,
-    startTime: new Date(start).toISOString(),
-    endTime: new Date(end).toISOString(),
+    startTime: start,
+    endTime: end,
     participants: event.attendees ?? [],
     isCanceled: event.isCancelled,
     isAllDay: event.isAllDay,

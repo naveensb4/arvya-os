@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { selectedBrainOrDefault } from "@/lib/brain/store";
 import { getRepository } from "@/lib/db/repository";
 import { buildGoogleCalendarAuthUrl } from "@/lib/notetaker/calendar-providers";
+import { reuseOrCreateNotetakerCalendar } from "@/lib/notetaker/runtime";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -10,20 +11,23 @@ export async function GET(request: Request) {
 
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const repository = getRepository();
-  const existing = (await repository.listNotetakerCalendars({ brainId: selectedBrain.id }))
-    .find((calendar) => calendar.provider === "google_calendar");
-  const calendar = existing ?? await repository.createNotetakerCalendar({
+  const calendar = await reuseOrCreateNotetakerCalendar({
+    repository,
     brainId: selectedBrain.id,
     provider: "google_calendar",
-    status: "connected",
-    autoJoinEnabled: true,
-    autoJoinMode: "all_calls",
-    externalCalendarId: "primary",
-    config: { source: "google_calendar_oauth" },
+    defaultExternalCalendarId: "primary",
+    defaultConfig: { source: "google_calendar_oauth", oauth_pending: true },
   });
 
-  return NextResponse.redirect(buildGoogleCalendarAuthUrl({
-    brainId: selectedBrain.id,
-    calendarId: calendar.id,
-  }));
+  try {
+    return NextResponse.redirect(buildGoogleCalendarAuthUrl({
+      brainId: selectedBrain.id,
+      calendarId: calendar.id,
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Calendar OAuth is not configured.";
+    return NextResponse.redirect(
+      new URL(`/brains/${selectedBrain.id}/notetaker?error=${encodeURIComponent(message)}`, request.url),
+    );
+  }
 }

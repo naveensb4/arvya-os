@@ -427,6 +427,7 @@ export interface BrainRepository {
   listNotetakerCalendars(input?: { brainId?: string; status?: NotetakerCalendarStatus }): Promise<NotetakerCalendar[]>;
   createNotetakerCalendar(input: CreateNotetakerCalendarData): Promise<NotetakerCalendar>;
   updateNotetakerCalendar(calendarId: string, update: UpdateNotetakerCalendarData): Promise<NotetakerCalendar | null>;
+  deleteNotetakerCalendar(calendarId: string): Promise<boolean>;
   listNotetakerMeetings(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number }): Promise<NotetakerMeeting[]>;
   createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<NotetakerMeeting>;
   updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData): Promise<NotetakerMeeting | null>;

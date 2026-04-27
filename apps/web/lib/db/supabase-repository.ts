@@ -881,6 +881,14 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toNotetakerCalendar(row) : null;
   }
 
+  async deleteNotetakerCalendar(calendarId: string) {
+    const rows = await this.db
+      .delete(notetakerCalendars)
+      .where(eq(notetakerCalendars.id, calendarId))
+      .returning({ id: notetakerCalendars.id });
+    return rows.length > 0;
+  }
+
   async listNotetakerMeetings(
     input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
   ) {

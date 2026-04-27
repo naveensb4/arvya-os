@@ -8,30 +8,58 @@ import {
   exchangeGoogleCalendarCode,
 } from "@/lib/notetaker/calendar-providers";
 
+function notetakerError(request: Request, brainId: string, message: string) {
+  return NextResponse.redirect(
+    new URL(`/brains/${brainId}/notetaker?error=${encodeURIComponent(message)}`, request.url),
+  );
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code")?.trim();
   const state = url.searchParams.get("state")?.trim();
   const oauthError = url.searchParams.get("error")?.trim();
 
-  if (oauthError) return NextResponse.json({ error: oauthError }, { status: 400 });
-  if (!code || !state) return NextResponse.json({ error: "Google Calendar OAuth callback requires code and state" }, { status: 400 });
+  if (!state) {
+    return NextResponse.json({ error: "Missing OAuth state." }, { status: 400 });
+  }
 
-  const { brainId, calendarId, provider } = decodeNotetakerOAuthState(state);
+  let decoded;
+  try {
+    decoded = decodeNotetakerOAuthState(state);
+  } catch {
+    return NextResponse.json({ error: "Invalid Notetaker OAuth state." }, { status: 400 });
+  }
+  const { brainId, calendarId, provider } = decoded;
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
+
+  if (oauthError) return notetakerError(request, selectedBrain.id, oauthError);
+  if (!code) return notetakerError(request, selectedBrain.id, "Google Calendar OAuth callback was missing the authorization code.");
+
   const calendar = (await getRepository().listNotetakerCalendars({ brainId: selectedBrain.id }))
     .find((item) => item.id === calendarId && item.provider === provider);
   if (!calendar || calendar.provider !== "google_calendar") {
-    return NextResponse.json({ error: "Google Calendar Notetaker calendar was not found" }, { status: 404 });
+    return notetakerError(request, selectedBrain.id, "Google Calendar Notetaker calendar was not found.");
   }
 
-  const existingCredentials = calendar.config.credentials && typeof calendar.config.credentials === "object"
-    ? calendar.config.credentials
-    : undefined;
-  const credentials = await exchangeGoogleCalendarCode(code, existingCredentials);
-  await connectNotetakerCalendar({ calendar, credentials, externalCalendarId: calendar.externalCalendarId ?? "primary" });
+  try {
+    const existingCredentials = calendar.config.credentials && typeof calendar.config.credentials === "object"
+      ? calendar.config.credentials
+      : undefined;
+    const credentials = await exchangeGoogleCalendarCode(code, existingCredentials);
+    await connectNotetakerCalendar({
+      calendar,
+      credentials,
+      externalCalendarId: calendar.externalCalendarId ?? "primary",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Calendar OAuth failed.";
+    return notetakerError(request, selectedBrain.id, message);
+  }
 
   revalidatePath(`/brains/${selectedBrain.id}/connections`);
   revalidatePath(`/brains/${selectedBrain.id}/notetaker`);
-  return NextResponse.redirect(new URL(`/brains/${selectedBrain.id}/notetaker`, request.url));
+  return NextResponse.redirect(
+    new URL(`/brains/${selectedBrain.id}/notetaker?connected=google_calendar`, request.url),
+  );
 }
