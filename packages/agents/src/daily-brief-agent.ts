@@ -19,7 +19,7 @@ import {
 } from "@arvya/prompts/daily-brief";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
-const DAILY_BRIEF_AI_TIMEOUT_MS = 20_000;
+const DAILY_BRIEF_AI_TIMEOUT_MS = 90_000;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;

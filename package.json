@@ -35,8 +35,10 @@
     "verify:notetaker-calendar-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-notetaker-mock.ts",
     "verify:supabase": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-supabase.ts",
     "verify:deployment": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-deployment.ts",
+    "verify:live-end-to-end": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/verify-live-end-to-end.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate-direct": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/migrate-direct.ts",
     "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
