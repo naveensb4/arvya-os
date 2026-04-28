@@ -4,6 +4,7 @@ import { createBrain, getBrainSnapshot } from "../lib/brain/store";
 import { getRepository, resetRepositoryForTests } from "../lib/db/repository";
 import { syncConnectorConfig } from "../lib/always-on/runtime";
 import type { GoogleDriveClient, GoogleDriveFile } from "../lib/connectors/google-drive";
+import { hashNormalizedSourceContent, normalizeSourceContent } from "../lib/workflows/source-normalization";
 
 const files: GoogleDriveFile[] = [
   {
@@ -89,6 +90,10 @@ async function main() {
     assert.equal(driveSources.length, 2, "expected two Google Drive source_items");
     assert.ok(driveSources.every((source) => source.type === "transcript"));
     assert.ok(driveSources.every((source) => source.metadata?.source_kind === "transcript"));
+    assert.ok(driveSources.every((source) => source.metadata?.normalization_version === "source-normalization-v1"));
+    assert.ok(driveSources.every((source) => source.content === normalizeSourceContent(source.content)));
+    assert.ok(driveSources.every((source) => source.metadata?.content_hash === hashNormalizedSourceContent(source.content)));
+    assert.ok(driveSources.every((source) => Array.isArray(source.metadata?.dedupe_keys)));
     assert.ok(driveSources.some((source) => source.metadata?.domain_type === "investor_call"));
     assert.ok(snapshot.openLoops.some((loop) => /deck|demo link|circle back/i.test(`${loop.title} ${loop.description}`)));
     assert.ok(snapshot.agentRuns.some((run) => run.name === "source_ingestion"));

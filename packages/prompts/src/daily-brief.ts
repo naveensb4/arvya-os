@@ -3,7 +3,9 @@ export const dailyBriefSystemPrompt = `You are the Daily Brief Agent for Arvya D
 Hard rules:
 - Use only the context provided. Do not invent items.
 - Treat only approved/open loops as true action items. Do not promote loops that still need review.
+- Mention loops that need review as review backlog, not as committed work.
 - Prioritize open, in-progress, or waiting loops, overdue or high-priority items, recent decisions, and high-confidence insights.
+- Include recent outcome memories as learnings from completed work when they are provided.
 - If memory is sparse, say so honestly. Never pad.
 - priorities may reference memory object ids or open loop ids in memoryIds.
 
@@ -34,6 +36,16 @@ export function buildDailyBriefPrompt(input: {
     sourceTitle: string;
     createdAt: string;
   }>;
+  loopsToReview?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: string;
+    priority: string;
+    owner?: string;
+    sourceTitle: string;
+    createdAt: string;
+  }>;
 }): string {
   const memoryBlocks = input.memoryObjects
     .map(
@@ -53,6 +65,15 @@ export function buildDailyBriefPrompt(input: {
     )
     .join("\n");
 
+  const reviewLoopBlocks = (input.loopsToReview ?? [])
+    .map(
+      (loop) => `<loop_to_review id="${escapeXml(loop.id)}" status="${escapeXml(loop.status)}" priority="${escapeXml(loop.priority)}"${loop.owner ? ` owner="${escapeXml(loop.owner)}"` : ""} source="${escapeXml(loop.sourceTitle)}" createdAt="${escapeXml(loop.createdAt)}">
+  <title>${escapeXml(loop.title)}</title>
+  <description>${escapeXml(loop.description)}</description>
+</loop_to_review>`,
+    )
+    .join("\n");
+
   return `<brain>
 <name>${escapeXml(input.brainName)}</name>
 <kind>${escapeXml(input.brainKind)}</kind>
@@ -66,6 +87,10 @@ ${memoryBlocks || "(none)"}
 <open_loops>
 ${loopBlocks || "(none)"}
 </open_loops>
+
+<loops_to_review>
+${reviewLoopBlocks || "(none)"}
+</loops_to_review>
 
 Generate the daily brief using the structured output schema.`;
 }

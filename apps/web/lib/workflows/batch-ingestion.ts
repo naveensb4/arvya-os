@@ -1,8 +1,15 @@
-import { createHash } from "node:crypto";
 import type { AgentRun, MemoryObject, OpenLoop, SourceItem, SourceType } from "@arvya/core";
 import { getRepository } from "@/lib/db/repository";
 import { uploadSourceFileToStorage } from "@/lib/storage/source-files";
 import { ingestSourceIntoBrain } from "./source-ingestion";
+import {
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "./source-normalization";
 
 export type BatchIngestionStatus = "pending" | "processing" | "completed" | "failed";
 
@@ -65,28 +72,27 @@ function inferDomainType(sourceTypeLabel?: string) {
 
 export function parseTranscriptFilename(fileName: string): ParsedTranscriptFilename {
   const baseName = fileName.replace(/\.[^.]+$/, "");
-  const match = baseName.match(
-    /^(\d{4}-\d{2}-\d{2})__([^_]+)__([^_]+)__([^_]+(?:_[^_]+)*)$/,
-  );
+  const segments = baseName.split("__");
+  if (segments.length < 4) return {};
 
-  if (!match) return {};
+  const occurredAt = segments[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) return {};
 
-  const sourceTypeLabel = humanizeSegment(match[2]);
+  const sourceTypeLabel = humanizeSegment(segments[1]);
+  const companyPersonText = segments[2].trim();
+  const topic = humanizeSegment(segments.slice(3).join("__"));
+
   return {
-    occurredAt: match[1],
+    occurredAt,
     sourceTypeLabel,
     domainType: inferDomainType(sourceTypeLabel),
-    companyPersonText: match[3].trim(),
-    topic: humanizeSegment(match[4]),
+    companyPersonText,
+    topic,
   };
 }
 
 export function hashTranscriptContent(input: { fileName: string; content: string }) {
-  return createHash("sha256")
-    .update(input.fileName)
-    .update("\0")
-    .update(input.content)
-    .digest("hex");
+  return hashNormalizedSourceContent(input.content);
 }
 
 function buildTitle(fileName: string, parsed: ParsedTranscriptFilename) {
@@ -97,8 +103,10 @@ function buildTitle(fileName: string, parsed: ParsedTranscriptFilename) {
 }
 
 function hasDuplicateFingerprint(source: SourceItem, fileName: string, fileHash: string) {
-  const metadata = source.metadata ?? {};
-  return metadata.fileHash === fileHash || metadata.originalFilename === fileName;
+  return sourceMatchesFingerprint(source, {
+    contentHash: fileHash,
+    originalFilename: fileName,
+  });
 }
 
 export async function ingestTranscriptBatch(input: {
@@ -126,7 +134,8 @@ export async function ingestTranscriptBatch(input: {
       continue;
     }
 
-    const fileHash = hashTranscriptContent({ fileName: file.fileName, content: file.content });
+    const normalizedContent = normalizeSourceContent(file.content);
+    const fileHash = hashTranscriptContent({ fileName: file.fileName, content: normalizedContent });
     try {
       const existingSources = await repository.listSourceItems(input.brainId);
       const duplicateSourceItem = existingSources.find((source) =>
@@ -149,34 +158,54 @@ export async function ingestTranscriptBatch(input: {
       }
 
       const parsed = parseTranscriptFilename(file.fileName);
-      const metadata = {
-        source_kind: "transcript",
-        originalFilename: file.fileName,
-        fileHash,
-        fileExtension: extension,
-        occurred_at: parsed.occurredAt,
-        source_type_label: parsed.sourceTypeLabel,
-        domain_type: parsed.domainType,
-        company_person_text: parsed.companyPersonText,
-        topic: parsed.topic,
-        batch_ingested_at: new Date().toISOString(),
-      };
+      const metadata: Record<string, unknown> = mergeSourceTraceMetadata(
+        buildSourceTraceMetadata({
+          sourceKind: "transcript",
+          sourceSystem: "batch_upload",
+          originalTitle: file.fileName,
+          occurredAt: parsed.occurredAt,
+        }),
+        {
+          originalFilename: file.fileName,
+          fileHash,
+          content_hash: fileHash,
+          source_content_hash: fileHash,
+          fileExtension: extension,
+          source_type_label: parsed.sourceTypeLabel,
+          domain_type: parsed.domainType,
+          company_person_text: parsed.companyPersonText,
+          topic: parsed.topic,
+          batch_ingested_at: new Date().toISOString(),
+        },
+      );
+      const fingerprint = sourceFingerprint({
+        title: buildTitle(file.fileName, parsed),
+        content: normalizedContent,
+        metadata,
+      });
 
-      const storagePath = file.bytes
-        ? await uploadSourceFileToStorage({
+      let storagePath: string | undefined;
+      if (file.bytes) {
+        try {
+          storagePath = await uploadSourceFileToStorage({
             brainId: input.brainId,
             fileName: file.fileName,
-            fileHash,
+            fileHash: fingerprint.contentHash,
             contentType: file.contentType,
             body: file.bytes,
-          })
-        : undefined;
+          });
+        } catch (error) {
+          metadata.storage_upload_error =
+            error instanceof Error ? error.message : "Unknown source file storage upload error";
+        }
+      }
+      if (storagePath) metadata.storage_path = storagePath;
 
       const ingested = await ingestSourceIntoBrain({
         brainId: input.brainId,
         title: buildTitle(file.fileName, parsed),
         type: input.sourceType ?? "transcript",
-        content: file.content,
+        content: normalizedContent,
         externalUri: undefined,
         storagePath,
         metadata,

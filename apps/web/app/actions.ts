@@ -6,10 +6,11 @@ import {
   addSourceAndIngest,
   bulkUpdateOpenLoops,
   createBrain,
+  updateMemoryObjectReview,
   updateOpenLoopReview,
   updateOpenLoopStatus,
 } from "@/lib/brain/store";
-import type { BrainKind, OpenLoopPriority, OpenLoopStatus, SourceType } from "@arvya/core";
+import type { BrainKind, MemoryObjectStatus, MemoryObjectType, OpenLoopPriority, OpenLoopStatus, SourceType } from "@arvya/core";
 
 function requiredString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -28,6 +29,14 @@ function optionalString(formData: FormData, key: string) {
 
 function optionalNullableString(formData: FormData, key: string) {
   return optionalString(formData, key) ?? null;
+}
+
+function optionalConfidence(formData: FormData, key: string) {
+  const value = optionalString(formData, key);
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(1, parsed / 100));
 }
 
 export async function createBrainAction(formData: FormData) {
@@ -113,6 +122,23 @@ export async function reviewOpenLoopAction(formData: FormData) {
 
   revalidatePath(`/brains/${brainId}`);
   revalidatePath(`/brains/${brainId}/open-loops`);
+}
+
+export async function updateMemoryObjectAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  const status = optionalString(formData, "status");
+  await updateMemoryObjectReview(brainId, requiredString(formData, "memoryObjectId"), {
+    objectType: requiredString(formData, "objectType") as MemoryObjectType,
+    name: requiredString(formData, "name"),
+    description: requiredString(formData, "description"),
+    sourceQuote: optionalNullableString(formData, "sourceQuote"),
+    confidence: optionalConfidence(formData, "confidence"),
+    status: status ? (status as MemoryObjectStatus) : null,
+  });
+
+  revalidatePath(`/brains/${brainId}`);
+  revalidatePath(`/brains/${brainId}/memory`);
+  revalidatePath(`/brains/${brainId}/insights`);
 }
 
 export async function bulkReviewOpenLoopsAction(formData: FormData) {

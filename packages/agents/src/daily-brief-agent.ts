@@ -12,6 +12,13 @@ import {
   dailyBriefSystemPrompt,
 } from "@arvya/prompts/daily-brief";
 
+function memoryRank(memory: MemoryObject) {
+  const outcomeBoost = memory.properties?.memory_source === "open_loop_outcome" ? 2 : 0;
+  const confidence = memory.confidence ?? 0.7;
+  const recency = new Date(memory.createdAt).getTime() / 1_000_000_000_000;
+  return outcomeBoost + confidence + recency;
+}
+
 export async function buildDailyBrief(input: {
   brain: Brain;
   memoryObjects: MemoryObject[];
@@ -31,6 +38,12 @@ export async function buildDailyBrief(input: {
   const loopsToReview = input.openLoops
     .filter((loop) => loop.status === "needs_review")
     .slice(0, 10);
+  const rankedMemoryObjects = [...input.memoryObjects]
+    .sort((a, b) => memoryRank(b) - memoryRank(a))
+    .slice(0, 50);
+  const recentOutcomeMemories = rankedMemoryObjects.filter(
+    (memory) => memory.properties?.memory_source === "open_loop_outcome",
+  );
 
   if (input.ai?.available) {
     const result = await input.ai.completeStructured({
@@ -39,7 +52,7 @@ export async function buildDailyBrief(input: {
         brainName: input.brain.name,
         brainKind: input.brain.kind,
         brainThesis: input.brain.thesis,
-        memoryObjects: input.memoryObjects.slice(0, 50).map((memory) => ({
+        memoryObjects: rankedMemoryObjects.map((memory) => ({
           id: memory.id,
           objectType: memory.objectType,
           name: memory.name,
@@ -59,6 +72,18 @@ export async function buildDailyBrief(input: {
           priority: loop.priority,
           owner: loop.owner,
           dueDate: loop.dueDate,
+          sourceTitle:
+            input.sourceItems.find((source) => source.id === loop.sourceItemId)?.title ??
+            "Unknown source",
+          createdAt: loop.createdAt,
+        })),
+        loopsToReview: loopsToReview.map((loop) => ({
+          id: loop.id,
+          title: loop.title,
+          description: loop.description,
+          status: loop.status,
+          priority: loop.priority,
+          owner: loop.owner,
           sourceTitle:
             input.sourceItems.find((source) => source.id === loop.sourceItemId)?.title ??
             "Unknown source",
@@ -104,14 +129,14 @@ export async function buildDailyBrief(input: {
         : loopsToReview.length > 0
           ? `${loopsToReview.length} new loop${loopsToReview.length === 1 ? "" : "s"} need review`
         : "Brain memory is current",
-    summary: `${input.brain.name} has ${input.memoryObjects.length} memory objects, ${actionableOpenLoops.length} approved open loops, and ${loopsToReview.length} new loops to review. Add sources or configure an AI key for richer synthesis.`,
+    summary: `${input.brain.name} has ${input.memoryObjects.length} memory objects, ${actionableOpenLoops.length} approved open loops, ${loopsToReview.length} new loops to review, and ${recentOutcomeMemories.length} recent outcome learning${recentOutcomeMemories.length === 1 ? "" : "s"}. Add sources or configure an AI key for richer synthesis.`,
     priorities: actionableOpenLoops.slice(0, 5).map((loop) => ({
       title: loop.title,
       detail: loop.description,
       sourceItemIds: loop.sourceItemId ? [loop.sourceItemId] : [],
     })),
     decisions,
-    insights,
+    insights: [...recentOutcomeMemories, ...insights].slice(0, 4),
     actions: actionableOpenLoops,
     openLoops: actionableOpenLoops,
     loopsToReview,

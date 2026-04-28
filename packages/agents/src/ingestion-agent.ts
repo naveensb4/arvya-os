@@ -27,9 +27,17 @@ type StepLogger = <T>(input: {
   call: () => Promise<T>;
 }) => Promise<T>;
 
-const personPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/g;
-const companyPattern =
-  /\b([A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*)*\s+(?:Capital|Partners|Ventures|Bank|Advisors|AI|Labs|Group|Corp|Inc|LLC))\b/g;
+const personPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}|[A-Z]{2,3})\b/g;
+const companySuffixPattern =
+  "(?:Capital|Partners|Ventures|Bank|Advisors|AI|Labs|Group|Corp|Inc|LLC|Technologies|Systems|Software|Health|Foods|Co|Company|Studios)";
+const companyPattern = new RegExp(
+  `\\b([A-Z][A-Za-z0-9&.-]*(?:\\s+[A-Z][A-Za-z0-9&.-]*)*\\s+${companySuffixPattern})\\b`,
+  "g",
+);
+const personCompanyPattern = new RegExp(
+  `\\b([A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,2}|[A-Z]{2,3})\\s+(?:at|from|of)\\s+([A-Z][A-Za-z0-9&.-]*(?:\\s+[A-Z][A-Za-z0-9&.-]*)*\\s+${companySuffixPattern})\\b`,
+  "g",
+);
 
 const stopNames = new Set([
   "Arvya Deal",
@@ -39,10 +47,30 @@ const stopNames = new Set([
   "Recall AI",
   "Google Drive",
   "Claude ChatGPT",
+  "Open Loop",
+  "SOC",
 ]);
 
-const followUpPattern =
-  /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|introduce us|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes)/i;
+const explicitActionPattern =
+  /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|introduce|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes|can you|please)/i;
+const requestPattern =
+  /\b(?:asked for|asks for|requested|requests|wants|wanted|needs|needed|waiting for|expects|looking for)\b/i;
+const ownershipPattern =
+  /\b(?:[A-Z][A-Za-z]*|we|they|client|buyer|seller|management|banker|sponsor)\s+(?:own|owns|owned|to own|will own|is owning)\b/i;
+const dueDatePattern =
+  /\b(?:by|before|due|deadline|next)\s+(?:monday|tuesday|wednesday|thursday|friday|week|month|quarter|eod|tomorrow|today|\d{1,2}\/\d{1,2})\b/i;
+const dealArtifactPattern =
+  /\b(?:diligence|tracker|cim|nda|ioi|loi|qofe|data room|management meeting|buyer follow-up|buyer follow up|process letter|ic memo|investment committee|model update)\b/i;
+const commitmentPattern =
+  /\b(?:committed to|promised to|agreed to|will|we will|i will|i'll|we'll|is going to|are going to)\b/i;
+const decisionPattern =
+  /\b(?:decided|decision|approved|greenlit|chose|aligned on|agreed that|go with|prioritize|deprioritize)\b/i;
+const riskPattern =
+  /\b(?:risk|blocker|concern|danger|worried|worry|objection|red flag|threat|could block|will block|churn|security review)\b/i;
+const productInsightPattern =
+  /\b(?:customer|user|workflow|pain|product|feature|mvp|ux|onboarding|pilot|demo|spreadsheet|CRM|asked for|wants|needs)\b/i;
+const feedbackPattern =
+  /\b(?:investor|banker|advisor|customer|prospect|user|buyer|founder).*(?:said|feedback|asked|wants|wanted|pushed back|loved|hated|warned|flagged|suggested|recommended|concern)/i;
 const HIGH_CONFIDENCE_OPEN_LOOP_THRESHOLD = 0.9;
 
 function splitSentences(content: string) {
@@ -64,6 +92,8 @@ function uniqueMatches(content: string, pattern: RegExp) {
 function classifyLoop(sentence: string): ExtractedOpenLoop["loopType"] {
   const normalized = sentence.toLowerCase();
   if (/intro|introduce/.test(normalized)) return "intro";
+  if (/diligence|qofe|data room|ic memo|investment committee/.test(normalized)) return "diligence";
+  if (/cim|buyer|loi|ioi|nda|process letter|management meeting|deal/.test(normalized)) return "deal";
   if (/pilot|customer|demo|sales|prospect/.test(normalized)) return "sales";
   if (/investor|deck|banker|capital|fund/.test(normalized)) return "investor";
   if (/schedule|call|meeting/.test(normalized)) return "scheduling";
@@ -84,6 +114,35 @@ function fallbackClassification(source: SourceItem): SourceClassification {
 function truncate(value: string, maxLength: number) {
   const trimmed = value.replace(/\s+/g, " ").trim();
   return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 3)}...` : trimmed;
+}
+
+function titleFromSentence(prefix: string, sentence: string) {
+  const cleaned = truncate(sentence.replace(/^(?:[-*]\s*)?(?:action item|next step|open loop)\s*[:\-]\s*/i, ""), 96);
+  return cleaned.length <= 12 ? `${prefix}: ${cleaned}` : `${prefix}: ${cleaned}`;
+}
+
+function extractOwner(sentence: string): string | undefined {
+  const explicit = sentence.match(/\b(?:owner|owned by|assigned to):?\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}|[A-Z]{2,3})\b/i);
+  if (explicit?.[1]) return explicit[1];
+
+  const actor = sentence.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{2,3})\s+(?:committed to|promised to|agreed to|will|is going to)\b/);
+  if (actor?.[1] && !stopNames.has(actor[1])) return actor[1];
+
+  return undefined;
+}
+
+function extractDueDate(sentence: string): string | undefined {
+  const match = sentence.match(/\b(?:by|before|due|deadline|next)\s+((?:monday|tuesday|wednesday|thursday|friday|week|month|quarter|eod|tomorrow|today|\d{1,2}\/\d{1,2})(?:\s+\d{1,2})?)\b/i);
+  return match?.[1];
+}
+
+function isFallbackOpenLoop(sentence: string) {
+  if (explicitActionPattern.test(sentence)) return true;
+  if (requestPattern.test(sentence)) return true;
+  if (ownershipPattern.test(sentence) && dealArtifactPattern.test(sentence)) return true;
+  if (dueDatePattern.test(sentence) && dealArtifactPattern.test(sentence)) return true;
+  if (/action item|next step|todo|to-do|commitment/i.test(sentence)) return true;
+  return false;
 }
 
 function fallbackMemory(source: SourceItem): ExtractedMemoryObject[] {
@@ -112,51 +171,78 @@ function fallbackMemory(source: SourceItem): ExtractedMemoryObject[] {
 
   for (const sentence of sentences) {
     const normalized = sentence.toLowerCase();
-    if (followUpPattern.test(sentence)) continue;
 
-    if (/(decided|decision|approved|committed|we will)/.test(normalized)) {
+    if (decisionPattern.test(sentence)) {
       memories.push({
         objectType: "decision",
-        name: "Decision captured",
+        name: titleFromSentence("Decision", sentence),
         description: truncate(sentence, 800),
         sourceQuote: truncate(sentence, 800),
-        confidence: 0.78,
+        confidence: 0.82,
+        properties: { extractedBy: "deterministic_fallback", signal: "decision" },
       });
       continue;
     }
 
-    if (/(risk|blocker|concern|danger)/.test(normalized)) {
+    if (commitmentPattern.test(sentence) && (isFallbackOpenLoop(sentence) || /committed|promised|agreed/i.test(sentence))) {
+      memories.push({
+        objectType: "commitment",
+        name: titleFromSentence("Commitment", sentence),
+        description: truncate(sentence, 800),
+        sourceQuote: truncate(sentence, 800),
+        confidence: 0.8,
+        properties: {
+          extractedBy: "deterministic_fallback",
+          signal: "commitment",
+          owner: extractOwner(sentence),
+          dueDate: extractDueDate(sentence),
+        },
+      });
+      continue;
+    }
+
+    if (riskPattern.test(sentence)) {
       memories.push({
         objectType: "risk",
-        name: "Risk captured",
+        name: titleFromSentence("Risk", sentence),
         description: truncate(sentence, 800),
         sourceQuote: truncate(sentence, 800),
-        confidence: 0.7,
+        confidence: 0.76,
+        properties: { extractedBy: "deterministic_fallback", signal: "risk" },
       });
       continue;
     }
 
-    if (/(customer|user|workflow|pain|product|feature|mvp|ux)/.test(normalized)) {
+    if (productInsightPattern.test(sentence)) {
       memories.push({
         objectType: "product_insight",
-        name: "Product insight",
+        name: titleFromSentence("Product insight", sentence),
         description: truncate(sentence, 800),
         sourceQuote: truncate(sentence, 800),
-        confidence: 0.7,
+        confidence: 0.74,
+        properties: { extractedBy: "deterministic_fallback", signal: "product_insight" },
       });
       continue;
     }
 
-    if (/(investor|banker|advisor|founder|market|strategy|positioning)/.test(normalized)) {
+    if (feedbackPattern.test(sentence) || /(investor|banker|advisor|founder|market|strategy|positioning)/.test(normalized)) {
       memories.push({
         objectType: "insight",
-        name: "Strategic insight",
+        name: feedbackPattern.test(sentence)
+          ? titleFromSentence("Feedback", sentence)
+          : titleFromSentence("Strategic insight", sentence),
         description: truncate(sentence, 800),
         sourceQuote: truncate(sentence, 800),
-        confidence: 0.68,
+        confidence: feedbackPattern.test(sentence) ? 0.78 : 0.68,
+        properties: {
+          extractedBy: "deterministic_fallback",
+          signal: feedbackPattern.test(sentence) ? "stakeholder_feedback" : "strategic_insight",
+        },
       });
       continue;
     }
+
+    if (isFallbackOpenLoop(sentence)) continue;
 
     if (memories.filter((memory) => memory.objectType === "fact").length < 6) {
       memories.push({
@@ -172,21 +258,48 @@ function fallbackMemory(source: SourceItem): ExtractedMemoryObject[] {
   return memories.slice(0, 32);
 }
 
+function fallbackRelationships(source: SourceItem): ExtractedRelationship[] {
+  const relationships: ExtractedRelationship[] = [];
+  const seen = new Set<string>();
+
+  for (const match of source.content.matchAll(personCompanyPattern)) {
+    const fromName = match[1]?.trim();
+    const toName = match[2]?.trim();
+    if (!fromName || !toName || stopNames.has(fromName) || stopNames.has(toName)) continue;
+
+    const key = `${fromName}->${toName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    relationships.push({
+      fromName,
+      toName,
+      relationshipType: "associated_with",
+      sourceQuote: truncate(match[0], 800),
+      confidence: 0.76,
+      properties: { extractedBy: "deterministic_fallback" },
+    });
+  }
+
+  return relationships.slice(0, 16);
+}
+
 function fallbackOpenLoops(source: SourceItem): ExtractedOpenLoop[] {
   return splitSentences(source.content)
-    .filter((sentence) => followUpPattern.test(sentence))
+    .filter(isFallbackOpenLoop)
     .map((sentence) => ({
       title: sentence.length > 80 ? `${sentence.slice(0, 77)}...` : sentence,
       description: truncate(sentence, 1000),
       loopType: classifyLoop(sentence),
+      owner: extractOwner(sentence),
       status: "needs_review",
       priority: /critical|urgent|asap|friday|tomorrow|this week/i.test(sentence)
         ? "high"
         : "medium",
+      dueDate: extractDueDate(sentence),
       suggestedAction: truncate(sentence, 1000),
-      requiresHumanApproval: /send|share|email|introduce|follow up/i.test(sentence),
+      requiresHumanApproval: /send|share|email|introduce|follow up|asked for|requested|waiting for|expects/i.test(sentence),
       sourceQuote: truncate(sentence, 800),
-      confidence: 0.78,
+      confidence: commitmentPattern.test(sentence) ? 0.84 : 0.78,
       properties: { extractedBy: "deterministic_fallback" },
     }));
 }
@@ -301,7 +414,10 @@ async function extractMemoryNode(state: typeof IngestionState.State) {
   const memoryObjects = await runLogged(state, "extract_memory", async () =>
     fallbackMemory(state.source),
   );
-  return { memoryObjects };
+  const relationships = await runLogged(state, "extract_relationships", async () =>
+    fallbackRelationships(state.source),
+  );
+  return { memoryObjects, relationships };
 }
 
 async function detectOpenLoopsNode(state: typeof IngestionState.State) {

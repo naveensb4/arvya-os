@@ -9,6 +9,7 @@ import {
   scheduleNotetakerBotForMeeting,
   shouldJoinMeeting,
   skipNotetakerMeeting,
+  verifyRecallWebhookSignature,
   type NotetakerCalendarEvent,
 } from "../lib/notetaker/runtime";
 
@@ -42,6 +43,16 @@ async function main() {
     assert.equal(shouldJoinMeeting({ ...validEvent, id: "evt-all-day", isAllDay: true }, { autoJoinEnabled: true, autoJoinMode: "all_calls" }, now).decision, "skip");
     assert.equal(shouldJoinMeeting({ ...validEvent, id: "evt-ended", endTime: "2026-04-25T15:00:00.000Z" }, { autoJoinEnabled: true, autoJoinMode: "all_calls" }, now).decision, "skip");
     assert.equal(shouldJoinMeeting({ ...validEvent, id: "evt-no-bot", title: "no-notetaker customer call" }, { autoJoinEnabled: true, autoJoinMode: "all_calls" }, now).decision, "skip");
+    assert.equal(verifyRecallWebhookSignature({ body: "{}" }), true, "dev without Recall webhook secret should allow local mock testing");
+    const mutableEnv = process.env as Record<string, string | undefined>;
+    const originalNodeEnv = process.env.NODE_ENV;
+    mutableEnv.NODE_ENV = "production";
+    assert.equal(verifyRecallWebhookSignature({ body: "{}" }), false, "production without Recall webhook secret must fail closed");
+    if (originalNodeEnv === undefined) {
+      delete mutableEnv.NODE_ENV;
+    } else {
+      mutableEnv.NODE_ENV = originalNodeEnv;
+    }
 
     const brain = await createBrain({
       name: "Arvya Company Brain",
@@ -118,6 +129,10 @@ async function main() {
     const afterWebhook = await getBrainSnapshot(brain.id);
     const transcriptSource = afterWebhook.sourceItems.find((source) => source.metadata?.domain_type === "meeting_transcript");
     assert.ok(transcriptSource, "expected meeting transcript source item");
+    assert.equal(transcriptSource.metadata?.source_system, "recall");
+    assert.equal((transcriptSource.metadata?.source_trace as Record<string, unknown> | undefined)?.source_kind, "transcript");
+    assert.equal(transcriptSource.content, transcriptSource.content.trim());
+    assert.ok(Array.isArray(transcriptSource.metadata?.dedupe_keys));
     assert.ok(afterWebhook.memoryObjects.some((memory) => memory.sourceItemId === transcriptSource.id), "expected memory objects from transcript");
     assert.ok(afterWebhook.openLoops.some((loop) => loop.sourceItemId === transcriptSource.id), "expected open loops from transcript");
 
@@ -131,6 +146,17 @@ async function main() {
     const afterRetry = await getBrainSnapshot(brain.id);
     assert.equal(afterRetry.sourceItems.length, sourceCountBeforeRetry, "expected transcript retry to avoid duplicate source items");
     assert.equal(afterRetry.openLoops.length, loopCountBeforeRetry, "expected transcript retry to avoid duplicate open loops");
+
+    const routedWithoutBrainHint = await handleNotetakerWebhook({
+      event_id: "recall-transcript-done-no-brain-hint",
+      event_type: "transcript.done",
+      bot_id: scheduledMeeting.recallBotId,
+      transcript_id: "transcript-1-renamed",
+      transcript: webhookPayload.transcript,
+    }, { client: new MockRecallClient() });
+    assert.equal(routedWithoutBrainHint.duplicate, false, "expected webhook without brain_id to route through the scheduled Recall bot");
+    const afterNoHint = await getBrainSnapshot(brain.id);
+    assert.equal(afterNoHint.sourceItems.length, sourceCountBeforeRetry, "expected no-brain-hint retry to dedupe by transcript content");
 
     console.log("Notetaker mock verification passed.");
   } finally {

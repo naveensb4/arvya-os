@@ -33,6 +33,7 @@ export function buildAskBrainPrompt(input: {
     status: string;
     priority: string;
     sourceQuote?: string;
+    outcome?: string;
     confidence: number;
     sourceTitle: string;
     createdAt: string;
@@ -61,6 +62,7 @@ export function buildAskBrainPrompt(input: {
   <title>${escapeXml(loop.title)}</title>
   <description>${escapeXml(loop.description)}</description>
   <source_quote>${escapeXml(loop.sourceQuote ?? "")}</source_quote>
+  ${loop.outcome ? `<outcome>${escapeXml(loop.outcome)}</outcome>` : ""}
 </open_loop>`,
     )
     .join("\n");

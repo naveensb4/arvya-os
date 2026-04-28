@@ -36,10 +36,15 @@ function env(name: string) {
   return process.env[name]?.trim() || undefined;
 }
 
-function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
-  if (input.meetingUrl?.trim()) return input.meetingUrl.trim();
+const MEETING_URL_PATTERN = /https?:\/\/(?:meet\.google\.com|(?:[\w-]+\.)?zoom\.us|teams\.(?:microsoft|live)\.com|teams\.microsoft\.us|gov\.teams\.microsoft\.us|(?:[\w-]+\.)?webex\.com|(?:[\w-]+\.)?gotomeeting\.com|(?:[\w-]+\.)?goto\.com|whereby\.com|chime\.aws)\/[^\s<>)"]+/i;
+
+export function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
+  if (input.meetingUrl?.trim()) {
+    const explicit = input.meetingUrl.trim();
+    if (MEETING_URL_PATTERN.test(explicit) || /^https?:\/\//i.test(explicit)) return explicit;
+  }
   const haystack = [input.location, input.description, input.title].filter(Boolean).join("\n");
-  const match = haystack.match(/https?:\/\/(?:meet\.google\.com|[\w.-]*zoom\.us|teams\.microsoft\.com|[\w.-]+)\/[^\s<>)"]+/i);
+  const match = haystack.match(MEETING_URL_PATTERN);
   return match?.[0];
 }
 

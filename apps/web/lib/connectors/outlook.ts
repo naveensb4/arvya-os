@@ -3,6 +3,8 @@ import { getRepository, type ConnectorConfig } from "@/lib/db/repository";
 import {
   createEmailSource,
   decodeOAuthState,
+  emailConnectorItemLimit,
+  emailMatchesAryvaScope,
   encodeOAuthState,
   listConfigStrings,
   newEmailSyncResult,
@@ -235,6 +237,11 @@ function isBroadOutlookFolder(folder: string) {
   return folder.trim().toLowerCase() === "inbox";
 }
 
+function isBroadOutlookCategory(category: string) {
+  const normalized = category.trim().toLowerCase();
+  return normalized === "" || normalized === "*" || normalized === "any" || normalized === "all";
+}
+
 async function resolveOutlookFolders(configuredFolders: string[], client: OutlookClient) {
   if (!client.listMailFolders) {
     return configuredFolders.map((folder) => ({ id: folder, displayName: folder }));
@@ -264,18 +271,44 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
   if (!maxItemTestMode(config) && configuredFolders.some(isBroadOutlookFolder)) {
     throw new Error('Outlook inbox sync is disabled for live runs. Use the "Arvya Brain" folder/category, or explicitly enable max-item test mode for a capped inbox test.');
   }
+  const broadCategory = categoryNames.find(isBroadOutlookCategory);
+  if (broadCategory !== undefined) {
+    throw new Error(`Outlook category "${broadCategory || "(empty)"}" is too broad. Use a specific Outlook category like "Arvya Brain" or "Investors" so we only sync the threads you flagged.`);
+  }
 
   const outlook = client ?? await getOutlookClient(config);
   const folders = await resolveOutlookFolders(configuredFolders, outlook);
   const result = newEmailSyncResult();
+  const itemLimit = emailConnectorItemLimit(config);
 
   for (const folder of folders) {
     const messages = await outlook.listMessages(folder.id);
     result.itemsFound += messages.length;
-    for (const message of messages) {
+    const messagesToSync = messages.slice(0, itemLimit);
+    if (messages.length > messagesToSync.length) {
+      result.itemsSkipped += messages.length - messagesToSync.length;
+      result.skippedItems.push({
+        externalId: `outlook:${folder.id}:safety-cap`,
+        title: folder.displayName,
+        reason: `safety_cap_${itemLimit}`,
+      });
+    }
+    for (const message of messagesToSync) {
       const externalId = `outlook:${message.id}`;
       try {
         const formatted = formatOutlookMessage(message);
+        const relevance = emailMatchesAryvaScope({
+          config,
+          title: formatted.title,
+          content: formatted.content,
+          from: formatted.from,
+          to: formatted.to,
+        });
+        if (!relevance.matches) {
+          result.itemsSkipped += 1;
+          result.skippedItems.push({ externalId, title: formatted.title, reason: relevance.reason });
+          continue;
+        }
         const created = await createEmailSource({
           config,
           connectorType: "outlook",
@@ -294,6 +327,10 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
             outlook_received_at: message.receivedDateTime,
             outlook_sent_at: message.sentDateTime,
             outlook_synced_at: new Date().toISOString(),
+            aryva_relevance: {
+              reason: relevance.reason,
+              matched_terms: relevance.matchedTerms,
+            },
           },
         });
         if (created.duplicate) {
@@ -320,10 +357,31 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
     }
     const messages = await outlook.listMessagesByCategory(categoryName);
     result.itemsFound += messages.length;
-    for (const message of messages) {
+    const messagesToSync = messages.slice(0, itemLimit);
+    if (messages.length > messagesToSync.length) {
+      result.itemsSkipped += messages.length - messagesToSync.length;
+      result.skippedItems.push({
+        externalId: `outlook:${categoryName}:safety-cap`,
+        title: categoryName,
+        reason: `safety_cap_${itemLimit}`,
+      });
+    }
+    for (const message of messagesToSync) {
       const externalId = `outlook:${message.id}`;
       try {
         const formatted = formatOutlookMessage(message);
+        const relevance = emailMatchesAryvaScope({
+          config,
+          title: formatted.title,
+          content: formatted.content,
+          from: formatted.from,
+          to: formatted.to,
+        });
+        if (!relevance.matches) {
+          result.itemsSkipped += 1;
+          result.skippedItems.push({ externalId, title: formatted.title, reason: relevance.reason });
+          continue;
+        }
         const created = await createEmailSource({
           config,
           connectorType: "outlook",
@@ -341,6 +399,10 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
             outlook_received_at: message.receivedDateTime,
             outlook_sent_at: message.sentDateTime,
             outlook_synced_at: new Date().toISOString(),
+            aryva_relevance: {
+              reason: relevance.reason,
+              matched_terms: relevance.matchedTerms,
+            },
           },
         });
         if (created.duplicate) {

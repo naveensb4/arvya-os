@@ -32,9 +32,9 @@ export default async function Page({ params }: PageProps) {
         <Metric label="Brain Health" value={dashboard.brainHealth} />
         <Metric label="Last Source Ingestion" value={formatDate(dashboard.latestOperationalSource?.createdAt)} />
         <Metric label="New User Sources 24h" value={dashboard.newOperationalSources24h} />
-        <Metric label="Overdue Action Loops" value={dashboard.overdueLoops.length} />
-        <Metric label="Loops To Review" value={dashboard.reviewBacklog.length} />
-        <Metric label="Due Next 7 Days" value={dashboard.dueSoonLoops.length} />
+        <Metric label="Overdue Action Loops" value={dashboard.overdueLoops.length} href={`/brains/${selectedBrainId}/open-loops?filter=overdue`} />
+        <Metric label="Loops To Review" value={dashboard.reviewBacklog.length} href={`/brains/${selectedBrainId}/open-loops?filter=needs_review`} />
+        <Metric label="Due Next 7 Days" value={dashboard.dueSoonLoops.length} href={`/brains/${selectedBrainId}/open-loops?filter=due_soon`} />
       </div>
 
       <section className="mt-6 rounded-2xl bg-stone-950 p-5 text-white">
@@ -99,7 +99,7 @@ export default async function Page({ params }: PageProps) {
         />
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+      <div className="mt-6 grid gap-6 xl:grid-cols-4">
         <MemoryListPanel
           title="Risks / Dropped Balls"
           items={dashboard.risks}
@@ -114,6 +114,11 @@ export default async function Page({ params }: PageProps) {
           title="Product / Market Signals"
           items={dashboard.productInsights}
           emptyText="No product insights captured yet."
+        />
+        <MemoryListPanel
+          title="Outcome Learnings"
+          items={dashboard.outcomeLearnings}
+          emptyText="No closed-loop outcomes captured yet."
         />
       </div>
 
@@ -142,6 +147,7 @@ export default async function Page({ params }: PageProps) {
                 memory={memory}
                 source={memory.sourceItemId ? sourceById.get(memory.sourceItemId) : undefined}
                 showEvidence={false}
+                showEditControls={false}
               />
             ))}
             {snapshot.memoryObjects.length === 0 ? <Empty text="No memory captured yet." /> : null}
@@ -182,13 +188,14 @@ async function getDashboardSnapshot(brainId: string) {
   }
 }
 
-function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-2xl bg-stone-50 p-4">
+function Metric({ label, value, href }: { label: string; value: number | string; href?: string }) {
+  const content = (
+    <div className="rounded-2xl bg-stone-50 p-4 transition hover:bg-stone-100">
       <p className="text-3xl font-semibold">{value}</p>
       <p className="mt-1 text-xs uppercase tracking-widest text-stone-500">{label}</p>
     </div>
   );
+  return href ? <Link href={href}>{content}</Link> : content;
 }
 
 function formatDate(value?: string | null) {

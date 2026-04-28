@@ -101,6 +101,36 @@ async function main() {
   assert.equal(closedLoop?.outcome, "Deck sent to Jane Investor after verification.");
   assert.ok(closedLoop?.closedAt, "expected closed_at to persist");
 
+  const memoriesAfterClose = await repository.listMemoryObjects(brain.id);
+  const outcomeMemory = memoriesAfterClose.find(
+    (memory) =>
+      memory.properties?.memory_source === "open_loop_outcome" &&
+      memory.properties?.openLoopId === loopToClose.id,
+  );
+  assert.ok(outcomeMemory, "expected closed loop outcome to become durable memory");
+  assert.match(outcomeMemory.description, /Deck sent to Jane Investor/);
+  assert.equal(outcomeMemory.sourceItemId, loopToClose.sourceItemId);
+
+  await updateOpenLoopStatus(
+    brain.id,
+    loopToClose.id,
+    "closed",
+    "Deck sent to Jane Investor after verification.",
+  );
+  const outcomeMemoriesAfterRetry = (await repository.listMemoryObjects(brain.id)).filter(
+    (memory) =>
+      memory.properties?.memory_source === "open_loop_outcome" &&
+      memory.properties?.openLoopId === loopToClose.id,
+  );
+  assert.equal(outcomeMemoriesAfterRetry.length, 1, "expected outcome memory promotion to be idempotent");
+
+  const outcomeAnswer = await answerBrainQuestion(brain.id, "What happened after the deck follow-up was closed?");
+  assert.match(outcomeAnswer.answer, /Deck sent|Jane Investor|verification/i);
+  assert.ok(
+    outcomeAnswer.citations.some((citation) => citation.memoryObjectId === outcomeMemory.id),
+    "expected Ask Brain to cite outcome memory",
+  );
+
   if (originalDatabaseUrl) {
     process.env.DATABASE_URL = originalDatabaseUrl;
     resetRepositoryForTests();

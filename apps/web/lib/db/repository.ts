@@ -51,6 +51,17 @@ export type CreateMemoryObjectData = {
   status?: MemoryObjectStatus;
 };
 
+export type UpdateMemoryObjectData = Partial<{
+  sourceItemId: string | null;
+  objectType: MemoryObjectType;
+  name: string;
+  description: string;
+  properties: Record<string, unknown>;
+  sourceQuote: string | null;
+  confidence: number | null;
+  status: MemoryObjectStatus | null;
+}>;
+
 export type CreateRelationshipData = {
   brainId: string;
   fromObjectId: string;
@@ -61,6 +72,13 @@ export type CreateRelationshipData = {
   confidence?: number;
   properties?: Record<string, unknown>;
 };
+
+export type UpdateRelationshipData = Partial<{
+  sourceItemId: string | null;
+  sourceQuote: string | null;
+  confidence: number | null;
+  properties: Record<string, unknown>;
+}>;
 
 export type CreateOpenLoopData = {
   brainId: string;
@@ -391,9 +409,11 @@ export interface BrainRepository {
 
   createMemoryObjects(items: CreateMemoryObjectData[]): Promise<MemoryObject[]>;
   listMemoryObjects(brainId: string): Promise<MemoryObject[]>;
+  updateMemoryObject(memoryObjectId: string, update: UpdateMemoryObjectData): Promise<MemoryObject | null>;
 
   createRelationships(items: CreateRelationshipData[]): Promise<Relationship[]>;
   listRelationships(brainId: string): Promise<Relationship[]>;
+  updateRelationship(relationshipId: string, update: UpdateRelationshipData): Promise<Relationship | null>;
 
   createOpenLoops(items: CreateOpenLoopData[]): Promise<OpenLoop[]>;
   listOpenLoops(brainId: string): Promise<OpenLoop[]>;

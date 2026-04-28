@@ -1,6 +1,14 @@
-import { createHash } from "node:crypto";
 import { getRepository, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
+import {
+  buildDedupeKeys,
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "@/lib/workflows/source-normalization";
 
 export type EmailConnectorSyncResult = {
   itemsFound: number;
@@ -22,6 +30,15 @@ export type EmailSourceInput = {
   metadata: Record<string, unknown>;
 };
 
+const DEFAULT_ARYVA_EMAIL_KEYWORDS = ["arvya", "aryva"];
+const DEFAULT_ARYVA_EMAIL_DOMAINS = ["arvya.ai", "aryva.ai"];
+
+export type EmailRelevanceDecision = {
+  matches: boolean;
+  reason: string;
+  matchedTerms: string[];
+};
+
 export function newEmailSyncResult(): EmailConnectorSyncResult {
   return {
     itemsFound: 0,
@@ -34,8 +51,49 @@ export function newEmailSyncResult(): EmailConnectorSyncResult {
   };
 }
 
+function configStringList(config: ConnectorConfig, keys: string[], fallback: string[]) {
+  const configured = listConfigStrings(config, keys);
+  return configured.length > 0 ? configured : fallback;
+}
+
+function includesEmailDomain(haystack: string, domain: string) {
+  const escaped = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`@${escaped}\\b`, "i").test(haystack);
+}
+
+export function emailMatchesAryvaScope(input: {
+  config: ConnectorConfig;
+  title: string;
+  content: string;
+  from?: string;
+  to?: string;
+}): EmailRelevanceDecision {
+  if (input.config.config.requireAryvaRelated === false) {
+    return { matches: true, reason: "scope_check_disabled", matchedTerms: [] };
+  }
+
+  const keywords = configStringList(input.config, ["aryvaKeywords", "arvyaKeywords", "relevanceKeywords"], DEFAULT_ARYVA_EMAIL_KEYWORDS);
+  const domains = configStringList(input.config, ["aryvaDomains", "arvyaDomains", "relevanceDomains"], DEFAULT_ARYVA_EMAIL_DOMAINS);
+  const haystack = [input.title, input.from, input.to, input.content].filter(Boolean).join("\n").toLowerCase();
+  const matchedTerms = [
+    ...keywords.filter((keyword) => keyword && haystack.includes(keyword.toLowerCase())),
+    ...domains.filter((domain) => domain && includesEmailDomain(haystack, domain.toLowerCase())),
+  ];
+
+  if (matchedTerms.length === 0) {
+    return { matches: false, reason: "not_aryva_related", matchedTerms: [] };
+  }
+  return { matches: true, reason: "matched_aryva_scope", matchedTerms: [...new Set(matchedTerms)] };
+}
+
 export function hashEmailContent(content: string) {
-  return createHash("sha256").update(content).digest("hex");
+  return hashNormalizedSourceContent(content);
+}
+
+export function emailConnectorItemLimit(config: ConnectorConfig) {
+  const configured = Number(config.config.maxItems ?? config.config.max_items ?? config.config.itemLimit);
+  if (!Number.isFinite(configured)) return 50;
+  return Math.max(1, Math.min(50, Math.floor(configured)));
 }
 
 export function listConfigStrings(config: ConnectorConfig, keys: string[]) {
@@ -71,26 +129,56 @@ async function hasDuplicateEmailSource(input: {
   brainId: string;
   connectorType: "gmail" | "outlook";
   externalId: string;
-  hash: string;
+  title: string;
+  content: string;
+  externalUri?: string;
+  metadata: Record<string, unknown>;
 }) {
   const sources = await getRepository().listSourceItems(input.brainId);
-  return sources.find((source) => {
-    const metadata = source.metadata ?? {};
-    return (
-      metadata.connector_type === input.connectorType &&
-      (metadata.external_id === input.externalId || metadata.content_hash === input.hash)
-    );
+  const fingerprint = sourceFingerprint({
+    title: input.title,
+    content: input.content,
+    externalUri: input.externalUri,
+    metadata: input.metadata,
   });
+  return sources.find((source) => sourceMatchesFingerprint(source, fingerprint, { connectorScoped: true }));
 }
 
 export async function createEmailSource(input: EmailSourceInput) {
   const repository = getRepository();
-  const hash = hashEmailContent(input.content);
+  const normalizedContent = normalizeSourceContent(input.content);
+  const hash = hashEmailContent(normalizedContent);
+  const occurredAt = typeof input.metadata.occurred_at === "string" ? input.metadata.occurred_at : undefined;
+  const traceMetadata = buildSourceTraceMetadata({
+    sourceKind: "email",
+    sourceSystem: input.connectorType,
+    connectorType: input.connectorType,
+    connectorConfigId: input.config.id,
+    externalId: input.externalId,
+    externalUri: input.externalUri,
+    originalTitle: input.title,
+    occurredAt,
+  });
+  const metadata = {
+    domain_type: "email",
+    ...mergeSourceTraceMetadata(traceMetadata, input.metadata as Record<string, unknown>),
+    content_hash: hash,
+    source_content_hash: hash,
+  };
+  const fingerprint = sourceFingerprint({
+    title: input.title,
+    content: normalizedContent,
+    externalUri: input.externalUri,
+    metadata,
+  });
   const duplicate = await hasDuplicateEmailSource({
     brainId: input.config.brainId,
     connectorType: input.connectorType,
     externalId: input.externalId,
-    hash,
+    title: input.title,
+    content: normalizedContent,
+    externalUri: input.externalUri,
+    metadata,
   });
   if (duplicate) {
     await processSourceItemIntoBrain({
@@ -104,16 +192,11 @@ export async function createEmailSource(input: EmailSourceInput) {
     brainId: input.config.brainId,
     type: "email",
     title: input.title,
-    content: input.content,
+    content: normalizedContent,
     externalUri: input.externalUri,
     metadata: {
-      source_kind: "email",
-      domain_type: "email",
-      connector_type: input.connectorType,
-      connector_config_id: input.config.id,
-      external_id: input.externalId,
-      content_hash: hash,
-      ...input.metadata,
+      ...metadata,
+      dedupe_keys: buildDedupeKeys(fingerprint),
     },
   });
 

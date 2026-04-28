@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./ingestion-agent": "./src/ingestion-agent.ts",
+    "./evals/ingestion-extraction-fixtures": "./src/evals/ingestion-extraction-fixtures.ts",
     "./ask-brain-agent": "./src/ask-brain-agent.ts",
     "./daily-brief-agent": "./src/daily-brief-agent.ts",
     "./follow-up-agent": "./src/follow-up-agent.ts",

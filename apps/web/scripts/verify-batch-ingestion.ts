@@ -69,6 +69,10 @@ async function main() {
     assert.equal(investorResult?.sourceItem?.metadata?.occurred_at, "2026-04-25");
     assert.equal(investorResult?.sourceItem?.metadata?.domain_type, "investor_call");
     assert.equal(investorResult?.sourceItem?.metadata?.topic, "Intro Call");
+    assert.equal(investorResult?.sourceItem?.metadata?.source_system, "batch_upload");
+    assert.equal((investorResult?.sourceItem?.metadata?.source_trace as Record<string, unknown> | undefined)?.original_title, fixtureNames[0]);
+    assert.ok(Array.isArray(investorResult?.sourceItem?.metadata?.dedupe_keys));
+    assert.equal(investorResult?.sourceItem?.content, investorResult?.sourceItem?.content.trim());
     assert.ok(
       investorResult?.openLoops.some((loop) => /deck|demo link|circle back/i.test(loop.title)),
       "expected obvious investor follow-ups",
@@ -89,6 +93,14 @@ async function main() {
     assert.equal(duplicateResults[0].status, "failed");
     assert.equal(duplicateResults[0].duplicate, true);
     assert.match(duplicateResults[0].error ?? "", /Duplicate source already ingested/);
+    assert.equal((await repository.listSourceItems(brain.id)).length, 2);
+
+    const renamedDuplicateResults = await ingestTranscriptBatch({
+      brainId: brain.id,
+      files: [{ ...files[0], fileName: "2026-04-25__Investor__DormRoomFund-Annie__Renamed-Intro-Call.txt" }],
+      sourceType: "transcript",
+    });
+    assert.equal(renamedDuplicateResults[0].duplicate, true);
     assert.equal((await repository.listSourceItems(brain.id)).length, 2);
 
     console.log("Batch ingestion verification passed.");

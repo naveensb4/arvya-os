@@ -1,6 +1,8 @@
-# Arvya Deal OS
+# Arvya OS
 
-Brain-first operating system for Arvya Company Brain today and customer Deal Brains later.
+AI operating system for Arvya Company Brain today and customer Deal Brains later.
+
+The immediate product target is for Arvya Company Brain to run the company as a source-backed, closed-loop operating layer: capture company artifacts, make them queryable, track open loops, surface drift, draft next actions, and learn from outcomes.
 
 ## What Works Now
 

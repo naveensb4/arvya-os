@@ -1,9 +1,18 @@
-import { createHash } from "node:crypto";
 import { runSourceIngestionWorkflow } from "@arvya/agents/ingestion-agent";
 import type { IngestSourceInput, ModelProvider } from "@arvya/core";
 import { getAiClient } from "@/lib/ai";
+import { mergeMemoryObjectsForIngestion, mergeRelationshipsForIngestion } from "@/lib/brain/memory-quality";
 import { getRepository } from "@/lib/db/repository";
 import { buildEmbeddingText } from "@/lib/retrieval";
+import {
+  buildDedupeKeys,
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "./source-normalization";
 
 const LIVE_EXTRACTION_MAX_CHARS = 20_000;
 
@@ -13,28 +22,6 @@ function chunkText(content: string, maxLength = 1200): string[] {
     chunks.push(content.slice(index, index + maxLength));
   }
   return chunks.length ? chunks : [content];
-}
-
-function hashSourceContent(input: { title: string; content: string }) {
-  return createHash("sha256")
-    .update(input.title)
-    .update("\0")
-    .update(input.content)
-    .digest("hex");
-}
-
-function stringMetadata(value: unknown) {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function sourceFingerprint(input: IngestSourceIntoBrainInput) {
-  const metadata = input.metadata ?? {};
-  return {
-    externalUri: input.externalUri,
-    externalId: stringMetadata(metadata.external_id),
-    contentHash: stringMetadata(metadata.content_hash) ?? stringMetadata(metadata.fileHash) ?? hashSourceContent(input),
-    originalFilename: stringMetadata(metadata.originalFilename),
-  };
 }
 
 export type IngestSourceIntoBrainInput = IngestSourceInput & {
@@ -170,38 +157,20 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       rawInput: { sourceItemId: sourceItem.id },
     });
 
-    const memoryObjects = await repository.createMemoryObjects(
-      result.memoryObjects.map((memory) => ({
-        brainId: brain.id,
-        sourceItemId: sourceItem.id,
-        objectType: memory.objectType,
-        name: memory.name,
-        description: memory.description,
-        properties: memory.properties ?? {},
-        sourceQuote: memory.sourceQuote,
-        confidence: memory.confidence,
-        status: memory.status,
-      })),
-    );
+    const memoryObjects = await mergeMemoryObjectsForIngestion({
+      repository,
+      brainId: brain.id,
+      sourceItemId: sourceItem.id,
+      memoryObjects: result.memoryObjects,
+    });
 
-    const objectByName = new Map(memoryObjects.map((memory) => [memory.name.toLowerCase(), memory]));
-    const relationships = await repository.createRelationships(
-      result.relationships.flatMap((relationship) => {
-        const from = objectByName.get(relationship.fromName.toLowerCase());
-        const to = objectByName.get(relationship.toName.toLowerCase());
-        if (!from || !to) return [];
-        return [{
-          brainId: brain.id,
-          fromObjectId: from.id,
-          toObjectId: to.id,
-          relationshipType: relationship.relationshipType,
-          sourceItemId: sourceItem.id,
-          sourceQuote: relationship.sourceQuote,
-          confidence: relationship.confidence,
-          properties: relationship.properties ?? {},
-        }];
-      }),
-    );
+    const relationships = await mergeRelationshipsForIngestion({
+      repository,
+      brainId: brain.id,
+      sourceItemId: sourceItem.id,
+      memoryObjects,
+      relationships: result.relationships,
+    });
 
     const openLoops = await repository.createOpenLoops(
       result.openLoops.map((loop) => ({
@@ -274,18 +243,21 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
 
 export async function ingestSourceIntoBrain(input: IngestSourceIntoBrainInput) {
   const repository = getRepository();
-  const fingerprint = sourceFingerprint(input);
-  const existingSources = await repository.listSourceItems(input.brainId);
-  const duplicateSource = existingSources.find((source) => {
-    const metadata = source.metadata ?? {};
-    return (
-      (fingerprint.externalUri && source.externalUri === fingerprint.externalUri) ||
-      (fingerprint.externalId && metadata.external_id === fingerprint.externalId) ||
-      (fingerprint.originalFilename && metadata.originalFilename === fingerprint.originalFilename) ||
-      metadata.content_hash === fingerprint.contentHash ||
-      metadata.fileHash === fingerprint.contentHash
-    );
+  const normalizedContent = normalizeSourceContent(input.content);
+  const traceMetadata = buildSourceTraceMetadata({
+    sourceKind: input.type,
+    sourceSystem: String(input.metadata?.source_system ?? "manual_ingest"),
+    connectorType: typeof input.metadata?.connector_type === "string" ? input.metadata.connector_type : undefined,
+    connectorConfigId: typeof input.metadata?.connector_config_id === "string" ? input.metadata.connector_config_id : undefined,
+    externalId: typeof input.metadata?.external_id === "string" ? input.metadata.external_id : undefined,
+    externalUri: input.externalUri,
+    originalTitle: input.title,
+    occurredAt: typeof input.metadata?.occurred_at === "string" ? input.metadata.occurred_at : undefined,
   });
+  const metadata = mergeSourceTraceMetadata(traceMetadata, input.metadata as Record<string, unknown> | undefined);
+  const fingerprint = sourceFingerprint({ ...input, content: normalizedContent, metadata });
+  const existingSources = await repository.listSourceItems(input.brainId);
+  const duplicateSource = existingSources.find((source) => sourceMatchesFingerprint(source, fingerprint));
 
   if (duplicateSource) {
     return processSourceItemIntoBrain({
@@ -298,12 +270,14 @@ export async function ingestSourceIntoBrain(input: IngestSourceIntoBrainInput) {
     brainId: input.brainId,
     title: input.title,
     type: input.type,
-    content: input.content,
+    content: normalizedContent,
     externalUri: input.externalUri,
     storagePath: input.storagePath,
     metadata: {
-      ...(input.metadata ?? {}),
+      ...metadata,
+      source_content_hash: hashNormalizedSourceContent(normalizedContent),
       content_hash: fingerprint.contentHash,
+      dedupe_keys: buildDedupeKeys(fingerprint),
     },
   });
 

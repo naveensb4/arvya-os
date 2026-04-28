@@ -42,9 +42,9 @@ export const brainTemplates: BrainTemplate[] = [
     kind: "company",
     name: "Arvya Company Brain",
     description:
-      "Internal operating brain that compounds investor, customer, advisor, product, marketing, and engineering context.",
+      "Company-wide operating brain that captures every important artifact, monitors open loops, surfaces drift, and compounds Arvya's memory.",
     thesisStarter:
-      "A living operating brain for Arvya that compounds every investor, customer, advisor, product, and engineering signal into a single source-backed memory.",
+      "The AI operating system for Arvya: every meeting, email, doc, product decision, customer signal, investor conversation, and agent output becomes source-backed memory that drives closed-loop execution.",
     defaultSourceTypes: [
       "transcript",
       "email",
@@ -72,6 +72,22 @@ export const brainTemplates: BrainTemplate[] = [
           "Draft follow-up messages for open loops; nothing leaves the system without human approval.",
         trigger: "manual",
         status: "live",
+      },
+      {
+        slug: "company_drift_review",
+        label: "Company Drift Review",
+        description:
+          "Compare active work against priorities, commitments, customer evidence, roadmap, and risks to surface misalignment.",
+        trigger: "scheduled",
+        status: "planned",
+      },
+      {
+        slug: "outcome_learning",
+        label: "Outcome Learning",
+        description:
+          "Close loops with outcomes and feed what happened back into memory, future briefs, and recommendations.",
+        trigger: "manual",
+        status: "planned",
       },
     ],
     memoryLensOrder: [

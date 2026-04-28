@@ -1,7 +1,15 @@
-import { createHash } from "node:crypto";
 import { parseTranscriptFilename } from "@/lib/workflows/batch-ingestion";
 import { getRepository, type ConnectorConfig } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
+import {
+  buildDedupeKeys,
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "@/lib/workflows/source-normalization";
 import { connectorCredentialStore } from "./credential-store";
 
 export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
@@ -64,10 +72,6 @@ function requireGoogleOAuthEnv() {
   return { clientId, clientSecret, redirectUri };
 }
 
-function contentHash(content: string) {
-  return createHash("sha256").update(content).digest("hex");
-}
-
 function extensionFor(fileName: string) {
   return fileName.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
 }
@@ -92,6 +96,20 @@ function folderIdsFromConfig(config: ConnectorConfig) {
     return raw.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
   }
   return [];
+}
+
+const DEFAULT_DRIVE_ITEM_LIMIT = 50;
+const DRIVE_HARD_CAP = 200;
+
+function googleDriveItemLimit(config: ConnectorConfig) {
+  const configured = Number(config.config.maxItems ?? config.config.max_items ?? config.config.itemLimit);
+  if (!Number.isFinite(configured)) return DEFAULT_DRIVE_ITEM_LIMIT;
+  return Math.max(1, Math.min(DRIVE_HARD_CAP, Math.floor(configured)));
+}
+
+function isBroadDriveFolderId(folderId: string) {
+  const normalized = folderId.trim().toLowerCase();
+  return normalized === "" || normalized === "root" || normalized === "my-drive" || normalized === "shared-with-me";
 }
 
 function isExpired(credentials: GoogleDriveCredentials) {
@@ -232,15 +250,21 @@ async function getGoogleDriveClient(config: ConnectorConfig): Promise<GoogleDriv
   });
 }
 
-async function hasDuplicateSource(input: { brainId: string; driveFileId: string; hash: string }) {
+async function hasDuplicateSource(input: {
+  brainId: string;
+  driveFileId: string;
+  fingerprint: ReturnType<typeof sourceFingerprint>;
+}) {
   const sources = await getRepository().listSourceItems(input.brainId);
   return sources.find((source) => {
     const metadata = source.metadata ?? {};
     return (
-      metadata.connector_type === "google_drive" &&
-      (metadata.drive_file_id === input.driveFileId ||
-        metadata.external_id === `google_drive:${input.driveFileId}` ||
-        metadata.content_hash === input.hash)
+      sourceMatchesFingerprint(source, input.fingerprint) ||
+      (
+        metadata.connector_type === "google_drive" &&
+        (metadata.drive_file_id === input.driveFileId ||
+          metadata.external_id === `google_drive:${input.driveFileId}`)
+      )
     );
   });
 }
@@ -249,10 +273,15 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
   const repository = getRepository();
   const folderIds = folderIdsFromConfig(config);
   if (folderIds.length === 0) {
-    throw new Error("Google Drive sync requires at least one configured folder ID.");
+    throw new Error('Google Drive sync requires at least one configured folder ID. Create an "Arvya Brain" folder in Drive, drop 5-10 transcripts into it, then save that folder ID.');
+  }
+  const broadFolders = folderIds.filter(isBroadDriveFolderId);
+  if (broadFolders.length > 0) {
+    throw new Error(`Google Drive sync refused: folder "${broadFolders[0]}" is a top-level/shared root. Point sync at a specific transcript folder so we never ingest unrelated files.`);
   }
 
   const drive = client ?? await getGoogleDriveClient(config);
+  const itemLimit = googleDriveItemLimit(config);
   const result: GoogleDriveSyncResult = {
     itemsFound: 0,
     itemsIngested: 0,
@@ -266,8 +295,18 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
   for (const folderId of folderIds) {
     const files = await drive.listFiles(folderId);
     result.itemsFound += files.length;
+    const filesToSync = files.slice(0, itemLimit);
+    if (files.length > filesToSync.length) {
+      const skippedByCap = files.length - filesToSync.length;
+      result.itemsSkipped += skippedByCap;
+      result.skippedFiles.push({
+        fileId: `google_drive:${folderId}:safety-cap`,
+        fileName: folderId,
+        reason: `safety_cap_${itemLimit}`,
+      });
+    }
 
-    for (const file of files) {
+    for (const file of filesToSync) {
       const extension = extensionFor(file.name);
       if (!SUPPORTED_EXTENSIONS.has(extension)) {
         result.itemsSkipped += 1;
@@ -276,12 +315,33 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
       }
 
       try {
-        const content = await drive.downloadText(file.id);
-        const hash = contentHash(content);
+        const content = normalizeSourceContent(await drive.downloadText(file.id));
+        const hash = hashNormalizedSourceContent(content);
+        const parsed = parseTranscriptFilename(file.name);
+        const traceMetadata = buildSourceTraceMetadata({
+          sourceKind: "transcript",
+          sourceSystem: "google_drive",
+          connectorType: "google_drive",
+          connectorConfigId: config.id,
+          externalId: `google_drive:${file.id}`,
+          externalUri: file.webViewLink,
+          originalTitle: file.name,
+          occurredAt: parsed.occurredAt,
+        });
+        const fingerprint = sourceFingerprint({
+          title: cleanTitle(file.name, parsed),
+          content,
+          externalUri: file.webViewLink,
+          metadata: {
+            ...traceMetadata,
+            content_hash: hash,
+            source_content_hash: hash,
+          },
+        });
         const duplicate = await hasDuplicateSource({
           brainId: config.brainId,
           driveFileId: file.id,
-          hash,
+          fingerprint,
         });
         if (duplicate) {
           await processSourceItemIntoBrain({
@@ -293,32 +353,28 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
           continue;
         }
 
-        const parsed = parseTranscriptFilename(file.name);
         const sourceItem = await repository.createSourceItem({
           brainId: config.brainId,
           type: "transcript",
           title: cleanTitle(file.name, parsed),
           content,
           externalUri: file.webViewLink,
-          metadata: {
-            source_kind: "transcript",
+          metadata: mergeSourceTraceMetadata(traceMetadata, {
             domain_type: parsed.domainType ?? "transcript",
-            occurred_at: parsed.occurredAt,
             source_type_label: parsed.sourceTypeLabel,
             company_person_text: parsed.companyPersonText,
             topic: parsed.topic,
-            connector_type: "google_drive",
-            connector_config_id: config.id,
-            external_id: `google_drive:${file.id}`,
             drive_file_id: file.id,
             drive_folder_id: folderId,
             filename: file.name,
             mime_type: file.mimeType,
             content_hash: hash,
+            source_content_hash: hash,
+            dedupe_keys: buildDedupeKeys(fingerprint),
             parsed_metadata: parsed,
             google_drive_modified_time: file.modifiedTime,
             google_drive_synced_at: new Date().toISOString(),
-          },
+          }),
         });
 
         const ingested = await processSourceItemIntoBrain({

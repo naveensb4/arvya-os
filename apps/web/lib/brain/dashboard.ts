@@ -25,6 +25,9 @@ export type DashboardModel = {
   risks: MemoryObject[];
   questions: MemoryObject[];
   productInsights: MemoryObject[];
+  outcomeLearnings: MemoryObject[];
+  investorLoops: OpenLoop[];
+  customerLoops: OpenLoop[];
   commandSummary: string;
   failedSyncs: number;
   enabledConnectors: ConnectorConfig[];
@@ -59,6 +62,13 @@ export function buildDashboardModel({
   const productInsights = snapshot.memoryObjects
     .filter((memory) => memory.objectType === "product_insight" || memory.objectType === "insight")
     .slice(0, 5);
+  const outcomeLearnings = snapshot.memoryObjects
+    .filter((memory) => memory.properties?.memory_source === "open_loop_outcome")
+    .slice(0, 5);
+  const investorLoops = approvedActionQueue.filter((loop) => loop.loopType === "investor").slice(0, 5);
+  const customerLoops = approvedActionQueue
+    .filter((loop) => loop.loopType === "sales" || loop.loopType === "product")
+    .slice(0, 5);
   const failedSyncs = syncRuns.filter((run) => run.status === "failed").length;
   const enabledConnectors = connectorConfigs.filter((config) => config.syncEnabled);
   const failingConnectors = connectorConfigs.filter((config) => config.status === "error");
@@ -80,6 +90,9 @@ export function buildDashboardModel({
     risks,
     questions,
     productInsights,
+    outcomeLearnings,
+    investorLoops,
+    customerLoops,
     commandSummary: buildCommandSummary({
       overdueCount: overdueLoops.length,
       reviewCount: reviewBacklog.length,

@@ -34,6 +34,7 @@ export default async function Page({ params, searchParams }: PageProps) {
   const counts = {
     needsReview: snapshot.openLoops.filter((loop) => loop.status === "needs_review").length,
     overdue: snapshot.openLoops.filter(isOverdue).length,
+    dueSoon: snapshot.openLoops.filter(isDueSoon).length,
     highPriority: snapshot.openLoops.filter((loop) => loop.priority === "high" || loop.priority === "critical").length,
     dismissed: snapshot.openLoops.filter((loop) => loop.status === "dismissed").length,
   };
@@ -52,6 +53,7 @@ export default async function Page({ params, searchParams }: PageProps) {
         <div className="flex flex-wrap gap-2">
           <FilterLink brainId={selectedBrainId} label={`Needs review (${counts.needsReview})`} filter="needs_review" />
           <FilterLink brainId={selectedBrainId} label={`Overdue (${counts.overdue})`} filter="overdue" />
+          <FilterLink brainId={selectedBrainId} label={`Due soon (${counts.dueSoon})`} filter="due_soon" />
           <FilterLink brainId={selectedBrainId} label={`High priority (${counts.highPriority})`} filter="high_priority" />
           <FilterLink brainId={selectedBrainId} label={`Dismissed (${counts.dismissed})`} filter="dismissed" />
           <FilterLink brainId={selectedBrainId} label="All" />
@@ -146,9 +148,10 @@ function applyFilters(
   return loops.filter((loop) => {
     if (filters.filter === "needs_review" && loop.status !== "needs_review") return false;
     if (filters.filter === "overdue" && !isOverdue(loop)) return false;
+    if (filters.filter === "due_soon" && !isDueSoon(loop)) return false;
     if (filters.filter === "high_priority" && loop.priority !== "high" && loop.priority !== "critical") return false;
     if (filters.filter === "dismissed" && loop.status !== "dismissed") return false;
-    if (filters.owner && loop.owner !== filters.owner) return false;
+    if (filters.owner && loop.owner?.toLowerCase() !== filters.owner.toLowerCase()) return false;
     if (filters.source && loop.sourceItemId !== filters.source) return false;
     if (filters.filter === "source" && !sourceById.has(loop.sourceItemId ?? "")) return false;
     return true;
@@ -158,6 +161,11 @@ function applyFilters(
 function isOverdue(loop: OpenLoop) {
   if (!loop.dueDate || loop.status === "done" || loop.status === "dismissed" || loop.status === "closed") return false;
   return new Date(loop.dueDate).getTime() < Date.now();
+}
+
+function isDueSoon(loop: OpenLoop) {
+  if (!loop.dueDate || isOverdue(loop) || loop.status === "done" || loop.status === "dismissed" || loop.status === "closed") return false;
+  return new Date(loop.dueDate).getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000;
 }
 
 function FilterLink({

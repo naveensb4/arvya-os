@@ -3,6 +3,8 @@ import { getRepository, type ConnectorConfig } from "@/lib/db/repository";
 import {
   createEmailSource,
   decodeOAuthState,
+  emailConnectorItemLimit,
+  emailMatchesAryvaScope,
   encodeOAuthState,
   listConfigStrings,
   newEmailSyncResult,
@@ -265,15 +267,37 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
   const gmail = client ?? await getGmailClient(config);
   const labels = await resolveGmailLabels(configuredLabels, gmail);
   const result = newEmailSyncResult();
+  const itemLimit = emailConnectorItemLimit(config);
 
   for (const label of labels) {
     const messages = await gmail.listMessages(label.id);
     result.itemsFound += messages.length;
-    for (const item of messages) {
+    const messagesToSync = messages.slice(0, itemLimit);
+    if (messages.length > messagesToSync.length) {
+      result.itemsSkipped += messages.length - messagesToSync.length;
+      result.skippedItems.push({
+        externalId: `gmail:${label.id}:safety-cap`,
+        title: label.name,
+        reason: `safety_cap_${itemLimit}`,
+      });
+    }
+    for (const item of messagesToSync) {
       try {
         const message = await gmail.getMessage(item.id);
         const formatted = formatGmailMessage(message);
         const externalId = `gmail:${message.id}`;
+        const relevance = emailMatchesAryvaScope({
+          config,
+          title: formatted.title,
+          content: formatted.content,
+          from: formatted.from,
+          to: formatted.to,
+        });
+        if (!relevance.matches) {
+          result.itemsSkipped += 1;
+          result.skippedItems.push({ externalId, title: formatted.title, reason: relevance.reason });
+          continue;
+        }
         const created = await createEmailSource({
           config,
           connectorType: "gmail",
@@ -292,6 +316,10 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
             occurred_at: formatted.date,
             gmail_internal_date: message.internalDate,
             gmail_synced_at: new Date().toISOString(),
+            aryva_relevance: {
+              reason: relevance.reason,
+              matched_terms: relevance.matchedTerms,
+            },
           },
         });
         if (created.duplicate) {

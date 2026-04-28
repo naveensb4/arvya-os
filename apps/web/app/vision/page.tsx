@@ -9,12 +9,12 @@ export default function VisionPage() {
         </Link>
         <p className="eyebrow mt-8 text-amber-700">Vision</p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-          Arvya Deal OS is a living Brain for high-context deal work.
+          Arvya OS is the AI operating system for Arvya Company Brain.
         </h1>
         <p className="mt-5 text-lg leading-8 text-stone-700">
-          The Brain is the core object. Sources feed the Brain. Memory is
-          structured but flexible. Agents act from the Brain. Open loops are
-          tracked until closed. Every important answer should be source-backed.
+          The Brain is the core object. Every important company artifact should
+          feed the Brain, become source-backed memory, create open loops and
+          workflows, and help agents recommend or draft the next action.
         </p>
         <section className="mt-8 grid gap-4 md:grid-cols-2">
           {[
@@ -23,7 +23,7 @@ export default function VisionPage() {
             "Run ingestion through LangGraph.",
             "Extract people, companies, facts, decisions, insights, open loops, and actions.",
             "Ask source-backed questions.",
-            "Generate daily founder briefs and inspect agent runs.",
+            "Detect drift, generate daily founder briefs, and inspect agent runs.",
           ].map((item) => (
             <div key={item} className="rounded-2xl bg-stone-50 p-4">
               {item}

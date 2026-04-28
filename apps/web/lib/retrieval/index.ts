@@ -182,7 +182,7 @@ export async function retrieveRelevantContext(
   for (const openLoop of openLoops) {
     const source = openLoop.sourceItemId ? sourceItemsById.get(openLoop.sourceItemId) : undefined;
     const score = lexicalScore(
-      `${openLoop.title} ${openLoop.description} ${openLoop.sourceQuote ?? ""} ${openLoop.suggestedAction ?? ""}`,
+      `${openLoop.title} ${openLoop.description} ${openLoop.sourceQuote ?? ""} ${openLoop.suggestedAction ?? ""} ${openLoop.outcome ?? ""}`,
       terms,
     );
     if (score > 0 || shouldSurfaceOpenLoops) {

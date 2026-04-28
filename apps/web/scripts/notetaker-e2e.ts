@@ -34,6 +34,8 @@ function expect(name: string, condition: boolean, detail?: string) {
   console.log("\n=== Full sync via mock client ===");
   const startISO = new Date(Date.now() + 30 * 60_000).toISOString();
   const endISO = new Date(Date.now() + 90 * 60_000).toISOString();
+  const mockEventId = `mock-evt-${Date.now()}`;
+  const mockMeetingUrl = `https://meet.google.com/${mockEventId}`;
   const calendar = await reuseOrCreateNotetakerCalendar({
     repository: repo,
     brainId,
@@ -43,10 +45,10 @@ function expect(name: string, condition: boolean, detail?: string) {
       source: "smoke_test_mock",
       mockEvents: [
         {
-          id: `mock-evt-${Date.now()}`,
+          id: mockEventId,
           title: "Arvya investor sync",
           description: "Mock event",
-          meeting_url: "https://meet.google.com/mock-abc-defg",
+          meeting_url: mockMeetingUrl,
           start_time: startISO,
           end_time: endISO,
           participants: [{ email: "investor@example.com" }, { email: "naveen@arvya.ai" }],
@@ -73,7 +75,7 @@ function expect(name: string, condition: boolean, detail?: string) {
   expect("sync scheduled one bot", summary?.scheduled === 1, JSON.stringify(summary));
 
   const meetings = await repo.listNotetakerMeetings({ calendarId: calendar.id });
-  const meeting = meetings[0];
+  const meeting = meetings.find((item) => item.externalEventId === mockEventId);
   expect("meeting persisted with bot id", Boolean(meeting?.recallBotId));
   expect("meeting auto_join_decision = join", meeting?.autoJoinDecision === "join");
 

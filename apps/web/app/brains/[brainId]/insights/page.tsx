@@ -20,6 +20,7 @@ export default async function Page({ params }: PageProps) {
         {insights.map((memory) => (
           <MemoryCard
             key={memory.id}
+            brainId={selectedBrainId}
             memory={memory}
             source={memory.sourceItemId ? sourceById.get(memory.sourceItemId) : undefined}
           />

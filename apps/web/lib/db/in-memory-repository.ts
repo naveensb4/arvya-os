@@ -34,10 +34,12 @@ import type {
   UpdateAgentRunData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
+  UpdateMemoryObjectData,
   UpdateNotetakerCalendarData,
   UpdateNotetakerEventData,
   UpdateNotetakerMeetingData,
   UpdateOpenLoopData,
+  UpdateRelationshipData,
   UpdateWorkflowData,
 } from "./repository";
 
@@ -320,6 +322,17 @@ export class InMemoryRepository implements BrainRepository {
     return clone(created);
   }
 
+  async updateMemoryObject(memoryObjectId: string, update: UpdateMemoryObjectData): Promise<MemoryObject | null> {
+    const memory = loadState().memories.find((item) => item.id === memoryObjectId);
+    if (!memory) return null;
+    Object.assign(memory, update, { updatedAt: now() });
+    if (update.sourceItemId === null) delete memory.sourceItemId;
+    if (update.sourceQuote === null) delete memory.sourceQuote;
+    if (update.confidence === null) delete memory.confidence;
+    if (update.status === null) delete memory.status;
+    return clone(memory);
+  }
+
   async createRelationships(items: CreateRelationshipData[]): Promise<Relationship[]> {
     const created = items.map((item) => ({
       id: nanoid(),
@@ -339,6 +352,16 @@ export class InMemoryRepository implements BrainRepository {
 
   async listRelationships(brainId: string): Promise<Relationship[]> {
     return clone(loadState().relationships.filter((item) => item.brainId === brainId));
+  }
+
+  async updateRelationship(relationshipId: string, update: UpdateRelationshipData): Promise<Relationship | null> {
+    const relationship = loadState().relationships.find((item) => item.id === relationshipId);
+    if (!relationship) return null;
+    Object.assign(relationship, update);
+    if (update.sourceItemId === null) delete relationship.sourceItemId;
+    if (update.sourceQuote === null) delete relationship.sourceQuote;
+    if (update.confidence === null) delete relationship.confidence;
+    return clone(relationship);
   }
 
   async createOpenLoops(items: CreateOpenLoopData[]): Promise<OpenLoop[]> {
@@ -473,7 +496,7 @@ export class InMemoryRepository implements BrainRepository {
       })),
       ...loadState().openLoops.map((loop) => ({
         openLoop: clone(loop),
-        score: lexicalScore(`${loop.title} ${loop.description} ${loop.sourceQuote ?? ""}`, terms),
+        score: lexicalScore(`${loop.title} ${loop.description} ${loop.sourceQuote ?? ""} ${loop.outcome ?? ""}`, terms),
         reason: "lexical" as const,
       })),
       ...loadState().sources.map((source) => ({

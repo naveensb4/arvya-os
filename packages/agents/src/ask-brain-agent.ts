@@ -81,6 +81,10 @@ function citationKey(citation: SourceCitation) {
   return `${citation.sourceItemId}:${citation.evidence.replace(/\s+/g, " ").trim().toLowerCase()}`;
 }
 
+function isOutcomeQuestion(question: string) {
+  return /\b(closed|done|resolved|outcome|happened|completed|finished|after)\b/i.test(question);
+}
+
 export async function answerFromContext(input: {
   question: string;
   memoryObjects: MemoryObject[];
@@ -131,6 +135,7 @@ export async function answerFromContext(input: {
           status: loop.status,
           priority: loop.priority,
           sourceQuote: loop.sourceQuote,
+          outcome: loop.outcome,
           confidence: loop.confidence ?? 0.7,
           sourceTitle: sourceFor(input.sourceItems, loop.sourceItemId)?.title ?? "Unknown source",
           createdAt: loop.createdAt,
@@ -176,17 +181,26 @@ export async function answerFromContext(input: {
     };
   }
 
-  const citations = [
-    ...input.openLoops.slice(0, 4).map((loop) => citationFromLoop(loop, input.sourceItems)),
-    ...input.memoryObjects.slice(0, 4).map((memory) => citationFromMemory(memory, input.sourceItems)),
-  ].slice(0, 4);
+  const outcomeMemories = input.memoryObjects.filter(
+    (memory) => memory.properties?.memory_source === "open_loop_outcome",
+  );
+  const preferOutcomeMemory = isOutcomeQuestion(input.question) && outcomeMemories.length > 0;
+  const answerMemories = preferOutcomeMemory ? outcomeMemories : input.memoryObjects;
+  const citations = preferOutcomeMemory
+    ? answerMemories.slice(0, 4).map((memory) => citationFromMemory(memory, input.sourceItems))
+    : [
+        ...input.openLoops.slice(0, 4).map((loop) => citationFromLoop(loop, input.sourceItems)),
+        ...answerMemories.slice(0, 4).map((memory) => citationFromMemory(memory, input.sourceItems)),
+      ].slice(0, 4);
 
   return {
     question: input.question,
     answer:
-      input.openLoops.length > 0
+      preferOutcomeMemory
+        ? answerMemories.map((memory) => memory.description).join(" ")
+      : input.openLoops.length > 0
         ? input.openLoops.map((loop) => loop.description).join(" ")
-        : input.memoryObjects.map((memory) => memory.description).join(" "),
+        : answerMemories.map((memory) => memory.description).join(" "),
     citations,
     uncertain: false,
     followUp:

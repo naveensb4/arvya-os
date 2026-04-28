@@ -3,6 +3,18 @@ import { dailyBriefSchema } from "@arvya/core";
 import { generateDailyFounderBrief } from "@/lib/brain/store";
 
 export async function POST(request: Request) {
-  const payload = dailyBriefSchema.parse(await request.json());
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+
+  const parsed = dailyBriefSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid daily brief payload", issues: parsed.error.issues }, { status: 400 });
+  }
+
+  const payload = parsed.data;
   return NextResponse.json(await generateDailyFounderBrief(payload.brainId));
 }

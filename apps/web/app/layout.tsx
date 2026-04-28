@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Arvya Deal OS",
-  description: "A living Brain platform for high-context deal workflows.",
+  title: "Arvya OS",
+  description: "The AI operating system for Arvya Company Brain.",
 };
 
 export default function RootLayout({

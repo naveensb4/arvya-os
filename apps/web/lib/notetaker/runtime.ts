@@ -1,6 +1,15 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { getRepository, type BrainRepository, type NotetakerAutoJoinMode, type NotetakerCalendar, type NotetakerMeeting, type NotetakerProvider } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
+import {
+  buildDedupeKeys,
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "@/lib/workflows/source-normalization";
 import { listProviderCalendarEvents } from "./calendar-providers";
 
 export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
@@ -105,7 +114,7 @@ function boolValue(value: unknown) {
 }
 
 function contentHash(content: string) {
-  return createHash("sha256").update(content).digest("hex");
+  return hashNormalizedSourceContent(content);
 }
 
 function recallBaseUrl() {
@@ -126,7 +135,9 @@ export function verifyRecallWebhookSignature(input: {
   now?: number;
 }) {
   const secret = process.env.RECALL_WEBHOOK_SECRET?.trim();
-  if (!secret) return true;
+  if (!secret) {
+    return process.env.NODE_ENV !== "production" && process.env.VERCEL_ENV !== "production";
+  }
   if (!input.signature) return false;
   if (!input.webhookId || !input.webhookTimestamp) return false;
   if (!secret.startsWith("whsec_")) return false;
@@ -485,6 +496,40 @@ async function findMeetingForEvent(input: { brainId: string; botId?: string; cal
   );
 }
 
+async function findBrainAndMeetingForEvent(input: {
+  brainHint?: string;
+  botId?: string;
+  calendarEventId?: string;
+  externalEventId?: string;
+}) {
+  const repository = getRepository();
+  if (input.brainHint) {
+    const meeting = await findMeetingForEvent({
+      brainId: input.brainHint,
+      botId: input.botId,
+      calendarEventId: input.calendarEventId,
+      externalEventId: input.externalEventId,
+    });
+    return { brainId: input.brainHint, meeting };
+  }
+
+  const matches = [];
+  for (const brain of await repository.listBrains()) {
+    const meeting = await findMeetingForEvent({
+      brainId: brain.id,
+      botId: input.botId,
+      calendarEventId: input.calendarEventId,
+      externalEventId: input.externalEventId,
+    });
+    if (meeting) matches.push({ brainId: brain.id, meeting });
+  }
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    throw new Error("Recall webhook matched multiple Brains. Include brain_id in the webhook metadata.");
+  }
+  throw new Error("Recall webhook could not be mapped to a Brain. Include brain_id in the bot metadata or schedule the meeting first.");
+}
+
 export async function runNotetakerCalendarSync(options: { client?: RecallClient } = {}) {
   const repository = getRepository();
   const client = getRecallClient(options);
@@ -666,13 +711,45 @@ export async function ingestNotetakerTranscript(input: {
     transcriptId: input.transcriptId,
     payload: input.payload,
   });
-  if (!transcript.text.trim()) throw new Error("Transcript is empty.");
+  const normalizedTranscriptText = normalizeSourceContent(transcript.text);
+  if (!normalizedTranscriptText) throw new Error("Transcript is empty.");
 
-  const externalId = `recall:${input.transcriptId ?? transcript.transcriptId ?? input.botId ?? meeting?.recallBotId ?? contentHash(transcript.text)}`;
-  const hash = contentHash(transcript.text);
+  const externalId = `recall:${input.transcriptId ?? transcript.transcriptId ?? input.botId ?? meeting?.recallBotId ?? contentHash(normalizedTranscriptText)}`;
+  const hash = contentHash(normalizedTranscriptText);
+  const metadata = mergeSourceTraceMetadata(
+    buildSourceTraceMetadata({
+      sourceKind: "transcript",
+      sourceSystem: "recall",
+      connectorType: "recall",
+      externalId,
+      externalUri: meeting?.meetingUrl ?? undefined,
+      originalTitle: meeting?.title,
+      occurredAt: meeting?.startTime,
+    }),
+    {
+      domain_type: "meeting_transcript",
+      content_hash: hash,
+      source_content_hash: hash,
+      recall_bot_id: input.botId ?? meeting?.recallBotId,
+      recall_transcript_id: input.transcriptId ?? transcript.transcriptId,
+      recall_calendar_event_id: meeting?.recallCalendarEventId,
+      external_event_id: meeting?.externalEventId,
+      notetaker_meeting_id: meeting?.id,
+      participants: meeting?.participants ?? [],
+      meeting_url: meeting?.meetingUrl,
+      speakers: transcript.speakers,
+      utterances: transcript.utterances,
+      notetaker_ingested_at: nowIso(),
+    },
+  );
+  const fingerprint = sourceFingerprint({
+    title: meeting?.title ?? externalId,
+    content: normalizedTranscriptText,
+    externalUri: meeting?.meetingUrl ?? undefined,
+    metadata,
+  });
   const duplicate = (await repository.listSourceItems(input.brainId)).find((source) => {
-    const metadata = source.metadata ?? {};
-    return metadata.external_id === externalId || metadata.content_hash === hash;
+    return sourceMatchesFingerprint(source, fingerprint);
   });
   if (duplicate) {
     if (meeting && meeting.sourceItemId !== duplicate.id) {
@@ -691,25 +768,11 @@ export async function ingestNotetakerTranscript(input: {
     brainId: input.brainId,
     type: "transcript",
     title,
-    content: transcript.text,
+    content: normalizedTranscriptText,
     externalUri: meeting?.meetingUrl ?? undefined,
     metadata: {
-      source_kind: "transcript",
-      domain_type: "meeting_transcript",
-      connector_type: "recall",
-      external_id: externalId,
-      content_hash: hash,
-      occurred_at: meeting?.startTime,
-      recall_bot_id: input.botId ?? meeting?.recallBotId,
-      recall_transcript_id: input.transcriptId ?? transcript.transcriptId,
-      recall_calendar_event_id: meeting?.recallCalendarEventId,
-      external_event_id: meeting?.externalEventId,
-      notetaker_meeting_id: meeting?.id,
-      participants: meeting?.participants ?? [],
-      meeting_url: meeting?.meetingUrl,
-      speakers: transcript.speakers,
-      utterances: transcript.utterances,
-      notetaker_ingested_at: nowIso(),
+      ...metadata,
+      dedupe_keys: buildDedupeKeys(fingerprint),
     },
   });
   const ingested = await processSourceItemIntoBrain({ brainId: input.brainId, sourceItemId: sourceItem.id });
@@ -832,20 +895,20 @@ function extractRecallWebhook(payload: Record<string, unknown>): ExtractedRecall
 export async function handleNotetakerWebhook(payload: Record<string, unknown>, options: { client?: RecallClient } = {}) {
   const repository = getRepository();
   const extracted = extractRecallWebhook(payload);
-  const brainId = extracted.brainHint ?? (await repository.listBrains())[0]?.id;
-  if (!brainId) throw new Error("No Brain exists for Recall webhook ingestion.");
+  const resolved = await findBrainAndMeetingForEvent({
+    brainHint: extracted.brainHint,
+    botId: extracted.botId,
+    calendarEventId: extracted.calendarEventId,
+    externalEventId: extracted.externalEventId,
+  });
+  const brainId = resolved.brainId;
 
   const existingEvent = extracted.providerEventId
     ? (await repository.listNotetakerEvents({ brainId, providerEventId: extracted.providerEventId, limit: 1 }))[0]
     : undefined;
   if (existingEvent?.processedAt) return { duplicate: true, event: existingEvent };
 
-  const meeting = await findMeetingForEvent({
-    brainId,
-    botId: extracted.botId,
-    calendarEventId: extracted.calendarEventId,
-    externalEventId: extracted.externalEventId,
-  });
+  const meeting = resolved.meeting;
   const event = existingEvent ?? await repository.createNotetakerEvent({
     brainId,
     notetakerMeetingId: meeting?.id ?? null,

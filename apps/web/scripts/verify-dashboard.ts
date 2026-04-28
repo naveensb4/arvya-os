@@ -104,6 +104,12 @@ async function main() {
         objectType: "product_insight",
         createdAt: "2026-04-26T06:00:00.000Z",
       }),
+      memory({
+        id: "closed-loop-learning",
+        objectType: "fact",
+        properties: { memory_source: "open_loop_outcome", openLoopId: "closed-loop" },
+        createdAt: "2026-04-26T05:00:00.000Z",
+      }),
     ],
     relationships: [],
     openLoops: [
@@ -159,6 +165,9 @@ async function main() {
   assert.deepEqual(dashboard.risks.map((item) => item.id), ["risk-dropped-ball"]);
   assert.deepEqual(dashboard.questions.map((item) => item.id), ["question-pricing"]);
   assert.deepEqual(dashboard.productInsights.map((item) => item.id), ["product-signal"]);
+  assert.deepEqual(dashboard.outcomeLearnings.map((item) => item.id), ["closed-loop-learning"]);
+  assert.deepEqual(dashboard.investorLoops.map((item) => item.id), []);
+  assert.deepEqual(dashboard.customerLoops.map((item) => item.id), []);
   assert.match(dashboard.commandSummary, /1 overdue action loop/);
   assert.equal(dashboard.failedSyncs, 1);
   assert.equal(dashboard.connectorHealth, "1 failing");

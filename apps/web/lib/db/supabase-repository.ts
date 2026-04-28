@@ -60,10 +60,12 @@ import type {
   UpdateAgentRunData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
+  UpdateMemoryObjectData,
   UpdateNotetakerCalendarData,
   UpdateNotetakerEventData,
   UpdateNotetakerMeetingData,
   UpdateOpenLoopData,
+  UpdateRelationshipData,
   UpdateWorkflowData,
 } from "./repository";
 
@@ -417,6 +419,21 @@ export class SupabaseRepository implements BrainRepository {
     ).map(toMemoryObject);
   }
 
+  async updateMemoryObject(memoryObjectId: string, update: UpdateMemoryObjectData): Promise<MemoryObject | null> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (update.sourceItemId !== undefined) set.sourceItemId = update.sourceItemId;
+    if (update.objectType !== undefined) set.objectType = update.objectType;
+    if (update.name !== undefined) set.name = update.name;
+    if (update.description !== undefined) set.description = update.description;
+    if (update.properties !== undefined) set.properties = update.properties;
+    if (update.sourceQuote !== undefined) set.sourceQuote = update.sourceQuote;
+    if (update.confidence !== undefined) set.confidence = update.confidence === null ? null : update.confidence.toFixed(2);
+    if (update.status !== undefined) set.status = update.status;
+
+    const [row] = await this.db.update(memoryObjects).set(set).where(eq(memoryObjects.id, memoryObjectId)).returning();
+    return row ? toMemoryObject(row) : null;
+  }
+
   async createRelationships(items: CreateRelationshipData[]): Promise<Relationship[]> {
     if (items.length === 0) return [];
     const rows = await this.db
@@ -445,6 +462,17 @@ export class SupabaseRepository implements BrainRepository {
         .where(eq(relationships.brainId, brainId))
         .orderBy(desc(relationships.createdAt))
     ).map(toRelationship);
+  }
+
+  async updateRelationship(relationshipId: string, update: UpdateRelationshipData): Promise<Relationship | null> {
+    const set: Record<string, unknown> = {};
+    if (update.sourceItemId !== undefined) set.sourceItemId = update.sourceItemId;
+    if (update.sourceQuote !== undefined) set.sourceQuote = update.sourceQuote;
+    if (update.confidence !== undefined) set.confidence = update.confidence === null ? null : update.confidence.toFixed(2);
+    if (update.properties !== undefined) set.properties = update.properties;
+
+    const [row] = await this.db.update(relationships).set(set).where(eq(relationships.id, relationshipId)).returning();
+    return row ? toRelationship(row) : null;
   }
 
   async createOpenLoops(items: CreateOpenLoopData[]): Promise<OpenLoop[]> {
@@ -607,7 +635,7 @@ export class SupabaseRepository implements BrainRepository {
           .where(
             and(
               eq(openLoops.brainId, input.brainId),
-              sql`lower(${openLoops.title} || ' ' || ${openLoops.description} || ' ' || coalesce(${openLoops.sourceQuote}, '')) like ${lexicalPattern}`,
+              sql`lower(${openLoops.title} || ' ' || ${openLoops.description} || ' ' || coalesce(${openLoops.sourceQuote}, '') || ' ' || coalesce(${openLoops.outcome}, '')) like ${lexicalPattern}`,
             ),
           )
           .limit(input.limit)

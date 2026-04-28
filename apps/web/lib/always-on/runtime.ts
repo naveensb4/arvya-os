@@ -1,10 +1,18 @@
-import { createHash } from "node:crypto";
 import { generateDailyFounderBrief } from "@/lib/brain/store";
 import { syncGmailConnector, type GmailClient } from "@/lib/connectors/gmail";
 import { syncGoogleDriveConnector, type GoogleDriveClient } from "@/lib/connectors/google-drive";
 import { syncOutlookConnector, type OutlookClient } from "@/lib/connectors/outlook";
 import { getRepository, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
+import {
+  buildDedupeKeys,
+  buildSourceTraceMetadata,
+  hashNormalizedSourceContent,
+  mergeSourceTraceMetadata,
+  normalizeSourceContent,
+  sourceFingerprint,
+  sourceMatchesFingerprint,
+} from "@/lib/workflows/source-normalization";
 
 export type ConnectorSyncSummary = {
   connectorConfigId: string;
@@ -32,7 +40,7 @@ function nowIso() {
 }
 
 function contentHash(content: string) {
-  return createHash("sha256").update(content).digest("hex");
+  return hashNormalizedSourceContent(content);
 }
 
 function minutesSince(value?: string | null) {
@@ -60,17 +68,20 @@ async function hasDuplicateSource(input: {
   brainId: string;
   connectorType: ConnectorType;
   externalId: string;
-  hash: string;
+  title: string;
+  content: string;
+  externalUri?: string;
+  metadata: Record<string, unknown>;
 }) {
   const repository = getRepository();
   const sources = await repository.listSourceItems(input.brainId);
-  return sources.find((source) => {
-    const metadata = source.metadata ?? {};
-    return (
-      metadata.connector_type === input.connectorType &&
-      (metadata.external_id === input.externalId || metadata.content_hash === input.hash)
-    );
+  const fingerprint = sourceFingerprint({
+    title: input.title,
+    content: input.content,
+    externalUri: input.externalUri,
+    metadata: input.metadata,
   });
+  return sources.find((source) => sourceMatchesFingerprint(source, fingerprint, { connectorScoped: true }));
 }
 
 async function createConnectorSource(input: {
@@ -83,12 +94,37 @@ async function createConnectorSource(input: {
   sourceType?: "transcript" | "email" | "note" | "document";
 }) {
   const repository = getRepository();
-  const hash = contentHash(input.content);
+  const normalizedContent = normalizeSourceContent(input.content);
+  const hash = contentHash(normalizedContent);
+  const traceMetadata = buildSourceTraceMetadata({
+    sourceKind: input.sourceType ?? "note",
+    sourceSystem: input.config.connectorType,
+    connectorType: input.config.connectorType,
+    connectorConfigId: input.config.id,
+    externalId: input.externalId,
+    externalUri: input.externalUri,
+    originalTitle: input.title,
+  });
+  const metadata = mergeSourceTraceMetadata(traceMetadata, {
+    content_hash: hash,
+    source_content_hash: hash,
+    domain_type: input.domainType,
+    always_on_ingested_at: nowIso(),
+  });
+  const fingerprint = sourceFingerprint({
+    title: input.title,
+    content: normalizedContent,
+    externalUri: input.externalUri,
+    metadata,
+  });
   const duplicate = await hasDuplicateSource({
     brainId: input.config.brainId,
     connectorType: input.config.connectorType,
     externalId: input.externalId,
-    hash,
+    title: input.title,
+    content: normalizedContent,
+    externalUri: input.externalUri,
+    metadata,
   });
   if (duplicate) {
     return { duplicate: true, sourceItem: duplicate, ingested: null };
@@ -98,15 +134,11 @@ async function createConnectorSource(input: {
     brainId: input.config.brainId,
     title: input.title,
     type: input.sourceType ?? "note",
-    content: input.content,
+    content: normalizedContent,
     externalUri: input.externalUri,
     metadata: {
-      connector_type: input.config.connectorType,
-      connector_config_id: input.config.id,
-      external_id: input.externalId,
-      content_hash: hash,
-      domain_type: input.domainType,
-      always_on_ingested_at: nowIso(),
+      ...metadata,
+      dedupe_keys: buildDedupeKeys(fingerprint),
     },
   });
   const ingested = await processSourceItemIntoBrain({
@@ -426,6 +458,7 @@ export async function runDailyFounderBrief() {
         domain_type: "daily_brief",
         brief_date: today,
         generated_at: brief.generatedAt,
+        structured_brief: brief,
       },
     });
     stored.push(source.id);
@@ -492,8 +525,8 @@ export async function runWeeklyLearningMemo() {
 export async function handleRecallTranscriptWebhook(payload: Record<string, unknown>) {
   const repository = getRepository();
   const brainIdFromPayload = typeof payload.brainId === "string" ? payload.brainId : undefined;
-  const brainId = brainIdFromPayload ?? (await repository.listBrains())[0]?.id;
-  if (!brainId) throw new Error("No Brain exists for Recall webhook ingestion.");
+  const brainId = brainIdFromPayload;
+  if (!brainId) throw new Error("Recall webhook payload requires brainId so transcript ingestion is traceable to the correct Brain.");
 
   const transcriptId =
     String(payload.transcriptId ?? payload.transcript_id ?? payload.meetingId ?? payload.meeting_id ?? "").trim();

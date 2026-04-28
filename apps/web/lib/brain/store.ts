@@ -1,7 +1,7 @@
 import { answerFromContext, buildDailyBrief, draftFollowUps } from "@arvya/agents";
-import type { BrainKind, BrainSnapshot, OpenLoopPriority, OpenLoopStatus, SourceType } from "@arvya/core";
+import type { BrainKind, BrainSnapshot, MemoryObjectStatus, MemoryObjectType, OpenLoop, OpenLoopPriority, OpenLoopStatus, SourceType } from "@arvya/core";
 import { getAiClient } from "@/lib/ai";
-import { getRepository } from "@/lib/db/repository";
+import { getRepository, type BrainRepository } from "@/lib/db/repository";
 import { retrieveRelevantContext } from "@/lib/retrieval";
 import { ingestSourceIntoBrain } from "@/lib/workflows/source-ingestion";
 
@@ -240,6 +240,48 @@ export async function generateFollowUpDrafts(brainId: string) {
   }
 }
 
+const terminalOpenLoopStatuses = new Set<OpenLoopStatus>(["done", "dismissed", "closed"]);
+
+function isTerminalOpenLoopWithOutcome(loop: OpenLoop) {
+  return terminalOpenLoopStatuses.has(loop.status) && Boolean(loop.outcome?.trim());
+}
+
+async function promoteOpenLoopOutcomeToMemory(repository: BrainRepository, loop: OpenLoop) {
+  if (!isTerminalOpenLoopWithOutcome(loop)) return;
+
+  const existingOutcomeMemory = (await repository.listMemoryObjects(loop.brainId)).find(
+    (memory) =>
+      memory.properties?.memory_source === "open_loop_outcome" &&
+      memory.properties?.openLoopId === loop.id,
+  );
+  if (existingOutcomeMemory) return;
+
+  await repository.createMemoryObjects([
+    {
+      brainId: loop.brainId,
+      sourceItemId: loop.sourceItemId,
+      objectType: "fact",
+      name: `Outcome: ${loop.title}`.slice(0, 160),
+      description: [
+        `Outcome recorded for open loop "${loop.title}": ${loop.outcome?.trim()}`,
+        loop.sourceQuote ? `Original evidence: ${loop.sourceQuote}` : undefined,
+      ].filter(Boolean).join("\n"),
+      sourceQuote: loop.outcome?.trim(),
+      confidence: loop.confidence ?? 0.85,
+      status: loop.status === "done" ? "done" : "closed",
+      properties: {
+        memory_source: "open_loop_outcome",
+        openLoopId: loop.id,
+        openLoopTitle: loop.title,
+        openLoopType: loop.loopType,
+        openLoopStatus: loop.status,
+        originalSourceQuote: loop.sourceQuote,
+        closedAt: loop.closedAt,
+      },
+    },
+  ]);
+}
+
 export async function updateOpenLoopStatus(
   brainId: string,
   openLoopId: string,
@@ -252,9 +294,42 @@ export async function updateOpenLoopStatus(
   if (!loop) {
     throw new Error(`Open loop not found: ${openLoopId}`);
   }
-  return repository.updateOpenLoop(openLoopId, {
+  const updated = await repository.updateOpenLoop(openLoopId, {
     status,
     outcome: outcome || undefined,
+  });
+  if (updated) {
+    await promoteOpenLoopOutcomeToMemory(repository, updated);
+  }
+  return updated;
+}
+
+export async function updateMemoryObjectReview(
+  brainId: string,
+  memoryObjectId: string,
+  update: {
+    objectType?: MemoryObjectType;
+    name?: string;
+    description?: string;
+    sourceQuote?: string | null;
+    confidence?: number | null;
+    status?: MemoryObjectStatus | null;
+  },
+) {
+  const repository = getRepository();
+  const memoryObjects = await repository.listMemoryObjects(brainId);
+  const memory = memoryObjects.find((item) => item.id === memoryObjectId);
+  if (!memory) {
+    throw new Error(`Memory object not found: ${memoryObjectId}`);
+  }
+
+  return repository.updateMemoryObject(memoryObjectId, {
+    ...update,
+    properties: {
+      ...(memory.properties ?? {}),
+      manuallyEdited: true,
+      lastEditedAt: new Date().toISOString(),
+    },
   });
 }
 
@@ -289,7 +364,11 @@ export async function updateOpenLoopReview(
   if (!loop) {
     throw new Error(`Open loop not found: ${openLoopId}`);
   }
-  return repository.updateOpenLoop(openLoopId, update);
+  const updated = await repository.updateOpenLoop(openLoopId, update);
+  if (updated) {
+    await promoteOpenLoopOutcomeToMemory(repository, updated);
+  }
+  return updated;
 }
 
 export async function bulkUpdateOpenLoops(
@@ -299,6 +378,7 @@ export async function bulkUpdateOpenLoops(
     owner?: string | null;
     status?: OpenLoopStatus;
     priority?: OpenLoopPriority;
+    outcome?: string | null;
     approvedAt?: string | null;
     closedAt?: string | null;
   },
@@ -306,9 +386,17 @@ export async function bulkUpdateOpenLoops(
   const repository = getRepository();
   const openLoops = await repository.listOpenLoops(brainId);
   const validIds = new Set(openLoops.map((loop) => loop.id));
-  return Promise.all(
+  const updatedLoops = await Promise.all(
     openLoopIds
       .filter((id) => validIds.has(id))
       .map((id) => repository.updateOpenLoop(id, update)),
   );
+
+  await Promise.all(
+    updatedLoops
+      .filter((loop): loop is OpenLoop => Boolean(loop))
+      .map((loop) => promoteOpenLoopOutcomeToMemory(repository, loop)),
+  );
+
+  return updatedLoops;
 }
