@@ -4,6 +4,8 @@ import type { Brain } from "@arvya/core";
 const navItems = [
   ["Overview", ""],
   ["Ask", "/ask"],
+  ["Priorities", "/priorities"],
+  ["Drift Review", "/drift"],
   ["Sources", "/sources"],
   ["Connections", "/connections"],
   ["Notetaker", "/notetaker"],

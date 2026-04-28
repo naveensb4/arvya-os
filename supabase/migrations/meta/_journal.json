@@ -19,8 +19,43 @@
     {
       "idx": 2,
       "version": "7",
+      "when": 1777159500000,
+      "tag": "0002_google_drive_connected_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
       "when": 1777160880000,
       "tag": "0002_open_loop_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777163400000,
+      "tag": "0003_arvya_notetaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777362000000,
+      "tag": "0004_brain_snapshot_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777365000000,
+      "tag": "0005_closed_loop_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777365600000,
+      "tag": "0006_priorities",
       "breakpoints": true
     }
   ]

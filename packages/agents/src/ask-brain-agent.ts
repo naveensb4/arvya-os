@@ -1,14 +1,18 @@
 import {
   askAnswerSchema,
   type AiClient,
+  type AnswerConfidence,
   type Brain,
   type BrainAnswer,
   type MemoryObject,
   type OpenLoop,
   type SourceCitation,
   type SourceItem,
+  type StructuredCitation,
 } from "@arvya/core";
 import { askBrainSystemPrompt, buildAskBrainPrompt } from "@arvya/prompts/ask-brain";
+
+const REFUSAL_ANSWER = "I don't have enough source evidence yet.";
 
 function sourceFor(
   sourceItems: SourceItem[],
@@ -17,7 +21,7 @@ function sourceFor(
   return sourceItems.find((source) => source.id === sourceItemId);
 }
 
-function citationFromMemory(memory: MemoryObject, sourceItems: SourceItem[]) {
+function citationFromMemory(memory: MemoryObject, sourceItems: SourceItem[]): SourceCitation {
   const source = sourceFor(sourceItems, memory.sourceItemId);
   return {
     sourceItemId: memory.sourceItemId ?? source?.id ?? "unknown",
@@ -28,7 +32,7 @@ function citationFromMemory(memory: MemoryObject, sourceItems: SourceItem[]) {
   };
 }
 
-function citationFromLoop(loop: OpenLoop, sourceItems: SourceItem[]) {
+function citationFromLoop(loop: OpenLoop, sourceItems: SourceItem[]): SourceCitation {
   const source = sourceFor(sourceItems, loop.sourceItemId);
   return {
     sourceItemId: loop.sourceItemId ?? source?.id ?? "unknown",
@@ -39,12 +43,72 @@ function citationFromLoop(loop: OpenLoop, sourceItems: SourceItem[]) {
   };
 }
 
-function citationFromSource(source: SourceItem, evidence?: string) {
+function citationFromSource(source: SourceItem, evidence?: string): SourceCitation {
   return {
     sourceItemId: source.id,
     sourceTitle: source.title,
     evidence: evidence?.trim() || source.content.slice(0, 400),
   };
+}
+
+function snippetFor(value: string | undefined, fallback: string, max = 280) {
+  const text = (value ?? fallback ?? "").trim();
+  if (!text) return fallback.trim().slice(0, max);
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function structuredFromMemory(
+  memory: MemoryObject,
+  sourceItems: SourceItem[],
+  evidence?: string,
+): StructuredCitation {
+  const source = sourceFor(sourceItems, memory.sourceItemId);
+  return {
+    kind: "memory",
+    id: memory.id,
+    snippet: snippetFor(evidence ?? memory.sourceQuote, memory.description),
+    sourceItemId: memory.sourceItemId ?? source?.id,
+    sourceTitle: source?.title,
+  };
+}
+
+function structuredFromLoop(
+  loop: OpenLoop,
+  sourceItems: SourceItem[],
+  evidence?: string,
+): StructuredCitation {
+  const source = sourceFor(sourceItems, loop.sourceItemId);
+  return {
+    kind: "open_loop",
+    id: loop.id,
+    snippet: snippetFor(evidence ?? loop.sourceQuote, loop.description),
+    sourceItemId: loop.sourceItemId ?? source?.id,
+    sourceTitle: source?.title,
+  };
+}
+
+function structuredFromSource(source: SourceItem, evidence?: string): StructuredCitation {
+  return {
+    kind: "source",
+    id: source.id,
+    snippet: snippetFor(evidence, source.content),
+    sourceItemId: source.id,
+    sourceTitle: source.title,
+  };
+}
+
+function dedupeStructured(
+  citations: StructuredCitation[],
+): StructuredCitation[] {
+  const seen = new Set<string>();
+  const out: StructuredCitation[] = [];
+  for (const citation of citations) {
+    const key = `${citation.kind}:${citation.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(citation);
+  }
+  return out;
 }
 
 function tokenize(value: string): string[] {
@@ -82,7 +146,13 @@ function citationKey(citation: SourceCitation) {
 }
 
 function isOutcomeQuestion(question: string) {
-  return /\b(closed|done|resolved|outcome|happened|completed|finished|after)\b/i.test(question);
+  return /\b(closed|done|resolved|outcome|happened|completed|finished|after|sent|delivered|update|status)\b/i.test(question);
+}
+
+function inferConfidence(citationCount: number, uncertain: boolean): AnswerConfidence {
+  if (uncertain || citationCount === 0) return "low";
+  if (citationCount < 2) return "medium";
+  return "high";
 }
 
 export async function answerFromContext(input: {
@@ -101,9 +171,13 @@ export async function answerFromContext(input: {
   if (!hasEvidence) {
     return {
       question: input.question,
-      answer:
-        "I do not have enough source-backed evidence to answer that yet.",
+      answer: REFUSAL_ANSWER,
       citations: [],
+      structuredCitations: [],
+      confidenceLevel: "low",
+      uncertaintyNotes: [
+        "No memory objects, open loops, or source items were retrieved for this question.",
+      ],
       uncertain: true,
       followUp:
         "Add or ingest a source that covers this question, then ask again.",
@@ -151,38 +225,74 @@ export async function answerFromContext(input: {
       schema: askAnswerSchema,
       schemaName: "ask_brain_answer",
       schemaDescription:
-        "A source-backed answer with citations to provided evidence.",
+        "A source-backed answer with citations and structured confidence.",
       maxTokens: 2500,
     });
 
     const memoryById = new Map(input.memoryObjects.map((memory) => [memory.id, memory]));
     const loopById = new Map(input.openLoops.map((loop) => [loop.id, loop]));
     const sourceById = new Map(input.sourceItems.map((source) => [source.id, source]));
-    const citations = result.data.citations
-      .map((citation) => {
-        const citationId = citation.memoryId ?? "";
-        const memory = memoryById.get(citationId);
-        if (memory) return citationFromMemory(memory, input.sourceItems);
-        const loop = loopById.get(citationId);
-        if (loop) return citationFromLoop(loop, input.sourceItems);
-        const source = citation.sourceItemId ? sourceById.get(citation.sourceItemId) : undefined;
-        if (source) return citationFromSource(source, citation.evidence);
-        return null;
-      })
-      .filter((citation): citation is NonNullable<typeof citation> => Boolean(citation))
-      .filter((citation, index, all) => all.findIndex((item) => citationKey(item) === citationKey(citation)) === index);
+
+    const legacyCitations: SourceCitation[] = [];
+    const structuredCitations: StructuredCitation[] = [];
+
+    for (const citation of result.data.citations) {
+      const evidence = citation.evidence ?? citation.snippet;
+      const targetId =
+        citation.memoryId ??
+        citation.openLoopId ??
+        citation.sourceItemId ??
+        citation.id ??
+        "";
+
+      const memory = targetId ? memoryById.get(targetId) : undefined;
+      if (memory) {
+        legacyCitations.push(citationFromMemory(memory, input.sourceItems));
+        structuredCitations.push(structuredFromMemory(memory, input.sourceItems, evidence));
+        continue;
+      }
+      const loop = targetId ? loopById.get(targetId) : undefined;
+      if (loop) {
+        legacyCitations.push(citationFromLoop(loop, input.sourceItems));
+        structuredCitations.push(structuredFromLoop(loop, input.sourceItems, evidence));
+        continue;
+      }
+      const source =
+        (citation.sourceItemId && sourceById.get(citation.sourceItemId)) ||
+        (targetId ? sourceById.get(targetId) : undefined);
+      if (source) {
+        legacyCitations.push(citationFromSource(source, evidence));
+        structuredCitations.push(structuredFromSource(source, evidence));
+      }
+    }
+
+    const dedupedLegacy = legacyCitations.filter(
+      (citation, index, all) =>
+        all.findIndex((item) => citationKey(item) === citationKey(citation)) === index,
+    );
+    const dedupedStructured = dedupeStructured(structuredCitations);
+
+    const confidenceLevel: AnswerConfidence =
+      result.data.confidence ?? inferConfidence(dedupedLegacy.length, result.data.uncertain ?? false);
+
+    const uncertaintyNotes = result.data.uncertaintyNotes ?? [];
 
     return {
       question: input.question,
       answer: result.data.answer,
-      citations,
+      citations: dedupedLegacy,
+      structuredCitations: dedupedStructured,
+      confidenceLevel,
+      uncertaintyNotes,
       uncertain: result.data.uncertain,
       followUp: result.data.followUp,
     };
   }
 
   const outcomeMemories = input.memoryObjects.filter(
-    (memory) => memory.properties?.memory_source === "open_loop_outcome",
+    (memory) =>
+      memory.objectType === "outcome" ||
+      memory.properties?.memory_source === "open_loop_outcome",
   );
   const preferOutcomeMemory = isOutcomeQuestion(input.question) && outcomeMemories.length > 0;
   const answerMemories = preferOutcomeMemory ? outcomeMemories : input.memoryObjects;
@@ -191,6 +301,19 @@ export async function answerFromContext(input: {
     : [
         ...input.openLoops.slice(0, 4).map((loop) => citationFromLoop(loop, input.sourceItems)),
         ...answerMemories.slice(0, 4).map((memory) => citationFromMemory(memory, input.sourceItems)),
+      ].slice(0, 4);
+
+  const structuredCitations = preferOutcomeMemory
+    ? answerMemories
+        .slice(0, 4)
+        .map((memory) => structuredFromMemory(memory, input.sourceItems))
+    : [
+        ...input.openLoops
+          .slice(0, 4)
+          .map((loop) => structuredFromLoop(loop, input.sourceItems)),
+        ...answerMemories
+          .slice(0, 4)
+          .map((memory) => structuredFromMemory(memory, input.sourceItems)),
       ].slice(0, 4);
 
   return {
@@ -202,6 +325,9 @@ export async function answerFromContext(input: {
         ? input.openLoops.map((loop) => loop.description).join(" ")
         : answerMemories.map((memory) => memory.description).join(" "),
     citations,
+    structuredCitations: dedupeStructured(structuredCitations),
+    confidenceLevel: inferConfidence(citations.length, false),
+    uncertaintyNotes: [],
     uncertain: false,
     followUp:
       input.openLoops.length > 0

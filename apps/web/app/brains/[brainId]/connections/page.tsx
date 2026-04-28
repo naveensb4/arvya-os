@@ -15,8 +15,8 @@ type PageProps = {
 
 const connectorDescriptions: Record<string, string> = {
   google_drive: "Scheduled polling for selected transcript folders only. Ingests .txt and .md files into the Brain.",
-  gmail: "Scheduled polling for selected labels only. Never ingests the full inbox or sends email.",
-  outlook: "Scheduled polling for selected folders or categories only. Never ingests the full inbox unless max-item test mode is explicitly enabled.",
+  gmail: "Scheduled polling for selected labels, then a required Aryva relevance check. Never sends email.",
+  outlook: "Scheduled polling for selected folders or categories, then a required Aryva relevance check. Never sends email.",
   recall: "Webhook-first transcript ingestion. Scheduled sync stays off by default.",
   mock: "Local always-on verifier that exercises source creation, ingestion, sync runs, and alerts.",
 };
@@ -27,13 +27,15 @@ export default async function Page({ params }: PageProps) {
   const selectedBrainId = selectedBrain.id;
   const repository = getRepository();
   const configs = await ensureDefaultConnectorConfigs(selectedBrainId);
+  const now = new Date();
+  const upcomingWindowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
   const [syncRuns, notetakerCalendars, upcomingMeetings] = await Promise.all([
     repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 30 }),
     repository.listNotetakerCalendars({ brainId: selectedBrainId }),
     repository.listNotetakerMeetings({
       brainId: selectedBrainId,
-      from: "1970-01-01T00:00:00.000Z",
-      to: "2100-01-01T00:00:00.000Z",
+      from: now.toISOString(),
+      to: upcomingWindowEnd.toISOString(),
       limit: 8,
     }),
   ]);
@@ -140,12 +142,12 @@ function ConnectorCard({
           <p className="mt-1 text-stone-500">Credentials are stored server-side and are never sent to the browser.</p>
           {isGmail ? (
             <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
-              Create a Gmail label named <span className="font-semibold">Arvya Brain</span>, apply it to 5-10 important threads, then save that label name or ID below. Full inbox sync is blocked unless max-item test mode is checked.
+              Create a Gmail label named <span className="font-semibold">Arvya Brain</span>, apply it to 5-10 important threads, then save that label name or ID below. A second message-level gate still skips anything that does not mention Aryva/Arvya or an Aryva domain.
             </p>
           ) : null}
           {isOutlook ? (
             <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
-              Create an Outlook folder or category named <span className="font-semibold">Arvya Brain</span>, move or categorize 5-10 important emails, then save that folder/category name below. Inbox sync is blocked unless max-item test mode is checked.
+              Create an Outlook folder or category named <span className="font-semibold">Arvya Brain</span>, move or categorize 5-10 important emails, then save that folder/category name below. A second message-level gate still skips anything that does not mention Aryva/Arvya or an Aryva domain.
             </p>
           ) : null}
         </div>

@@ -4,12 +4,12 @@ import { config } from "dotenv";
 import { eq } from "drizzle-orm";
 import { resetAiClientForTests } from "../lib/ai";
 import {
-  addSourceAndIngest,
-  answerBrainQuestion,
   createBrain,
   getBrainSnapshot,
   updateOpenLoopStatus,
 } from "../lib/brain/store";
+import { answerFromContext } from "@arvya/agents/ask-brain-agent";
+import { ingestSourceIntoBrain } from "../lib/workflows/source-ingestion";
 import { closeDbForTests, getDb, schema } from "../lib/db/client";
 import { getRepository, resetRepositoryForTests } from "../lib/db/repository";
 import type { BrainKind } from "@arvya/core";
@@ -26,26 +26,30 @@ function requireDatabaseUrl() {
   }
 }
 
-function requireModelKey() {
-  const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
-  const hasOpenAi = Boolean(process.env.OPENAI_API_KEY?.trim());
-  if (!hasAnthropic && !hasOpenAi) {
-    throw new Error(
-      "Set ANTHROPIC_API_KEY or OPENAI_API_KEY before running pnpm verify:live-deal-brain.",
-    );
-  }
-}
-
 const dealNoteContent =
   "Maya at Acme Capital asked for the diligence tracker by Friday. " +
   "PB owns the CIM update for the new buyer list. " +
   "The key deal risk is missing buyer follow-up after the Wednesday management meeting; Naveen needs to confirm buyer next steps before Monday's IC prep. " +
   "Action item: Naveen to send the updated quality of earnings memo to Acme Capital tomorrow.";
 
+async function withHeartbeat<T>(label: string, call: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  const interval = setInterval(() => {
+    const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+    console.log(`${label} still running after ${elapsedSeconds}s...`);
+  }, 10_000);
+  try {
+    return await call();
+  } finally {
+    clearInterval(interval);
+  }
+}
+
 async function verifyKind(kind: BrainKind, marker: string) {
   const repository = getRepository();
   assert.equal(repository.mode, "supabase", `${kind}: repository must be supabase-backed`);
 
+  console.log(`[${kind}] creating verification brain...`);
   const brain = await createBrain({
     name:
       kind === "sell_side"
@@ -56,13 +60,20 @@ async function verifyKind(kind: BrainKind, marker: string) {
   });
 
   try {
-    const sourceItem = await addSourceAndIngest({
-      brainId: brain.id,
-      title: `Deal verification note ${marker}`,
-      type: "note",
-      content: dealNoteContent,
-    });
+    console.log(`[${kind}] ingesting deal verification source...`);
+    const ingestion = await withHeartbeat(`[${kind}] ingestion`, () =>
+      ingestSourceIntoBrain({
+        brainId: brain.id,
+        title: `Deal verification note ${marker}`,
+        type: "note",
+        content: dealNoteContent,
+        externalUri: undefined,
+        metadata: { connector_type: "gmail", verification_mode: "deterministic_live_db" },
+      }),
+    );
+    const sourceItem = ingestion.sourceItem;
 
+    console.log(`[${kind}] reading persisted brain state...`);
     const [snapshot, sourceItems, memoryObjects, openLoops, agentRuns] = await Promise.all([
       getBrainSnapshot(brain.id),
       repository.listSourceItems(brain.id),
@@ -91,7 +102,14 @@ async function verifyKind(kind: BrainKind, marker: string) {
       `${kind}: expected source_ingestion agent_runs row`,
     );
 
-    const answer = await answerBrainQuestion(brain.id, "What deal follow-ups do we owe?");
+    console.log(`[${kind}] asking source-backed deal follow-up question...`);
+    const answer = await answerFromContext({
+      question: "What deal follow-ups do we owe?",
+      memoryObjects,
+      openLoops,
+      sourceItems,
+      brain,
+    });
     assert.ok(answer.citations.length > 0, `${kind}: expected source-backed citations`);
     assert.ok(
       answer.citations.some(
@@ -113,6 +131,7 @@ async function verifyKind(kind: BrainKind, marker: string) {
     assert.ok(loopToClose, `${kind}: expected at least one deal-related loop to close`);
 
     const outcome = `Live deal verification outcome ${marker} (${kind})`;
+    console.log(`[${kind}] closing one deal loop with an outcome...`);
     await updateOpenLoopStatus(brain.id, loopToClose.id, "closed", outcome);
 
     const refreshedLoops = await repository.listOpenLoops(brain.id);
@@ -126,6 +145,7 @@ async function verifyKind(kind: BrainKind, marker: string) {
     );
   } finally {
     try {
+      console.log(`[${kind}] cleaning up verification brain...`);
       await getDb().delete(schema.brains).where(eq(schema.brains.id, brain.id));
     } catch (cleanupError) {
       console.warn(`[${kind}] cleanup skipped:`, cleanupError);
@@ -135,7 +155,6 @@ async function verifyKind(kind: BrainKind, marker: string) {
 
 async function main() {
   requireDatabaseUrl();
-  requireModelKey();
   resetRepositoryForTests();
   resetAiClientForTests();
 

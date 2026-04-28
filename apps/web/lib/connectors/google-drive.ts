@@ -43,8 +43,17 @@ export type GoogleDriveFile = {
   modifiedTime?: string;
 };
 
+export type GoogleDriveListFilesOptions = {
+  /**
+   * ISO timestamp. When provided, list only files with
+   * modifiedTime > since. Live calls map this onto Drive's
+   * `modifiedTime > '<rfc3339>'` query operator.
+   */
+  since?: string;
+};
+
 export type GoogleDriveClient = {
-  listFiles(folderId: string): Promise<GoogleDriveFile[]>;
+  listFiles(folderId: string, options?: GoogleDriveListFilesOptions): Promise<GoogleDriveFile[]>;
   downloadText(fileId: string): Promise<string>;
 };
 
@@ -56,6 +65,11 @@ type GoogleDriveSyncResult = {
   sourceItemIds: string[];
   skippedFiles: Array<{ fileId: string; fileName: string; reason: string }>;
   failedFiles: Array<{ fileId: string; fileName: string; error: string }>;
+  /**
+   * ISO timestamp of the latest file.modifiedTime observed during the
+   * sync; the runtime persists this back into ConnectorConfig.config.watermark.
+   */
+  nextWatermark?: string;
 };
 
 function env(name: string) {
@@ -200,9 +214,19 @@ async function refreshGoogleDriveCredentials(config: ConnectorConfig, credential
 class GoogleDriveRestClient implements GoogleDriveClient {
   constructor(private readonly getAccessToken: () => Promise<string>) {}
 
-  async listFiles(folderId: string) {
+  async listFiles(folderId: string, options?: GoogleDriveListFilesOptions) {
     const url = new URL(`${GOOGLE_DRIVE_API}/files`);
-    url.searchParams.set("q", `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`);
+    const filters = [
+      `'${folderId.replace(/'/g, "\\'")}' in parents`,
+      "trashed = false",
+    ];
+    if (options?.since) {
+      const sinceMs = Date.parse(options.since);
+      if (Number.isFinite(sinceMs)) {
+        filters.push(`modifiedTime > '${new Date(sinceMs).toISOString()}'`);
+      }
+    }
+    url.searchParams.set("q", filters.join(" and "));
     url.searchParams.set("fields", "files(id,name,mimeType,webViewLink,modifiedTime)");
     url.searchParams.set("pageSize", "1000");
     url.searchParams.set("supportsAllDrives", "true");
@@ -282,6 +306,8 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
 
   const drive = client ?? await getGoogleDriveClient(config);
   const itemLimit = googleDriveItemLimit(config);
+  const since = googleDriveWatermark(config);
+  let nextWatermark: string | undefined = since;
   const result: GoogleDriveSyncResult = {
     itemsFound: 0,
     itemsIngested: 0,
@@ -293,7 +319,7 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
   };
 
   for (const folderId of folderIds) {
-    const files = await drive.listFiles(folderId);
+    const files = await drive.listFiles(folderId, since ? { since } : undefined);
     result.itemsFound += files.length;
     const filesToSync = files.slice(0, itemLimit);
     if (files.length > filesToSync.length) {
@@ -307,6 +333,13 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
     }
 
     for (const file of filesToSync) {
+      if (file.modifiedTime) {
+        const ms = Date.parse(file.modifiedTime);
+        if (Number.isFinite(ms)) {
+          const iso = new Date(ms).toISOString();
+          if (!nextWatermark || iso > nextWatermark) nextWatermark = iso;
+        }
+      }
       const extension = extensionFor(file.name);
       if (!SUPPORTED_EXTENSIONS.has(extension)) {
         result.itemsSkipped += 1;
@@ -418,5 +451,11 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
     }
   }
 
+  if (nextWatermark) result.nextWatermark = nextWatermark;
   return result;
+}
+
+function googleDriveWatermark(config: ConnectorConfig) {
+  const raw = config.config.watermark;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }

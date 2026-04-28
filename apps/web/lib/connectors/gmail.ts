@@ -34,12 +34,12 @@ type GmailCredentials = {
   token_type?: string;
 };
 
-type GmailMessageListItem = {
+export type GmailMessageListItem = {
   id: string;
   threadId?: string;
 };
 
-type GmailMessage = {
+export type GmailMessage = {
   id: string;
   threadId?: string;
   labelIds?: string[];
@@ -61,9 +61,19 @@ type GmailLabel = {
   name: string;
 };
 
+export type GmailListMessagesOptions = {
+  /**
+   * RFC3339 / ISO timestamp. When provided, list only messages whose
+   * Gmail internalDate is strictly after this watermark. The Gmail API
+   * accepts `q=after:<unix_seconds>` for this; mocks should honor it
+   * by filtering their fixed message list.
+   */
+  since?: string;
+};
+
 export type GmailClient = {
   listLabels?(): Promise<GmailLabel[]>;
-  listMessages(labelId: string): Promise<GmailMessageListItem[]>;
+  listMessages(labelId: string, options?: GmailListMessagesOptions): Promise<GmailMessageListItem[]>;
   getMessage(messageId: string): Promise<GmailMessage>;
 };
 
@@ -161,10 +171,17 @@ class GmailRestClient implements GmailClient {
     return json.labels ?? [];
   }
 
-  async listMessages(labelId: string) {
+  async listMessages(labelId: string, options?: GmailListMessagesOptions) {
     const url = new URL(`${GMAIL_API}/messages`);
     url.searchParams.set("labelIds", labelId);
     url.searchParams.set("maxResults", "50");
+    if (options?.since) {
+      const sinceMs = Date.parse(options.since);
+      if (Number.isFinite(sinceMs)) {
+        const sinceSeconds = Math.floor(sinceMs / 1000);
+        url.searchParams.set("q", `after:${sinceSeconds}`);
+      }
+    }
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${await this.getAccessToken()}` },
     });
@@ -255,6 +272,23 @@ async function resolveGmailLabels(configuredLabels: string[], client: GmailClien
   });
 }
 
+function gmailWatermark(config: ConnectorConfig) {
+  const raw = config.config.watermark;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+}
+
+function gmailMessageTimestamp(message: GmailMessage, headerDate: string | undefined): string | undefined {
+  if (message.internalDate) {
+    const ms = Number.parseInt(message.internalDate, 10);
+    if (Number.isFinite(ms)) return new Date(ms).toISOString();
+  }
+  if (headerDate) {
+    const ms = Date.parse(headerDate);
+    if (Number.isFinite(ms)) return new Date(ms).toISOString();
+  }
+  return undefined;
+}
+
 export async function syncGmailConnector(config: ConnectorConfig, client?: GmailClient): Promise<EmailConnectorSyncResult> {
   const configuredLabels = listConfigStrings(config, ["labelIds", "label_ids"]);
   if (configuredLabels.length === 0) {
@@ -268,9 +302,11 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
   const labels = await resolveGmailLabels(configuredLabels, gmail);
   const result = newEmailSyncResult();
   const itemLimit = emailConnectorItemLimit(config);
+  const since = gmailWatermark(config);
+  let nextWatermark: string | undefined = since;
 
   for (const label of labels) {
-    const messages = await gmail.listMessages(label.id);
+    const messages = await gmail.listMessages(label.id, since ? { since } : undefined);
     result.itemsFound += messages.length;
     const messagesToSync = messages.slice(0, itemLimit);
     if (messages.length > messagesToSync.length) {
@@ -286,6 +322,10 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
         const message = await gmail.getMessage(item.id);
         const formatted = formatGmailMessage(message);
         const externalId = `gmail:${message.id}`;
+        const messageIso = gmailMessageTimestamp(message, formatted.date);
+        if (messageIso && (!nextWatermark || messageIso > nextWatermark)) {
+          nextWatermark = messageIso;
+        }
         const relevance = emailMatchesAryvaScope({
           config,
           title: formatted.title,
@@ -340,6 +380,7 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
     }
   }
 
+  if (nextWatermark) result.nextWatermark = nextWatermark;
   return result;
 }
 

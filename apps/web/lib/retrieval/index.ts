@@ -150,9 +150,9 @@ export async function retrieveRelevantContext(
   }
 
   const [memoryObjects, openLoops, sourceItems] = await Promise.all([
-    input.repository.listMemoryObjects(input.brainId),
-    input.repository.listOpenLoops(input.brainId),
-    input.repository.listSourceItems(input.brainId),
+    input.repository.listMemoryObjects(input.brainId, { limit: 500 }),
+    input.repository.listOpenLoops(input.brainId, { limit: 500 }),
+    input.repository.listSourceItems(input.brainId, { limit: 500 }),
   ]);
   const terms = tokenize(input.question);
   const shouldSurfaceOpenLoops = isOpenLoopQuery(input.question);

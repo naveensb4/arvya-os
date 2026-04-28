@@ -4,6 +4,7 @@ import type {
   Brain,
   MemoryObject,
   OpenLoop,
+  Priority,
   Relationship,
   SourceEmbedding,
   SourceItem,
@@ -24,10 +25,12 @@ import type {
   CreateNotetakerEventData,
   CreateNotetakerMeetingData,
   CreateOpenLoopData,
+  CreatePriorityData,
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
   CreateWorkflowData,
+  ListPrioritiesOptions,
   NotetakerCalendar,
   NotetakerEvent,
   NotetakerMeeting,
@@ -39,6 +42,7 @@ import type {
   UpdateNotetakerEventData,
   UpdateNotetakerMeetingData,
   UpdateOpenLoopData,
+  UpdatePriorityStatusData,
   UpdateRelationshipData,
   UpdateWorkflowData,
 } from "./repository";
@@ -143,6 +147,7 @@ const seedBrainAlerts: BrainAlert[] = [];
 const seedNotetakerCalendars: NotetakerCalendar[] = [];
 const seedNotetakerMeetings: NotetakerMeeting[] = [];
 const seedNotetakerEvents: NotetakerEvent[] = [];
+const seedPriorities: Priority[] = [];
 
 type InMemoryState = {
   brains: Brain[];
@@ -153,6 +158,7 @@ type InMemoryState = {
   workflows: Workflow[];
   embeddings: SourceEmbedding[];
   agentRuns: AgentRun[];
+  priorities: Priority[];
   connectorConfigs: ConnectorConfig[];
   connectorSyncRuns: ConnectorSyncRun[];
   brainAlerts: BrainAlert[];
@@ -207,6 +213,7 @@ function createSeedState(): InMemoryState {
     workflows: clone(seedWorkflows),
     embeddings: clone(seedEmbeddings),
     agentRuns: clone(seedAgentRuns),
+    priorities: clone(seedPriorities),
     connectorConfigs: clone(seedConnectorConfigs),
     connectorSyncRuns: clone(seedConnectorSyncRuns),
     brainAlerts: clone(seedBrainAlerts),
@@ -266,11 +273,12 @@ export class InMemoryRepository implements BrainRepository {
     return clone(brain);
   }
 
-  async listSourceItems(brainId: string): Promise<SourceItem[]> {
+  async listSourceItems(brainId: string, options: { limit?: number } = {}): Promise<SourceItem[]> {
     return clone(
       loadState()
         .sources.filter((source) => source.brainId === brainId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, options.limit ?? 500),
     );
   }
 
@@ -295,11 +303,12 @@ export class InMemoryRepository implements BrainRepository {
     return clone(source);
   }
 
-  async listMemoryObjects(brainId: string): Promise<MemoryObject[]> {
+  async listMemoryObjects(brainId: string, options: { limit?: number } = {}): Promise<MemoryObject[]> {
     return clone(
       loadState()
         .memories.filter((memory) => memory.brainId === brainId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, options.limit ?? 500),
     );
   }
 
@@ -350,8 +359,8 @@ export class InMemoryRepository implements BrainRepository {
     return clone(created);
   }
 
-  async listRelationships(brainId: string): Promise<Relationship[]> {
-    return clone(loadState().relationships.filter((item) => item.brainId === brainId));
+  async listRelationships(brainId: string, options: { limit?: number } = {}): Promise<Relationship[]> {
+    return clone(loadState().relationships.filter((item) => item.brainId === brainId).slice(0, options.limit ?? 500));
   }
 
   async updateRelationship(relationshipId: string, update: UpdateRelationshipData): Promise<Relationship | null> {
@@ -391,11 +400,12 @@ export class InMemoryRepository implements BrainRepository {
     return clone(created);
   }
 
-  async listOpenLoops(brainId: string): Promise<OpenLoop[]> {
+  async listOpenLoops(brainId: string, options: { limit?: number } = {}): Promise<OpenLoop[]> {
     return clone(
       loadState()
         .openLoops.filter((loop) => loop.brainId === brainId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, options.limit ?? 500),
     );
   }
 
@@ -436,11 +446,13 @@ export class InMemoryRepository implements BrainRepository {
     return clone(workflow);
   }
 
-  async listWorkflows(brainId: string): Promise<Workflow[]> {
+  async listWorkflows(brainId: string, limit?: number): Promise<Workflow[]> {
+    const workflows = loadState()
+      .workflows.filter((workflow) => workflow.brainId === brainId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
     return clone(
-      loadState()
-        .workflows.filter((workflow) => workflow.brainId === brainId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      typeof limit === "number" ? workflows.slice(0, limit) : workflows,
     );
   }
 
@@ -555,6 +567,56 @@ export class InMemoryRepository implements BrainRepository {
       run.completedAt = now();
     }
     return clone(run);
+  }
+
+  async listPriorities(brainId: string, opts: ListPrioritiesOptions = {}): Promise<Priority[]> {
+    const statuses = opts.status
+      ? Array.isArray(opts.status)
+        ? opts.status
+        : [opts.status]
+      : undefined;
+    const horizons = opts.horizon
+      ? Array.isArray(opts.horizon)
+        ? opts.horizon
+        : [opts.horizon]
+      : undefined;
+
+    const filtered = loadState()
+      .priorities.filter((priority) => priority.brainId === brainId)
+      .filter((priority) => (statuses ? statuses.includes(priority.status) : true))
+      .filter((priority) => (horizons ? horizons.includes(priority.horizon) : true))
+      .sort((a, b) => b.setAt.localeCompare(a.setAt));
+
+    return clone(typeof opts.limit === "number" ? filtered.slice(0, opts.limit) : filtered);
+  }
+
+  async createPriority(input: CreatePriorityData): Promise<Priority> {
+    const setAt = input.setAt ?? now();
+    const priority: Priority = {
+      id: nanoid(),
+      brainId: input.brainId,
+      statement: input.statement,
+      setAt,
+      setBy: input.setBy ?? "naveen",
+      horizon: input.horizon ?? "week",
+      status: input.status ?? "active",
+      sourceRefs: input.sourceRefs,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().priorities.unshift(priority);
+    return clone(priority);
+  }
+
+  async updatePriorityStatus(
+    priorityId: string,
+    update: UpdatePriorityStatusData,
+  ): Promise<Priority | null> {
+    const priority = loadState().priorities.find((item) => item.id === priorityId);
+    if (!priority) return null;
+    priority.status = update.status;
+    priority.updatedAt = now();
+    return clone(priority);
   }
 
   async listConnectorConfigs(brainId?: string): Promise<ConnectorConfig[]> {

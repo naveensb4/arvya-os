@@ -1,13 +1,22 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { MemoryObject, OpenLoop } from "@arvya/core";
+import type {
+  DriftReview,
+  MemoryObject,
+  OpenLoop,
+} from "@arvya/core";
 import { SectionShell } from "@/components/layout/section-shell";
 import { AgentRunCard } from "@/components/brain/agent-run-card";
 import { MemoryCard } from "@/components/memory/memory-card";
 import { OpenLoopCard } from "@/components/open-loops/open-loop-card";
 import { SourceCard } from "@/components/sources/source-card";
 import { buildDashboardModel } from "@/lib/brain/dashboard";
-import { getBrainSnapshot, isBrainNotFoundError } from "@/lib/brain/store";
+import {
+  getBrainSnapshot,
+  getLatestDriftReview,
+  isBrainNotFoundError,
+  listBrainPriorities,
+} from "@/lib/brain/store";
 import { getRepository } from "@/lib/db/repository";
 
 type PageProps = {
@@ -19,13 +28,17 @@ export default async function Page({ params }: PageProps) {
   const snapshot = await getDashboardSnapshot(brainId);
   const selectedBrainId = snapshot.selectedBrain.id;
   const repository = getRepository();
-  const [alerts, syncRuns, connectorConfigs] = await Promise.all([
-    repository.listBrainAlerts({ brainId: selectedBrainId, status: "unread", limit: 5 }),
-    repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 10 }),
-    repository.listConnectorConfigs(selectedBrainId),
-  ]);
+  const [alerts, syncRuns, connectorConfigs, activePriorities, latestDrift] =
+    await Promise.all([
+      repository.listBrainAlerts({ brainId: selectedBrainId, status: "unread", limit: 5 }),
+      repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 10 }),
+      repository.listConnectorConfigs(selectedBrainId),
+      listBrainPriorities(selectedBrainId, { status: "active", limit: 5 }),
+      getLatestDriftReview(selectedBrainId),
+    ]);
   const sourceById = new Map(snapshot.sourceItems.map((source) => [source.id, source]));
   const dashboard = buildDashboardModel({ snapshot, syncRuns, connectorConfigs });
+
   return (
     <SectionShell brainId={selectedBrainId} title="Brain Overview" description="Founder command center for source capture, action loops, memory, and agent health.">
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -50,14 +63,58 @@ export default async function Page({ params }: PageProps) {
           <Link href={`/brains/${selectedBrainId}/ask`} className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20">
             Ask Brain
           </Link>
+          <Link
+            href={`/brains/${selectedBrainId}/priorities`}
+            className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20"
+          >
+            Priorities ({activePriorities.length})
+          </Link>
+          <Link
+            href={`/brains/${selectedBrainId}/drift`}
+            className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20"
+          >
+            Drift Review
+          </Link>
         </div>
       </section>
+
+      {latestDrift ? <DriftSummaryCard brainId={selectedBrainId} review={latestDrift.review} /> : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <Metric label="Failed Sync Runs" value={dashboard.failedSyncs} />
         <Metric label="Connector Health" value={dashboard.connectorHealth} />
-        <Metric label="Stored User Sources" value={dashboard.operationalSources.length} />
+        <Metric label="Drift Findings" value={dashboard.driftFindings.length} />
       </div>
+
+      <section className="mt-6 rounded-2xl bg-stone-50 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow text-amber-700">Company Drift Review</p>
+            <h2 className="mt-2 text-2xl font-semibold">{dashboard.driftSummary}</h2>
+            <p className="mt-2 text-sm text-stone-600">
+              Latest stored review: {dashboard.latestDriftReport ? formatDate(dashboard.latestDriftReport.createdAt) : "Never"}
+            </p>
+          </div>
+          <Link href={`/brains/${selectedBrainId}/drift`} className="button">
+            Review Drift
+          </Link>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {dashboard.driftFindings.map((finding) => (
+            <div key={finding.id} className="rounded-xl bg-white p-4 text-sm">
+              <p className="text-xs uppercase tracking-widest text-stone-400">{finding.severity}</p>
+              <p className="mt-1 font-medium">{finding.title}</p>
+              <p className="mt-1 leading-6 text-stone-600">{finding.description}</p>
+              <p className="mt-3 text-stone-800">
+                <span className="font-medium">Next:</span> {finding.suggestedAction}
+              </p>
+            </div>
+          ))}
+          {dashboard.driftFindings.length === 0 ? (
+            <p className="rounded-xl bg-white p-4 text-sm text-stone-500">No drift findings from current Brain context.</p>
+          ) : null}
+        </div>
+      </section>
 
       <section className="mt-6 rounded-2xl bg-stone-50 p-5">
         <p className="eyebrow text-amber-700">Daily Brief</p>
@@ -270,6 +327,54 @@ function MemoryListPanel({
         ))}
         {items.length === 0 ? <p className="rounded-xl bg-white p-3 text-sm text-stone-500">{emptyText}</p> : null}
       </div>
+    </section>
+  );
+}
+
+const driftAlignmentBadge: Record<string, string> = {
+  aligned: "bg-emerald-100 text-emerald-900",
+  minor_drift: "bg-amber-100 text-amber-900",
+  major_drift: "bg-red-100 text-red-900",
+};
+
+const driftAlignmentLabel: Record<string, string> = {
+  aligned: "Aligned",
+  minor_drift: "Minor drift",
+  major_drift: "Major drift",
+};
+
+
+function DriftSummaryCard({ brainId, review }: { brainId: string; review: DriftReview }) {
+  const highCount = review.signals.filter((s) => s.severity === "high").length;
+  const mediumCount = review.signals.filter((s) => s.severity === "medium").length;
+  return (
+    <section className="mt-6 rounded-2xl border border-stone-200 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="eyebrow text-amber-700">Agent Drift Review</p>
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                driftAlignmentBadge[review.overall_alignment] ?? "bg-stone-100 text-stone-700"
+              }`}
+            >
+              {driftAlignmentLabel[review.overall_alignment] ?? review.overall_alignment}
+            </span>
+            <p className="text-sm text-stone-500">
+              {review.signals.length} signal{review.signals.length === 1 ? "" : "s"}
+              {highCount > 0 ? ` · ${highCount} high` : ""}
+              {mediumCount > 0 ? ` · ${mediumCount} medium` : ""}
+            </p>
+          </div>
+        </div>
+        <Link href={`/brains/${brainId}/drift`} className="button-secondary text-xs">
+          Open drift review
+        </Link>
+      </div>
+      <p className="mt-3 leading-7 text-stone-700">{review.summary_for_founders}</p>
+      <p className="mt-2 text-xs text-stone-400">
+        Generated {new Date(review.generated_at).toLocaleString()}
+      </p>
     </section>
   );
 }

@@ -16,5 +16,9 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
-  return NextResponse.json(await generateDailyFounderBrief(payload.brainId));
+  const brief = await generateDailyFounderBrief(payload.brainId);
+  return NextResponse.json({
+    brief,
+    structured: brief.structured ?? null,
+  });
 }

@@ -4,6 +4,7 @@ import { createBrain, getBrainSnapshot } from "../lib/brain/store";
 import { getRepository, resetRepositoryForTests } from "../lib/db/repository";
 import {
   ensureDefaultConnectorConfigs,
+  runClosedLoopAlignmentMonitor,
   runDailyFounderBrief,
   runOpenLoopMonitor,
   runScheduledConnectorSync,
@@ -67,6 +68,24 @@ async function main() {
     const alerts = await repository.listBrainAlerts({ brainId: brain.id });
     assert.ok(alerts.some((alert) => alert.alertType === "overdue_open_loop"));
 
+    await repository.createMemoryObjects([
+      {
+        brainId: brain.id,
+        objectType: "commitment",
+        name: "Customer callback commitment",
+        description: "Naveen committed to call the customer back with launch timing.",
+        status: "open",
+      },
+    ]);
+    const alignment = await runClosedLoopAlignmentMonitor();
+    assert.ok(alignment.findingsDetected >= 1, "expected closed-loop alignment finding");
+    assert.ok(alignment.reportsStored >= 1, "expected closed-loop alignment report");
+    const alignmentAlerts = await repository.listBrainAlerts({ brainId: brain.id });
+    assert.ok(
+      alignmentAlerts.some((alert) => alert.alertType === "commitment_without_active_loop"),
+      "expected commitment alignment alert",
+    );
+
     const daily = await runDailyFounderBrief();
     assert.ok(daily.stored.length >= 1, "expected daily brief source to be stored");
     const weekly = await runWeeklyLearningMemo();
@@ -75,6 +94,7 @@ async function main() {
     const sources = await repository.listSourceItems(brain.id);
     assert.ok(sources.some((source) => source.metadata?.domain_type === "daily_brief"));
     assert.ok(sources.some((source) => source.metadata?.domain_type === "weekly_learning_memo"));
+    assert.ok(sources.some((source) => source.metadata?.domain_type === "closed_loop_alignment_report"));
 
     console.log("Always-on verification passed.");
   } finally {

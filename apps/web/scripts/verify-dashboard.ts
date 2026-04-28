@@ -83,6 +83,12 @@ async function main() {
         createdAt: "2026-04-26T10:00:00.000Z",
       }),
       source({
+        id: "company-drift-review",
+        type: "strategy_output",
+        metadata: { domain_type: "company_drift_review" },
+        createdAt: "2026-04-26T09:30:00.000Z",
+      }),
+      source({
         id: "customer-call",
         type: "transcript",
         createdAt: "2026-04-26T09:00:00.000Z",
@@ -153,6 +159,7 @@ async function main() {
 
   assert.equal(dashboard.latestDailyBrief?.id, "daily-brief");
   assert.deepEqual(dashboard.operationalSources.map((item) => item.id), ["customer-call"]);
+  assert.equal(dashboard.latestDriftReport?.id, "company-drift-review");
   assert.equal(dashboard.latestOperationalSource?.id, "customer-call");
   assert.equal(dashboard.newOperationalSources24h, 1);
   assert.deepEqual(dashboard.overdueLoops.map((item) => item.id), ["overdue-review-loop"]);
@@ -166,6 +173,14 @@ async function main() {
   assert.deepEqual(dashboard.questions.map((item) => item.id), ["question-pricing"]);
   assert.deepEqual(dashboard.productInsights.map((item) => item.id), ["product-signal"]);
   assert.deepEqual(dashboard.outcomeLearnings.map((item) => item.id), ["closed-loop-learning"]);
+  assert.ok(
+    dashboard.driftFindings.some((finding) => finding.alertType === "loop_review_backlog"),
+    "expected drift review to flag loop review backlog",
+  );
+  assert.ok(
+    dashboard.driftFindings.some((finding) => finding.alertType === "insight_without_product_loop"),
+    "expected drift review to flag product insight without execution loop",
+  );
   assert.deepEqual(dashboard.investorLoops.map((item) => item.id), []);
   assert.deepEqual(dashboard.customerLoops.map((item) => item.id), []);
   assert.match(dashboard.commandSummary, /1 overdue action loop/);

@@ -18,6 +18,12 @@ export type EmailConnectorSyncResult = {
   sourceItemIds: string[];
   skippedItems: Array<{ externalId: string; title: string; reason: string }>;
   failedItems: Array<{ externalId: string; title: string; error: string }>;
+  /**
+   * ISO timestamp of the latest provider-side message we observed.
+   * The runtime persists this back into ConnectorConfig.config.watermark
+   * so the next sync can request only newer items.
+   */
+  nextWatermark?: string;
 };
 
 export type EmailSourceInput = {

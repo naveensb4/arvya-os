@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
+import { createClient } from "@supabase/supabase-js";
 import { tryGetDb } from "@/lib/db/client";
+import { getRepository, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +21,16 @@ type GroupCheck = {
   notes?: string;
 };
 
+type ConnectorHealth = {
+  connectorType: ConnectorType | "notetaker_calendar";
+  configCount: number;
+  withCredentials: number;
+  lastSyncAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  watermark: string | null;
+};
+
 type HealthResponse = {
   status: "ok" | "degraded" | "fail";
   uptimeSeconds: number;
@@ -35,6 +47,14 @@ type HealthResponse = {
     error: string | null;
     latencyMs: number | null;
   };
+  supabaseApi: {
+    configured: boolean;
+    reachable: boolean;
+    storageReachable: boolean;
+    bucket: string;
+    error: string | null;
+    latencyMs: number | null;
+  };
   recall: GroupCheck & {
     webhookPath: string;
     webhookUrl: string | null;
@@ -44,6 +64,7 @@ type HealthResponse = {
   microsoft: GroupCheck;
   ai: GroupCheck;
   supabase: GroupCheck;
+  connectors: ConnectorHealth[];
   env: EnvCheck[];
 };
 
@@ -98,8 +119,124 @@ async function checkDatabase(): Promise<HealthResponse["database"]> {
   }
 }
 
+async function checkSupabaseApi(): Promise<HealthResponse["supabaseApi"]> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const bucket = process.env.SUPABASE_SOURCE_BUCKET?.trim() || "source-uploads";
+  if (!supabaseUrl || !serviceRoleKey) {
+    return {
+      configured: false,
+      reachable: false,
+      storageReachable: false,
+      bucket,
+      error: null,
+      latencyMs: null,
+    };
+  }
+
+  const start = Date.now();
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
+    const { error: listError } = await supabase.storage.listBuckets();
+    if (listError) throw listError;
+    const { error: bucketError } = await supabase.storage.getBucket(bucket);
+    return {
+      configured: true,
+      reachable: true,
+      storageReachable: !bucketError,
+      bucket,
+      error: bucketError ? sanitizeError(bucketError.message) : null,
+      latencyMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      reachable: false,
+      storageReachable: false,
+      bucket,
+      error: sanitizeError(error instanceof Error ? error.message : "unknown Supabase API error"),
+      latencyMs: Date.now() - start,
+    };
+  }
+}
+
 function publicBaseUrl() {
   return process.env.ARVYA_PUBLIC_BASE_URL?.trim().replace(/\/$/, "") || null;
+}
+
+function maxIso(a: string | null | undefined, b: string | null | undefined) {
+  if (!a) return b ?? null;
+  if (!b) return a ?? null;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
+}
+
+function sanitizeError(input: string | null | undefined) {
+  if (!input) return null;
+  // Strip token-shaped substrings just in case a connector wrote one into lastError.
+  const stripped = input
+    .replace(/(eyJ[A-Za-z0-9_-]{10,})/g, "[redacted]")
+    .replace(/\b(?:[A-Za-z0-9_-]{40,})\b/g, "[redacted]");
+  return stripped.slice(0, 240);
+}
+
+function summarizeConnectorConfigs(configs: ConnectorConfig[]): ConnectorHealth[] {
+  const byType = new Map<ConnectorType, ConnectorHealth>();
+  for (const config of configs) {
+    const current = byType.get(config.connectorType) ?? {
+      connectorType: config.connectorType,
+      configCount: 0,
+      withCredentials: 0,
+      lastSyncAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+      watermark: null,
+    };
+    current.configCount += 1;
+    if (config.credentials && Object.keys(config.credentials).length > 0) {
+      current.withCredentials += 1;
+    }
+    current.lastSyncAt = maxIso(current.lastSyncAt, config.lastSyncAt ?? null);
+    current.lastSuccessAt = maxIso(current.lastSuccessAt, config.lastSuccessAt ?? null);
+    if (config.lastError && !current.lastError) {
+      current.lastError = sanitizeError(config.lastError);
+    }
+    const watermark = typeof config.config?.watermark === "string" ? config.config.watermark : null;
+    current.watermark = maxIso(current.watermark, watermark);
+    byType.set(config.connectorType, current);
+  }
+  return [...byType.values()];
+}
+
+async function loadConnectorHealth(): Promise<ConnectorHealth[]> {
+  try {
+    const repository = getRepository();
+    const configs = await repository.listConnectorConfigs();
+    const summary = summarizeConnectorConfigs(configs);
+    const calendars = await repository.listNotetakerCalendars();
+    if (calendars.length > 0) {
+      const lastSyncAt = calendars.reduce<string | null>((acc, calendar) => maxIso(acc, calendar.lastSyncAt ?? null), null);
+      const lastError = calendars
+        .map((calendar) => sanitizeError(calendar.lastError))
+        .find((value): value is string => Boolean(value)) ?? null;
+      summary.push({
+        connectorType: "notetaker_calendar",
+        configCount: calendars.length,
+        withCredentials: calendars.filter((calendar) => {
+          const creds = (calendar.config as Record<string, unknown> | undefined)?.credentials;
+          return creds !== null && typeof creds === "object" && Object.keys(creds as Record<string, unknown>).length > 0;
+        }).length,
+        lastSyncAt,
+        lastSuccessAt: lastSyncAt,
+        lastError,
+        watermark: lastSyncAt,
+      });
+    }
+    return summary.sort((a, b) => a.connectorType.localeCompare(b.connectorType));
+  } catch {
+    return [];
+  }
 }
 
 function recallWebhookUrl() {
@@ -108,7 +245,11 @@ function recallWebhookUrl() {
 }
 
 export async function GET() {
-  const database = await checkDatabase();
+  const [database, supabaseApi, connectors] = await Promise.all([
+    checkDatabase(),
+    checkSupabaseApi(),
+    loadConnectorHealth(),
+  ]);
 
   const supabase = group({
     required: ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"],
@@ -196,8 +337,10 @@ export async function GET() {
   const dbOk = database.reachable || !database.configured;
   const overall: HealthResponse["status"] = (() => {
     if (database.configured && !database.reachable) return "fail";
+    if (supabaseApi.configured && !supabaseApi.reachable) return "fail";
     if (requiredMissing > 0) return "degraded";
     if (!aiHasModelKey) return "degraded";
+    if (supabaseApi.configured && !supabaseApi.storageReachable) return "degraded";
     if (!dbOk) return "fail";
     return "ok";
   })();
@@ -213,12 +356,14 @@ export async function GET() {
       publicBaseUrl: publicBaseUrl(),
     },
     database,
+    supabaseApi,
     recall,
     inngest,
     google,
     microsoft,
     ai,
     supabase,
+    connectors,
     env,
   };
 

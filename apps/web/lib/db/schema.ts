@@ -42,6 +42,10 @@ export const memoryKindEnum = pgEnum("memory_kind", [
   "task",
   "product_insight",
   "marketing_idea",
+  "outcome",
+  "investor_feedback",
+  "customer_feedback",
+  "advisor_feedback",
   "custom",
 ]);
 
@@ -66,6 +70,10 @@ export const openLoopTypeEnum = pgEnum("open_loop_type", [
   "diligence",
   "crm",
   "scheduling",
+  "task",
+  "investor_ask",
+  "customer_ask",
+  "strategic_question",
   "other",
 ]);
 
@@ -141,6 +149,25 @@ export const brainAlertStatusEnum = pgEnum("brain_alert_status", [
   "dismissed",
 ]);
 
+export const prioritySetByEnum = pgEnum("priority_set_by", [
+  "naveen",
+  "pb",
+  "system",
+]);
+
+export const priorityHorizonEnum = pgEnum("priority_horizon", [
+  "today",
+  "week",
+  "sprint",
+  "quarter",
+]);
+
+export const priorityStatusEnum = pgEnum("priority_status", [
+  "active",
+  "achieved",
+  "abandoned",
+]);
+
 export const notetakerProviderEnum = pgEnum("notetaker_provider", [
   "google_calendar",
   "outlook_calendar",
@@ -214,7 +241,10 @@ export const sourceItems = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("source_items_brain_id_idx").on(table.brainId)],
+  (table) => [
+    index("source_items_brain_id_idx").on(table.brainId),
+    index("source_items_brain_created_at_idx").on(table.brainId, table.createdAt),
+  ],
 );
 
 export const memoryObjects = pgTable(
@@ -239,6 +269,7 @@ export const memoryObjects = pgTable(
   },
   (table) => [
     index("memory_objects_brain_id_idx").on(table.brainId),
+    index("memory_objects_brain_created_at_idx").on(table.brainId, table.createdAt),
     index("memory_objects_source_item_id_idx").on(table.sourceItemId),
     index("memory_objects_type_idx").on(table.objectType),
     index("memory_objects_status_idx").on(table.status),
@@ -276,6 +307,7 @@ export const openLoops = pgTable(
   },
   (table) => [
     index("open_loops_brain_id_idx").on(table.brainId),
+    index("open_loops_brain_created_at_idx").on(table.brainId, table.createdAt),
     index("open_loops_source_item_id_idx").on(table.sourceItemId),
     index("open_loops_status_idx").on(table.status),
     index("open_loops_priority_idx").on(table.priority),
@@ -306,6 +338,7 @@ export const relationships = pgTable(
   },
   (table) => [
     index("relationships_brain_id_idx").on(table.brainId),
+    index("relationships_brain_created_at_idx").on(table.brainId, table.createdAt),
     index("relationships_from_object_id_idx").on(table.fromObjectId),
     index("relationships_to_object_id_idx").on(table.toObjectId),
   ],
@@ -331,6 +364,7 @@ export const workflows = pgTable(
   },
   (table) => [
     index("workflows_brain_id_idx").on(table.brainId),
+    index("workflows_brain_created_at_idx").on(table.brainId, table.createdAt),
     index("workflows_source_item_id_idx").on(table.sourceItemId),
     index("workflows_status_idx").on(table.status),
   ],
@@ -389,6 +423,7 @@ export const agentRuns = pgTable(
   },
   (table) => [
     index("agent_runs_brain_id_idx").on(table.brainId),
+    index("agent_runs_brain_started_at_idx").on(table.brainId, table.startedAt),
     index("agent_runs_source_item_id_idx").on(table.sourceItemId),
     index("agent_runs_workflow_id_idx").on(table.workflowId),
     index("agent_runs_started_at_idx").on(table.startedAt),
@@ -558,6 +593,33 @@ export const notetakerEvents = pgTable(
     index("notetaker_events_type_idx").on(table.eventType),
   ],
 );
+
+export const priorities = pgTable(
+  "priorities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    statement: text("statement").notNull(),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    setBy: prioritySetByEnum("set_by").notNull().default("naveen"),
+    horizon: priorityHorizonEnum("horizon").notNull().default("week"),
+    status: priorityStatusEnum("status").notNull().default("active"),
+    sourceRefs: jsonb("source_refs").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("priorities_brain_id_idx").on(table.brainId),
+    index("priorities_brain_status_idx").on(table.brainId, table.status),
+    index("priorities_status_idx").on(table.status),
+    index("priorities_set_at_idx").on(table.setAt),
+  ],
+);
+
+export type PriorityRow = typeof priorities.$inferSelect;
+export type NewPriorityRow = typeof priorities.$inferInsert;
 
 export type BrainRow = typeof brains.$inferSelect;
 export type NewBrainRow = typeof brains.$inferInsert;

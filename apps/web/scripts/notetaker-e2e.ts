@@ -1,9 +1,12 @@
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { config as loadEnv } from "dotenv";
+import { eq } from "drizzle-orm";
 
 loadEnv({ path: resolve(__dirname, "../.env.local") });
 
 import { getRepository } from "../lib/db/repository";
+import { closeDbForTests, getDb, schema } from "../lib/db/client";
 import {
   ingestNotetakerTranscript,
   MockRecallClient,
@@ -23,50 +26,53 @@ function expect(name: string, condition: boolean, detail?: string) {
 
 (async () => {
   const repo = getRepository();
-  const brains = await repo.listBrains();
-  if (!brains[0]) {
-    console.error("No brain available; aborting.");
-    process.exit(1);
-  }
-  const brainId = brains[0].id;
-  console.log(`Brain: ${brains[0].name} (${brainId})`);
+  const marker = randomUUID();
+  const brain = await repo.createBrain({
+    name: `Notetaker E2E Verification ${marker}`,
+    kind: "company",
+    thesis: "Temporary brain used to verify notetaker scheduling, transcript ingestion, webhook handling, and dedupe.",
+  });
+  const brainId = brain.id;
+  let exitCode = 0;
+  console.log(`Brain: ${brain.name} (${brainId})`);
 
-  console.log("\n=== Full sync via mock client ===");
-  const startISO = new Date(Date.now() + 30 * 60_000).toISOString();
-  const endISO = new Date(Date.now() + 90 * 60_000).toISOString();
-  const mockEventId = `mock-evt-${Date.now()}`;
-  const mockMeetingUrl = `https://meet.google.com/${mockEventId}`;
-  const calendar = await reuseOrCreateNotetakerCalendar({
-    repository: repo,
-    brainId,
-    provider: "google_calendar",
-    defaultExternalCalendarId: "primary",
-    defaultConfig: {
-      source: "smoke_test_mock",
-      mockEvents: [
-        {
-          id: mockEventId,
-          title: "Arvya investor sync",
-          description: "Mock event",
-          meeting_url: mockMeetingUrl,
-          start_time: startISO,
-          end_time: endISO,
-          participants: [{ email: "investor@example.com" }, { email: "naveen@arvya.ai" }],
-        },
-      ],
-    },
-  });
-  await repo.updateNotetakerCalendar(calendar.id, {
-    status: "connected",
-    autoJoinEnabled: true,
-    autoJoinMode: "all_calls",
-    config: {
-      ...calendar.config,
-      mockEvents: (calendar.config as MockEventConfig).mockEvents,
-      credentials: { access_token: "mock", refresh_token: "mock" },
-      source: "smoke_test_mock",
-    },
-  });
+  try {
+    console.log("\n=== Full sync via mock client ===");
+    const startISO = new Date(Date.now() + 30 * 60_000).toISOString();
+    const endISO = new Date(Date.now() + 90 * 60_000).toISOString();
+    const mockEventId = `mock-evt-${Date.now()}`;
+    const mockMeetingUrl = `https://meet.google.com/${mockEventId}`;
+    const calendar = await reuseOrCreateNotetakerCalendar({
+      repository: repo,
+      brainId,
+      provider: "google_calendar",
+      defaultExternalCalendarId: "primary",
+      defaultConfig: {
+        source: "smoke_test_mock",
+        mockEvents: [
+          {
+            id: mockEventId,
+            title: "Arvya investor sync",
+            description: "Mock event",
+            meeting_url: mockMeetingUrl,
+            start_time: startISO,
+            end_time: endISO,
+            participants: [{ email: "investor@example.com" }, { email: "naveen@arvya.ai" }],
+          },
+        ],
+      },
+    });
+    await repo.updateNotetakerCalendar(calendar.id, {
+      status: "connected",
+      autoJoinEnabled: true,
+      autoJoinMode: "all_calls",
+      config: {
+        ...calendar.config,
+        mockEvents: (calendar.config as MockEventConfig).mockEvents,
+        credentials: { access_token: "mock", refresh_token: "mock" },
+        source: "smoke_test_mock",
+      },
+    });
 
   const summaries = await runNotetakerCalendarSync({ client: new MockRecallClient() });
   const summary = summaries.find((s) => s.calendarId === calendar.id);
@@ -126,12 +132,21 @@ function expect(name: string, condition: boolean, detail?: string) {
   );
   expect("webhook ingest finds prior meeting", Boolean((wResult as { result?: unknown }).result));
 
-  console.log("\n=== Cleanup ===");
-  await repo.deleteNotetakerCalendar(calendar.id);
-  console.log(`  • removed calendar ${calendar.id}`);
+    console.log("\n=== Cleanup ===");
+    await repo.deleteNotetakerCalendar(calendar.id);
+    console.log(`  • removed calendar ${calendar.id}`);
 
-  console.log(`\nResult: ${pass} passed, ${fail} failed`);
-  process.exit(fail === 0 ? 0 : 1);
+    console.log(`\nResult: ${pass} passed, ${fail} failed`);
+    exitCode = fail === 0 ? 0 : 1;
+  } finally {
+    try {
+      await getDb().delete(schema.brains).where(eq(schema.brains.id, brainId));
+      await closeDbForTests();
+    } catch (error) {
+      console.warn("Notetaker E2E cleanup skipped:", error);
+    }
+  }
+  process.exit(exitCode);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

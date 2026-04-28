@@ -1,10 +1,11 @@
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
   AgentRun,
   Brain,
   MemoryObject,
   ModelProvider,
   OpenLoop,
+  Priority,
   Relationship,
   SourceEmbedding,
   SourceItem,
@@ -22,6 +23,7 @@ import {
   notetakerEvents,
   notetakerMeetings,
   openLoops,
+  priorities,
   relationships,
   sourceEmbeddings,
   sourceItems,
@@ -36,6 +38,7 @@ import {
   type NotetakerEventRow,
   type NotetakerMeetingRow,
   type OpenLoopRow,
+  type PriorityRow,
   type RelationshipRow,
   type SourceEmbeddingRow,
   type SourceItemRow,
@@ -53,10 +56,13 @@ import type {
   CreateNotetakerEventData,
   CreateNotetakerMeetingData,
   CreateOpenLoopData,
+  CreatePriorityData,
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
   CreateWorkflowData,
+  ListOptions,
+  ListPrioritiesOptions,
   UpdateAgentRunData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
@@ -65,6 +71,7 @@ import type {
   UpdateNotetakerEventData,
   UpdateNotetakerMeetingData,
   UpdateOpenLoopData,
+  UpdatePriorityStatusData,
   UpdateRelationshipData,
   UpdateWorkflowData,
 } from "./repository";
@@ -197,6 +204,24 @@ function toSourceEmbedding(row: SourceEmbeddingRow): SourceEmbedding {
     embedding: row.embedding ?? null,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toPriority(row: PriorityRow): Priority {
+  const sourceRefs = Array.isArray(row.sourceRefs)
+    ? (row.sourceRefs as unknown[]).filter((value): value is string => typeof value === "string")
+    : [];
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    statement: row.statement,
+    setAt: row.setAt.toISOString(),
+    setBy: row.setBy,
+    horizon: row.horizon,
+    status: row.status,
+    sourceRefs: sourceRefs.length > 0 ? sourceRefs : undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -378,13 +403,14 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toSourceItem(row) : null;
   }
 
-  async listSourceItems(brainId: string): Promise<SourceItem[]> {
+  async listSourceItems(brainId: string, options: ListOptions = {}): Promise<SourceItem[]> {
     return (
       await this.db
         .select()
         .from(sourceItems)
         .where(eq(sourceItems.brainId, brainId))
         .orderBy(desc(sourceItems.createdAt))
+        .limit(options.limit ?? 500)
     ).map(toSourceItem);
   }
 
@@ -409,13 +435,14 @@ export class SupabaseRepository implements BrainRepository {
     return rows.map(toMemoryObject);
   }
 
-  async listMemoryObjects(brainId: string): Promise<MemoryObject[]> {
+  async listMemoryObjects(brainId: string, options: ListOptions = {}): Promise<MemoryObject[]> {
     return (
       await this.db
         .select()
         .from(memoryObjects)
         .where(eq(memoryObjects.brainId, brainId))
         .orderBy(desc(memoryObjects.createdAt))
+        .limit(options.limit ?? 500)
     ).map(toMemoryObject);
   }
 
@@ -454,13 +481,14 @@ export class SupabaseRepository implements BrainRepository {
     return rows.map(toRelationship);
   }
 
-  async listRelationships(brainId: string): Promise<Relationship[]> {
+  async listRelationships(brainId: string, options: ListOptions = {}): Promise<Relationship[]> {
     return (
       await this.db
         .select()
         .from(relationships)
         .where(eq(relationships.brainId, brainId))
         .orderBy(desc(relationships.createdAt))
+        .limit(options.limit ?? 500)
     ).map(toRelationship);
   }
 
@@ -504,13 +532,14 @@ export class SupabaseRepository implements BrainRepository {
     return rows.map(toOpenLoop);
   }
 
-  async listOpenLoops(brainId: string): Promise<OpenLoop[]> {
+  async listOpenLoops(brainId: string, options: ListOptions = {}): Promise<OpenLoop[]> {
     return (
       await this.db
         .select()
         .from(openLoops)
         .where(eq(openLoops.brainId, brainId))
         .orderBy(desc(openLoops.createdAt))
+        .limit(options.limit ?? 500)
     ).map(toOpenLoop);
   }
 
@@ -568,13 +597,14 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toWorkflow(row) : null;
   }
 
-  async listWorkflows(brainId: string): Promise<Workflow[]> {
+  async listWorkflows(brainId: string, limit = 50): Promise<Workflow[]> {
     return (
       await this.db
         .select()
         .from(workflows)
         .where(eq(workflows.brainId, brainId))
         .orderBy(desc(workflows.createdAt))
+        .limit(limit)
     ).map(toWorkflow);
   }
 
@@ -663,11 +693,19 @@ export class SupabaseRepository implements BrainRepository {
       }
     }
 
-    const sourceRows = vectorRows.length
+    const vectorSourceItemIds = [
+      ...new Set(vectorRows.map(({ row }) => row.sourceItemId)),
+    ];
+    const sourceRows = vectorSourceItemIds.length
       ? await this.db
           .select()
           .from(sourceItems)
-          .where(eq(sourceItems.brainId, input.brainId))
+          .where(
+            and(
+              eq(sourceItems.brainId, input.brainId),
+              inArray(sourceItems.id, vectorSourceItemIds),
+            ),
+          )
       : [];
     const sourceById = new Map(sourceRows.map((source) => [source.id, source]));
 
@@ -694,6 +732,64 @@ export class SupabaseRepository implements BrainRepository {
     ]
       .sort((a, b) => b.score - a.score)
       .slice(0, input.limit);
+  }
+
+  async listPriorities(brainId: string, opts: ListPrioritiesOptions = {}): Promise<Priority[]> {
+    const conditions = [eq(priorities.brainId, brainId)];
+    if (opts.status) {
+      const statusValues = Array.isArray(opts.status) ? opts.status : [opts.status];
+      conditions.push(
+        statusValues.length === 1
+          ? eq(priorities.status, statusValues[0])
+          : inArray(priorities.status, statusValues),
+      );
+    }
+    if (opts.horizon) {
+      const horizonValues = Array.isArray(opts.horizon) ? opts.horizon : [opts.horizon];
+      conditions.push(
+        horizonValues.length === 1
+          ? eq(priorities.horizon, horizonValues[0])
+          : inArray(priorities.horizon, horizonValues),
+      );
+    }
+
+    const baseQuery = this.db
+      .select()
+      .from(priorities)
+      .where(conditions.length === 1 ? conditions[0] : and(...conditions))
+      .orderBy(desc(priorities.setAt));
+
+    const rows = typeof opts.limit === "number" ? await baseQuery.limit(opts.limit) : await baseQuery;
+    return rows.map(toPriority);
+  }
+
+  async createPriority(input: CreatePriorityData): Promise<Priority> {
+    const setAt = input.setAt ? new Date(input.setAt) : new Date();
+    const [row] = await this.db
+      .insert(priorities)
+      .values({
+        brainId: input.brainId,
+        statement: input.statement,
+        setAt,
+        setBy: input.setBy ?? "naveen",
+        horizon: input.horizon ?? "week",
+        status: input.status ?? "active",
+        sourceRefs: input.sourceRefs ?? [],
+      })
+      .returning();
+    return toPriority(row);
+  }
+
+  async updatePriorityStatus(
+    priorityId: string,
+    update: UpdatePriorityStatusData,
+  ): Promise<Priority | null> {
+    const [row] = await this.db
+      .update(priorities)
+      .set({ status: update.status, updatedAt: new Date() })
+      .where(eq(priorities.id, priorityId))
+      .returning();
+    return row ? toPriority(row) : null;
   }
 
   async listAgentRuns(brainId: string, limit = 50): Promise<AgentRun[]> {

@@ -36,7 +36,7 @@ function env(name: string) {
   return process.env[name]?.trim() || undefined;
 }
 
-const MEETING_URL_PATTERN = /https?:\/\/(?:meet\.google\.com|(?:[\w-]+\.)?zoom\.us|teams\.(?:microsoft|live)\.com|teams\.microsoft\.us|gov\.teams\.microsoft\.us|(?:[\w-]+\.)?webex\.com|(?:[\w-]+\.)?gotomeeting\.com|(?:[\w-]+\.)?goto\.com|whereby\.com|chime\.aws)\/[^\s<>)"]+/i;
+export const MEETING_URL_PATTERN = /https?:\/\/(?:meet\.google\.com|(?:[\w-]+\.)?zoom\.us|teams\.(?:microsoft|live)\.com|teams\.microsoft\.us|gov\.teams\.microsoft\.us|(?:[\w-]+\.)?webex\.com|(?:[\w-]+\.)?gotomeeting\.com|(?:[\w-]+\.)?goto\.com|whereby\.com|chime\.aws)\/[^\s<>)"]+/i;
 
 export function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
   if (input.meetingUrl?.trim()) {

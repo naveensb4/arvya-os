@@ -10,7 +10,7 @@ import {
   sourceFingerprint,
   sourceMatchesFingerprint,
 } from "@/lib/workflows/source-normalization";
-import { listProviderCalendarEvents } from "./calendar-providers";
+import { listProviderCalendarEvents, MEETING_URL_PATTERN } from "./calendar-providers";
 
 export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
   const creds = calendar.config?.credentials;
@@ -166,9 +166,9 @@ export function verifyRecallWebhookSignature(input: {
 
 export function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
   const explicit = stringValue(input.meetingUrl);
-  if (explicit) return explicit;
+  if (explicit && (MEETING_URL_PATTERN.test(explicit) || /^https?:\/\//i.test(explicit))) return explicit;
   const haystack = [input.location, input.description, input.title].filter(Boolean).join("\n");
-  const match = haystack.match(/https?:\/\/(?:meet\.google\.com|[\w.-]*zoom\.us|teams\.microsoft\.com|[\w.-]+)\/[^\s<>)"]+/i);
+  const match = haystack.match(MEETING_URL_PATTERN);
   return match?.[0];
 }
 

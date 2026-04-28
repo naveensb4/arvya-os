@@ -6,8 +6,11 @@
   "exports": {
     "./ingestion-agent": "./src/ingestion-agent.ts",
     "./evals/ingestion-extraction-fixtures": "./src/evals/ingestion-extraction-fixtures.ts",
+    "./evals/closed-loop-fixtures": "./src/evals/closed-loop-fixtures.ts",
+    "./evals/runner": "./src/evals/runner.ts",
     "./ask-brain-agent": "./src/ask-brain-agent.ts",
     "./daily-brief-agent": "./src/daily-brief-agent.ts",
+    "./drift-review-agent": "./src/drift-review-agent.ts",
     "./follow-up-agent": "./src/follow-up-agent.ts",
     ".": "./src/index.ts"
   },
@@ -15,6 +18,7 @@
     "@arvya/core": "workspace:*",
     "@arvya/prompts": "workspace:*",
     "@langchain/langgraph": "^1.2.9",
-    "nanoid": "^5.1.9"
+    "nanoid": "^5.1.9",
+    "zod": "^4.3.6"
   }
 }

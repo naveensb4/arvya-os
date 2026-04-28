@@ -51,10 +51,20 @@ type OutlookFolder = {
   displayName: string;
 };
 
+export type OutlookListMessagesOptions = {
+  /**
+   * ISO timestamp. When provided, list only messages with
+   * receivedDateTime > since. The Microsoft Graph $filter operator is
+   * `receivedDateTime ge <iso>` for live calls; mocks should honor it
+   * by filtering their fixed message list.
+   */
+  since?: string;
+};
+
 export type OutlookClient = {
   listMailFolders?(): Promise<OutlookFolder[]>;
-  listMessages(folderId: string): Promise<OutlookMessage[]>;
-  listMessagesByCategory?(categoryName: string): Promise<OutlookMessage[]>;
+  listMessages(folderId: string, options?: OutlookListMessagesOptions): Promise<OutlookMessage[]>;
+  listMessagesByCategory?(categoryName: string, options?: OutlookListMessagesOptions): Promise<OutlookMessage[]>;
 };
 
 function env(name: string) {
@@ -167,11 +177,17 @@ class OutlookGraphClient implements OutlookClient {
     return json.value ?? [];
   }
 
-  async listMessages(folderId: string) {
+  async listMessages(folderId: string, options?: OutlookListMessagesOptions) {
     const url = new URL(`${MICROSOFT_GRAPH}/me/mailFolders/${encodeURIComponent(folderId)}/messages`);
     url.searchParams.set("$top", "50");
     url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview,body");
     url.searchParams.set("$orderby", "receivedDateTime desc");
+    if (options?.since) {
+      const sinceMs = Date.parse(options.since);
+      if (Number.isFinite(sinceMs)) {
+        url.searchParams.set("$filter", `receivedDateTime gt ${new Date(sinceMs).toISOString()}`);
+      }
+    }
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${await this.getAccessToken()}` },
     });
@@ -180,11 +196,18 @@ class OutlookGraphClient implements OutlookClient {
     return json.value ?? [];
   }
 
-  async listMessagesByCategory(categoryName: string) {
+  async listMessagesByCategory(categoryName: string, options?: OutlookListMessagesOptions) {
     const url = new URL(`${MICROSOFT_GRAPH}/me/messages`);
     url.searchParams.set("$top", "50");
     url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview,body");
-    url.searchParams.set("$filter", `categories/any(c:c eq '${categoryName.replaceAll("'", "''")}')`);
+    const filters = [`categories/any(c:c eq '${categoryName.replaceAll("'", "''")}')`];
+    if (options?.since) {
+      const sinceMs = Date.parse(options.since);
+      if (Number.isFinite(sinceMs)) {
+        filters.push(`receivedDateTime gt ${new Date(sinceMs).toISOString()}`);
+      }
+    }
+    url.searchParams.set("$filter", filters.join(" and "));
     url.searchParams.set("$orderby", "receivedDateTime desc");
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${await this.getAccessToken()}` },
@@ -211,6 +234,19 @@ function emailAddress(value?: { emailAddress?: { name?: string; address?: string
   if (!value?.emailAddress) return "";
   const { name, address } = value.emailAddress;
   return name && address ? `${name} <${address}>` : address ?? name ?? "";
+}
+
+function outlookWatermark(config: ConnectorConfig) {
+  const raw = config.config.watermark;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+}
+
+function outlookMessageTimestamp(message: OutlookMessage): string | undefined {
+  const candidate = message.receivedDateTime ?? message.sentDateTime;
+  if (!candidate) return undefined;
+  const ms = Date.parse(candidate);
+  if (!Number.isFinite(ms)) return undefined;
+  return new Date(ms).toISOString();
 }
 
 function formatOutlookMessage(message: OutlookMessage) {
@@ -280,9 +316,15 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
   const folders = await resolveOutlookFolders(configuredFolders, outlook);
   const result = newEmailSyncResult();
   const itemLimit = emailConnectorItemLimit(config);
+  const since = outlookWatermark(config);
+  let nextWatermark: string | undefined = since;
+  const trackWatermark = (message: OutlookMessage) => {
+    const iso = outlookMessageTimestamp(message);
+    if (iso && (!nextWatermark || iso > nextWatermark)) nextWatermark = iso;
+  };
 
   for (const folder of folders) {
-    const messages = await outlook.listMessages(folder.id);
+    const messages = await outlook.listMessages(folder.id, since ? { since } : undefined);
     result.itemsFound += messages.length;
     const messagesToSync = messages.slice(0, itemLimit);
     if (messages.length > messagesToSync.length) {
@@ -295,6 +337,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
     }
     for (const message of messagesToSync) {
       const externalId = `outlook:${message.id}`;
+      trackWatermark(message);
       try {
         const formatted = formatOutlookMessage(message);
         const relevance = emailMatchesAryvaScope({
@@ -355,7 +398,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
     if (!outlook.listMessagesByCategory) {
       throw new Error("Outlook category sync is not available for this client. Use an Outlook folder named \"Arvya Brain\" or reconnect with the live Microsoft Graph connector.");
     }
-    const messages = await outlook.listMessagesByCategory(categoryName);
+    const messages = await outlook.listMessagesByCategory(categoryName, since ? { since } : undefined);
     result.itemsFound += messages.length;
     const messagesToSync = messages.slice(0, itemLimit);
     if (messages.length > messagesToSync.length) {
@@ -368,6 +411,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
     }
     for (const message of messagesToSync) {
       const externalId = `outlook:${message.id}`;
+      trackWatermark(message);
       try {
         const formatted = formatOutlookMessage(message);
         const relevance = emailMatchesAryvaScope({
@@ -423,6 +467,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
     }
   }
 
+  if (nextWatermark) result.nextWatermark = nextWatermark;
   return result;
 }
 

@@ -11,6 +11,10 @@ import type {
   OpenLoopPriority,
   OpenLoopStatus,
   OpenLoopType,
+  Priority,
+  PriorityHorizon,
+  PrioritySetBy,
+  PriorityStatus,
   Relationship,
   SourceEmbedding,
   SourceItem,
@@ -142,6 +146,30 @@ export type CreateSourceEmbeddingData = {
   content: string;
   embedding?: number[] | null;
   metadata?: Record<string, unknown>;
+};
+
+export type ListOptions = {
+  limit?: number;
+};
+
+export type CreatePriorityData = {
+  brainId: string;
+  statement: string;
+  setBy?: PrioritySetBy;
+  horizon?: PriorityHorizon;
+  status?: PriorityStatus;
+  setAt?: string;
+  sourceRefs?: string[];
+};
+
+export type UpdatePriorityStatusData = {
+  status: PriorityStatus;
+};
+
+export type ListPrioritiesOptions = {
+  status?: PriorityStatus | PriorityStatus[];
+  horizon?: PriorityHorizon | PriorityHorizon[];
+  limit?: number;
 };
 
 export type CreateAgentRunData = {
@@ -405,23 +433,23 @@ export interface BrainRepository {
 
   createSourceItem(input: CreateSourceData): Promise<SourceItem>;
   getSourceItem(sourceItemId: string): Promise<SourceItem | null>;
-  listSourceItems(brainId: string): Promise<SourceItem[]>;
+  listSourceItems(brainId: string, options?: ListOptions): Promise<SourceItem[]>;
 
   createMemoryObjects(items: CreateMemoryObjectData[]): Promise<MemoryObject[]>;
-  listMemoryObjects(brainId: string): Promise<MemoryObject[]>;
+  listMemoryObjects(brainId: string, options?: ListOptions): Promise<MemoryObject[]>;
   updateMemoryObject(memoryObjectId: string, update: UpdateMemoryObjectData): Promise<MemoryObject | null>;
 
   createRelationships(items: CreateRelationshipData[]): Promise<Relationship[]>;
-  listRelationships(brainId: string): Promise<Relationship[]>;
+  listRelationships(brainId: string, options?: ListOptions): Promise<Relationship[]>;
   updateRelationship(relationshipId: string, update: UpdateRelationshipData): Promise<Relationship | null>;
 
   createOpenLoops(items: CreateOpenLoopData[]): Promise<OpenLoop[]>;
-  listOpenLoops(brainId: string): Promise<OpenLoop[]>;
+  listOpenLoops(brainId: string, options?: ListOptions): Promise<OpenLoop[]>;
   updateOpenLoop(openLoopId: string, update: UpdateOpenLoopData): Promise<OpenLoop | null>;
 
   createWorkflow(input: CreateWorkflowData): Promise<Workflow>;
   updateWorkflow(workflowId: string, update: UpdateWorkflowData): Promise<Workflow | null>;
-  listWorkflows(brainId: string): Promise<Workflow[]>;
+  listWorkflows(brainId: string, limit?: number): Promise<Workflow[]>;
 
   createSourceEmbeddings(items: CreateSourceEmbeddingData[]): Promise<SourceEmbedding[]>;
   searchBrain(input: {
@@ -430,6 +458,10 @@ export interface BrainRepository {
     query: string;
     limit: number;
   }): Promise<Array<{ memoryObject?: MemoryObject; openLoop?: OpenLoop; sourceItem?: SourceItem; score: number; reason: "vector" | "lexical" }>>;
+
+  listPriorities(brainId: string, opts?: ListPrioritiesOptions): Promise<Priority[]>;
+  createPriority(input: CreatePriorityData): Promise<Priority>;
+  updatePriorityStatus(priorityId: string, update: UpdatePriorityStatusData): Promise<Priority | null>;
 
   listAgentRuns(brainId: string, limit?: number): Promise<AgentRun[]>;
   createAgentRun(input: CreateAgentRunData): Promise<AgentRun>;

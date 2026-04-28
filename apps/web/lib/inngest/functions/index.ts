@@ -1,4 +1,5 @@
 import {
+  runClosedLoopAlignmentMonitor,
   runDailyFounderBrief,
   runOpenLoopMonitor,
   runScheduledConnectorSync,
@@ -34,6 +35,13 @@ export const openLoopMonitor = inngest.createFunction(
   { id: "open-loop-monitor", name: "Open loop monitor", triggers: [{ cron: "0 * * * *" }] },
   async ({ step }) => {
     return step.run("create overdue loop alerts", runOpenLoopMonitor);
+  },
+);
+
+export const closedLoopAlignmentMonitor = inngest.createFunction(
+  { id: "closed-loop-alignment-monitor", name: "Closed-loop alignment monitor", triggers: [{ cron: "30 */4 * * *" }] },
+  async ({ step }) => {
+    return step.run("detect alignment gaps", runClosedLoopAlignmentMonitor);
   },
 );
 
@@ -83,6 +91,7 @@ export const functions = [
   scheduledConnectorSync,
   sourceIngested,
   openLoopMonitor,
+  closedLoopAlignmentMonitor,
   dailyFounderBrief,
   weeklyLearningMemo,
   notetakerCalendarSync,

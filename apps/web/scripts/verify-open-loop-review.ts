@@ -86,6 +86,32 @@ async function main() {
     assert.equal(dismissed?.status, "dismissed");
     assert.equal(dismissed?.outcome, "Dismissed as noise.");
 
+    const [bulkClosedLoop] = await repository.createOpenLoops([
+      {
+        brainId: brain.id,
+        sourceItemId: source.id,
+        title: "Bulk close should still teach the Brain",
+        description: "This loop already has an outcome before the bulk close.",
+        loopType: "follow_up",
+        status: "open",
+        priority: "medium",
+        outcome: "The founder follow-up converted into a customer pilot.",
+      },
+    ]);
+    await bulkUpdateOpenLoops(brain.id, [bulkClosedLoop.id], {
+      status: "closed",
+      closedAt: new Date().toISOString(),
+    });
+    const outcomeMemories = await repository.listMemoryObjects(brain.id);
+    assert.ok(
+      outcomeMemories.some(
+        (memory) =>
+          memory.properties?.memory_source === "open_loop_outcome" &&
+          memory.properties?.openLoopId === bulkClosedLoop.id,
+      ),
+      "expected bulk terminal update to promote loop outcome into memory",
+    );
+
     const brief = await generateDailyFounderBrief(brain.id);
     assert.deepEqual(brief.openLoops.map((loop) => loop.id), [firstLoop.id]);
     assert.deepEqual(brief.actions.map((loop) => loop.id), [firstLoop.id]);

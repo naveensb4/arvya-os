@@ -35,7 +35,9 @@ export function notConfiguredConnector(name: string): SourceConnector {
     name,
     async sync() {
       throw new Error(
-        `${name} connector is scaffolded but not configured. Manual source ingestion is the active MVP path.`,
+        `${name} connector is not implemented in this milestone. ` +
+          `See VISION.md "Company-Wide Source Coverage / Sequencing" and ` +
+          `docs/sprint/workstream-d-connectors.md for the path to making it real.`,
       );
     },
   };

@@ -5,7 +5,8 @@ import { ingestSourceIntoBrain } from "../lib/workflows/source-ingestion";
 import { syncConnectorConfig } from "../lib/always-on/runtime";
 import type { GoogleDriveClient, GoogleDriveFile } from "../lib/connectors/google-drive";
 import type { OutlookClient, OutlookMessage } from "../lib/connectors/outlook";
-import { extractMeetingUrl } from "../lib/notetaker/calendar-providers";
+import { extractMeetingUrl as extractMeetingUrlFromCalendar } from "../lib/notetaker/calendar-providers";
+import { extractMeetingUrl as extractMeetingUrlFromRuntime } from "../lib/notetaker/runtime";
 import { getRepository, resetRepositoryForTests } from "../lib/db/repository";
 import { parseTranscriptFilename } from "../lib/workflows/batch-ingestion";
 import {
@@ -30,14 +31,14 @@ const flatDriveContent = (index: number) =>
     "Circle back after Annie's partner sync next week.",
   ].join("\n");
 
-async function expectsRejection<T>(promise: Promise<T>, expectedFragment: RegExp, label: string) {
-  try {
-    await promise;
-    throw new Error(`${label}: expected rejection`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    assert.match(message, expectedFragment, `${label}: unexpected error "${message}"`);
-  }
+async function expectsConnectorRejection(
+  promise: Promise<{ status: string; error?: string }>,
+  expectedFragment: RegExp,
+  label: string,
+) {
+  const summary = await promise;
+  assert.equal(summary.status, "failed", `${label}: expected sync to fail, got status=${summary.status}`);
+  assert.match(summary.error ?? "", expectedFragment, `${label}: unexpected error "${summary.error ?? ""}"`);
 }
 
 async function runDriveSafetyCases() {
@@ -57,7 +58,7 @@ async function runDriveSafetyCases() {
     config: { folderIds: ["root"] },
     credentials: { access_token: "mock", refresh_token: "mock" },
   });
-  await expectsRejection(
+  await expectsConnectorRejection(
     syncConnectorConfig(broadConfig, {
       googleDriveClient: { listFiles: async () => [], downloadText: async () => "" },
     }),
@@ -128,7 +129,7 @@ async function runOutlookCategoryGuard() {
       config: { outlookCategoryNames: [broad] },
       credentials: { access_token: "mock-outlook" },
     });
-    await expectsRejection(
+    await expectsConnectorRejection(
       syncConnectorConfig(config, { outlookClient: dummyClient }),
       /too broad|requires a configured/,
       `Outlook category "${broad || "(empty)"}" rejection`,
@@ -195,36 +196,41 @@ function runFilenameParserCases() {
 }
 
 function runMeetingUrlExtraction() {
-  const zoom = extractMeetingUrl({
-    title: "Investor sync with Annie",
-    description: "Join Zoom Meeting:\nhttps://us02web.zoom.us/j/12345?pwd=abc",
-  });
-  assert.equal(zoom, "https://us02web.zoom.us/j/12345?pwd=abc");
+  for (const [label, extract] of [
+    ["calendar-providers", extractMeetingUrlFromCalendar],
+    ["notetaker-runtime", extractMeetingUrlFromRuntime],
+  ] as const) {
+    const zoom = extract({
+      title: "Investor sync with Annie",
+      description: "Join Zoom Meeting:\nhttps://us02web.zoom.us/j/12345?pwd=abc",
+    });
+    assert.equal(zoom, "https://us02web.zoom.us/j/12345?pwd=abc", `${label}: zoom inference`);
 
-  const meet = extractMeetingUrl({
-    description: "Reminder: https://meet.google.com/aaa-bbb-ccc next Tuesday.",
-  });
-  assert.equal(meet, "https://meet.google.com/aaa-bbb-ccc");
+    const meet = extract({
+      description: "Reminder: https://meet.google.com/aaa-bbb-ccc next Tuesday.",
+    });
+    assert.equal(meet, "https://meet.google.com/aaa-bbb-ccc", `${label}: google meet inference`);
 
-  const teams = extractMeetingUrl({
-    description: "Outlook invite link: https://teams.microsoft.com/l/meetup-join/19%3aabc",
-  });
-  assert.equal(teams, "https://teams.microsoft.com/l/meetup-join/19%3aabc");
+    const teams = extract({
+      description: "Outlook invite link: https://teams.microsoft.com/l/meetup-join/19%3aabc",
+    });
+    assert.equal(teams, "https://teams.microsoft.com/l/meetup-join/19%3aabc", `${label}: teams inference`);
 
-  const dropbox = extractMeetingUrl({
-    description: "Notes ready in https://dropbox.com/s/foo/notes.pdf and https://example.com/random",
-  });
-  assert.equal(dropbox, undefined, "must not infer a meeting URL from arbitrary hosts");
+    const dropbox = extract({
+      description: "Notes ready in https://dropbox.com/s/foo/notes.pdf and https://example.com/random",
+    });
+    assert.equal(dropbox, undefined, `${label}: must not infer a meeting URL from arbitrary hosts`);
 
-  const explicit = extractMeetingUrl({
-    description: "see notes",
-    meetingUrl: "https://internal.zoom.example.com/j/999",
-  });
-  assert.equal(
-    explicit,
-    "https://internal.zoom.example.com/j/999",
-    "explicit calendar meetingUrl is trusted (provider already confirmed it)",
-  );
+    const explicit = extract({
+      description: "see notes",
+      meetingUrl: "https://internal.zoom.example.com/j/999",
+    });
+    assert.equal(
+      explicit,
+      "https://internal.zoom.example.com/j/999",
+      `${label}: explicit calendar meetingUrl is trusted (provider already confirmed it)`,
+    );
+  }
 }
 
 function runTraceMergePreservation() {

@@ -49,6 +49,7 @@ const REQUIRED_TABLES = [
   "notetaker_calendars",
   "notetaker_meetings",
   "notetaker_events",
+  "priorities",
 ];
 const REQUIRED_ENV_VARS = [
   "DATABASE_URL",

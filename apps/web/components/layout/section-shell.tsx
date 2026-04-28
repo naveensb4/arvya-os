@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BrainNav } from "@/components/brain/brain-nav";
-import { getBrainSnapshot } from "@/lib/brain/store";
+import { selectedBrainOrDefault } from "@/lib/brain/store";
 
 export async function SectionShell({
   brainId,
@@ -13,7 +13,7 @@ export async function SectionShell({
   description: string;
   children?: React.ReactNode;
 }) {
-  const snapshot = await getBrainSnapshot(brainId);
+  const { selectedBrain } = await selectedBrainOrDefault(brainId);
 
   return (
     <main className="min-h-screen bg-[#f6f2ea] px-6 py-8 text-stone-950">
@@ -22,7 +22,7 @@ export async function SectionShell({
           Back home
         </Link>
         <div className="mt-6 grid gap-6 lg:grid-cols-[260px_1fr]">
-          <BrainNav brain={snapshot.selectedBrain} />
+          <BrainNav brain={selectedBrain} />
           <section className="card">
             <p className="eyebrow text-amber-700">Brain Workspace</p>
             <h1 className="mt-2 text-3xl font-semibold">{title}</h1>

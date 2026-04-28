@@ -25,6 +25,10 @@ export type MemoryObjectType =
   | "task"
   | "product_insight"
   | "marketing_idea"
+  | "outcome"
+  | "investor_feedback"
+  | "customer_feedback"
+  | "advisor_feedback"
   | "custom";
 
 export type MemoryObjectStatus = "open" | "in_progress" | "waiting" | "done" | "closed" | "snoozed";
@@ -41,6 +45,10 @@ export type OpenLoopType =
   | "diligence"
   | "crm"
   | "scheduling"
+  | "task"
+  | "investor_ask"
+  | "customer_ask"
+  | "strategic_question"
   | "other";
 
 export type OpenLoopStatus =
@@ -59,6 +67,10 @@ export type WorkflowStatus = "started" | "running" | "waiting_for_human" | "comp
 export type AgentRunStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type ModelProvider = "anthropic" | "openai" | "local";
+
+export type PrioritySetBy = "naveen" | "pb" | "system";
+export type PriorityHorizon = "today" | "week" | "sprint" | "quarter";
+export type PriorityStatus = "active" | "achieved" | "abandoned";
 
 export type Brain = {
   id: string;
@@ -182,6 +194,19 @@ export type AgentRun = {
   completedAt?: string;
 };
 
+export type Priority = {
+  id: string;
+  brainId: string;
+  statement: string;
+  setAt: string;
+  setBy: PrioritySetBy;
+  horizon: PriorityHorizon;
+  status: PriorityStatus;
+  sourceRefs?: string[];
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type SourceCitation = {
   sourceItemId: string;
   sourceTitle: string;
@@ -191,10 +216,23 @@ export type SourceCitation = {
   confidence?: number;
 };
 
+export type StructuredCitation = {
+  kind: "source" | "memory" | "open_loop";
+  id: string;
+  snippet: string;
+  sourceItemId?: string;
+  sourceTitle?: string;
+};
+
+export type AnswerConfidence = "high" | "medium" | "low";
+
 export type BrainAnswer = {
   question: string;
   answer: string;
   citations: SourceCitation[];
+  structuredCitations?: StructuredCitation[];
+  confidenceLevel?: AnswerConfidence;
+  uncertaintyNotes?: string[];
   uncertain?: boolean;
   followUp?: string;
 };
@@ -221,6 +259,102 @@ export type DailyBrief = {
   actions: OpenLoop[];
   openLoops: OpenLoop[];
   loopsToReview: OpenLoop[];
+  structured?: StructuredDailyBrief;
+};
+
+export type StructuredDailyBriefPriority = {
+  priority_id?: string;
+  statement: string;
+  why_today: string;
+};
+
+export type StructuredDailyBriefOverdueFollowUp = {
+  open_loop_id: string;
+  title: string;
+  owner: string;
+  days_overdue: number;
+};
+
+export type StructuredDailyBriefDueSoon = {
+  open_loop_id: string;
+  title: string;
+  due_in_days: number;
+};
+
+export type StructuredDailyBriefRelationship = {
+  entity: string;
+  kind: "customer" | "investor" | "advisor" | "prospect";
+  signal: string;
+  source_refs: string[];
+};
+
+export type StructuredDailyBriefInsight = {
+  insight: string;
+  source_refs: string[];
+  suggested_action?: string;
+};
+
+export type StructuredDailyBriefMarketingIdea = {
+  idea: string;
+  source_refs: string[];
+};
+
+export type StructuredDailyBriefRisk = {
+  description: string;
+  source_refs: string[];
+  severity: "high" | "medium" | "low";
+};
+
+export type StructuredDailyBriefAction = {
+  action: string;
+  source_refs?: string[];
+};
+
+export type StructuredDailyBriefQuestion = {
+  question: string;
+  why_now: string;
+};
+
+export type StructuredDailyBrief = {
+  date: string;
+  top_priorities_today: StructuredDailyBriefPriority[];
+  overdue_follow_ups: StructuredDailyBriefOverdueFollowUp[];
+  due_soon: StructuredDailyBriefDueSoon[];
+  high_intent_relationships: StructuredDailyBriefRelationship[];
+  product_insights_to_act_on: StructuredDailyBriefInsight[];
+  marketing_opportunities: StructuredDailyBriefMarketingIdea[];
+  risks_and_dropped_balls: StructuredDailyBriefRisk[];
+  suggested_actions_naveen: StructuredDailyBriefAction[];
+  suggested_actions_pb: StructuredDailyBriefAction[];
+  questions_to_resolve: StructuredDailyBriefQuestion[];
+  generated_at: string;
+};
+
+export type DriftSignalType =
+  | "commitment_dropped"
+  | "insight_unaddressed"
+  | "objection_recurring"
+  | "priority_drifting"
+  | "owner_missing"
+  | "narrative_stale";
+
+export type DriftSignal = {
+  type: DriftSignalType;
+  severity: "high" | "medium" | "low";
+  summary: string;
+  detail: string;
+  source_refs: string[];
+  memory_refs: string[];
+  priority_refs?: string[];
+  recommended_action: string;
+  recommended_owner?: "naveen" | "pb" | "system";
+};
+
+export type DriftReview = {
+  generated_at: string;
+  overall_alignment: "aligned" | "minor_drift" | "major_drift";
+  signals: DriftSignal[];
+  summary_for_founders: string;
 };
 
 export type FollowUpDraft = {

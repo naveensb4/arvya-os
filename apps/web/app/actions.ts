@@ -5,12 +5,27 @@ import { redirect } from "next/navigation";
 import {
   addSourceAndIngest,
   bulkUpdateOpenLoops,
+  closeOpenLoop,
   createBrain,
+  createBrainPriority,
+  generateCompanyDriftReview,
+  generateDriftReview,
+  updateBrainPriorityStatus,
   updateMemoryObjectReview,
   updateOpenLoopReview,
   updateOpenLoopStatus,
 } from "@/lib/brain/store";
-import type { BrainKind, MemoryObjectStatus, MemoryObjectType, OpenLoopPriority, OpenLoopStatus, SourceType } from "@arvya/core";
+import type {
+  BrainKind,
+  MemoryObjectStatus,
+  MemoryObjectType,
+  OpenLoopPriority,
+  OpenLoopStatus,
+  PriorityHorizon,
+  PrioritySetBy,
+  PriorityStatus,
+  SourceType,
+} from "@arvya/core";
 
 function requiredString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -76,6 +91,24 @@ export async function updateOpenLoopStatusAction(formData: FormData) {
     formData.get("outcome")?.toString().trim() || undefined,
   );
 
+  revalidatePath(`/brains/${brainId}/open-loops`);
+}
+
+export async function closeOpenLoopWithOutcomeAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  const openLoopId = requiredString(formData, "openLoopId");
+  const outcome = requiredString(formData, "outcome");
+  const evidenceRaw = formData.getAll("evidenceSourceItemId");
+  const evidence = evidenceRaw
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0);
+
+  await closeOpenLoop(brainId, openLoopId, {
+    result: outcome,
+    evidence_source_ids: evidence,
+  });
+
+  revalidatePath(`/brains/${brainId}`);
   revalidatePath(`/brains/${brainId}/open-loops`);
 }
 
@@ -175,4 +208,45 @@ export async function bulkReviewOpenLoopsAction(formData: FormData) {
 
   revalidatePath(`/brains/${brainId}`);
   revalidatePath(`/brains/${brainId}/open-loops`);
+}
+
+export async function runCompanyDriftReviewAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  await generateCompanyDriftReview(brainId);
+
+  revalidatePath(`/brains/${brainId}`);
+}
+
+export async function createPriorityAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  const statement = requiredString(formData, "statement");
+  const setBy = (optionalString(formData, "setBy") ?? "naveen") as PrioritySetBy;
+  const horizon = (optionalString(formData, "horizon") ?? "week") as PriorityHorizon;
+  await createBrainPriority(brainId, {
+    statement,
+    setBy,
+    horizon,
+    status: "active",
+  });
+
+  revalidatePath(`/brains/${brainId}/priorities`);
+  revalidatePath(`/brains/${brainId}`);
+}
+
+export async function updatePriorityStatusAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  const priorityId = requiredString(formData, "priorityId");
+  const status = requiredString(formData, "status") as PriorityStatus;
+  await updateBrainPriorityStatus(brainId, priorityId, status);
+
+  revalidatePath(`/brains/${brainId}/priorities`);
+  revalidatePath(`/brains/${brainId}`);
+}
+
+export async function runDriftReviewAction(formData: FormData) {
+  const brainId = requiredString(formData, "brainId");
+  await generateDriftReview(brainId);
+
+  revalidatePath(`/brains/${brainId}/drift`);
+  revalidatePath(`/brains/${brainId}`);
 }

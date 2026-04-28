@@ -1,5 +1,5 @@
 import type { OpenLoop, SourceItem } from "@arvya/core";
-import { reviewOpenLoopAction } from "@/app/actions";
+import { closeOpenLoopWithOutcomeAction, reviewOpenLoopAction } from "@/app/actions";
 
 const ownerOptions = ["Naveen", "PB", "Arvya", "Unknown"];
 const priorityOptions = ["low", "medium", "high", "critical"];
@@ -78,6 +78,33 @@ export function OpenLoopCard({
           </div>
         ) : null}
       </div>
+      {showReviewControls && loop.status !== "closed" ? (
+        <details className="mt-4 rounded-xl bg-white/75 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-amber-800">
+            Close with outcome
+          </summary>
+          <form action={closeOpenLoopWithOutcomeAction} className="mt-3 grid gap-3">
+            <input type="hidden" name="brainId" value={brainId} />
+            <input type="hidden" name="openLoopId" value={loop.id} />
+            {loop.sourceItemId ? (
+              <input type="hidden" name="evidenceSourceItemId" value={loop.sourceItemId} />
+            ) : null}
+            <label className="text-xs font-medium text-stone-600">
+              Outcome / what happened
+              <textarea
+                name="outcome"
+                rows={3}
+                required
+                placeholder='e.g. "Sent pricing deck on April 28; Acme reviewing internally."'
+                className="mt-1 w-full rounded-lg border border-stone-200 p-2 text-sm"
+              />
+            </label>
+            <div>
+              <button className="button-primary text-xs">Close loop with outcome</button>
+            </div>
+          </form>
+        </details>
+      ) : null}
       {showReviewControls ? (
       <form action={reviewOpenLoopAction} className="mt-4 grid gap-3 rounded-xl bg-white/75 p-3 md:grid-cols-2">
         <input type="hidden" name="brainId" value={brainId} />

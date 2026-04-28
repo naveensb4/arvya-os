@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import type {
   AiClient,
   AiCompleteInput,
@@ -34,17 +34,23 @@ function readConfig(): EnvConfig {
       ? rawDefaultProvider
       : undefined;
   const defaultModel = process.env.DEFAULT_MODEL?.trim() || undefined;
+  const providerDefaultModel =
+    defaultProvider === "anthropic" && defaultModel && !/^gpt-|^o\d/i.test(defaultModel)
+      ? defaultModel
+      : defaultProvider === "openai" && defaultModel && !/^claude/i.test(defaultModel)
+        ? defaultModel
+        : undefined;
 
   return {
     anthropicKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
     anthropicModel:
       process.env.ANTHROPIC_MODEL?.trim() ||
-      (defaultProvider === "anthropic" ? defaultModel : undefined) ||
+      (defaultProvider === "anthropic" ? providerDefaultModel : undefined) ||
       "claude-sonnet-4-5",
     openaiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
     openaiModel:
       process.env.OPENAI_MODEL?.trim() ||
-      (defaultProvider === "openai" ? defaultModel : undefined) ||
+      (defaultProvider === "openai" ? providerDefaultModel : undefined) ||
       "gpt-4.1-mini",
     embeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL?.trim() || "text-embedding-3-small",
@@ -91,6 +97,46 @@ function tryParse(value: string): unknown {
     return JSON.parse(value);
   } catch {
     return undefined;
+  }
+}
+
+function setNestedValue(target: unknown, path: PropertyKey[], value: unknown) {
+  let cursor = target;
+  for (const segment of path.slice(0, -1)) {
+    if (cursor === null || typeof cursor !== "object") return false;
+    cursor = (cursor as Record<PropertyKey, unknown>)[segment];
+  }
+
+  const last = path.at(-1);
+  if (last === undefined || cursor === null || typeof cursor !== "object") return false;
+  (cursor as Record<PropertyKey, unknown>)[last] = value;
+  return true;
+}
+
+function getNestedValue(target: unknown, path: PropertyKey[]) {
+  return path.reduce<unknown>((cursor, segment) => {
+    if (cursor === null || typeof cursor !== "object") return undefined;
+    return (cursor as Record<PropertyKey, unknown>)[segment];
+  }, target);
+}
+
+function parseStructuredOutput<T>(schema: z.ZodType<T>, value: unknown): T {
+  try {
+    return schema.parse(value);
+  } catch (error) {
+    if (!(error instanceof ZodError)) throw error;
+
+    const repaired = JSON.parse(JSON.stringify(value)) as unknown;
+    let repairedAny = false;
+    for (const issue of error.issues) {
+      if (issue.code !== "too_big" || issue.origin !== "string" || typeof issue.maximum !== "number") continue;
+      const current = getNestedValue(repaired, issue.path);
+      if (typeof current !== "string") continue;
+      repairedAny = setNestedValue(repaired, issue.path, current.slice(0, issue.maximum)) || repairedAny;
+    }
+
+    if (!repairedAny) throw error;
+    return schema.parse(repaired);
   }
 }
 
@@ -199,7 +245,7 @@ class LiveAiClient implements AiClient {
         );
       }
 
-      const data = input.schema.parse(toolUse.input);
+      const data = parseStructuredOutput(input.schema, toolUse.input);
       return {
         data,
         provider: "anthropic",
@@ -229,7 +275,7 @@ class LiveAiClient implements AiClient {
 
     const text = response.choices[0]?.message.content ?? "";
     const parsed = ensureJsonObject(text);
-    const data = input.schema.parse(parsed);
+    const data = parseStructuredOutput(input.schema, parsed);
     return {
       data,
       provider: "openai",

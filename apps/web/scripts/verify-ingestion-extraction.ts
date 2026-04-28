@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { config } from "dotenv";
 import type { Brain, IngestionResult, MemoryObjectType, SourceItem } from "@arvya/core";
 import { ingestionExtractionFixtures } from "@arvya/agents/evals/ingestion-extraction-fixtures";
 import { runSourceIngestionWorkflow } from "@arvya/agents/ingestion-agent";
 import { getAiClient, resetAiClientForTests } from "../lib/ai";
+
+config({ path: ".env.local", override: false, quiet: true });
+config({ path: ".env", override: false, quiet: true });
 
 const brain: Brain = {
   id: "brain_ingestion_eval",

@@ -7,6 +7,7 @@
     "./source-ingestion": "./src/source-ingestion.ts",
     "./ask-brain": "./src/ask-brain.ts",
     "./daily-brief": "./src/daily-brief.ts",
+    "./drift-review": "./src/drift-review.ts",
     "./follow-up": "./src/follow-up.ts",
     ".": "./src/index.ts"
   }

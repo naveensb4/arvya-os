@@ -1,7 +1,8 @@
 import type { BrainSnapshot, MemoryObject, OpenLoop, SourceItem } from "@arvya/core";
 import type { ConnectorConfig, ConnectorSyncRun } from "@/lib/db/repository";
+import { createCompanyDriftReview, type CompanyDriftFinding } from "@/lib/brain/company-drift";
 
-const strategyDomainTypes = new Set(["daily_brief", "weekly_learning_memo"]);
+const strategyDomainTypes = new Set(["daily_brief", "weekly_learning_memo", "closed_loop_alignment_report", "company_drift_review"]);
 const closedLoopStatuses = new Set(["done", "dismissed", "closed"]);
 const priorityRank = {
   critical: 0,
@@ -26,6 +27,9 @@ export type DashboardModel = {
   questions: MemoryObject[];
   productInsights: MemoryObject[];
   outcomeLearnings: MemoryObject[];
+  driftFindings: CompanyDriftFinding[];
+  driftSummary: string;
+  latestDriftReport?: SourceItem;
   investorLoops: OpenLoop[];
   customerLoops: OpenLoop[];
   commandSummary: string;
@@ -65,6 +69,14 @@ export function buildDashboardModel({
   const outcomeLearnings = snapshot.memoryObjects
     .filter((memory) => memory.properties?.memory_source === "open_loop_outcome")
     .slice(0, 5);
+  const driftReview = createCompanyDriftReview({
+    memoryObjects: snapshot.memoryObjects,
+    openLoops: snapshot.openLoops,
+    sourceItems: snapshot.sourceItems,
+    currentTime,
+  });
+  const latestDriftReport = latestSourceByDomain(snapshot.sourceItems, "company_drift_review") ??
+    latestSourceByDomain(snapshot.sourceItems, "closed_loop_alignment_report");
   const investorLoops = approvedActionQueue.filter((loop) => loop.loopType === "investor").slice(0, 5);
   const customerLoops = approvedActionQueue
     .filter((loop) => loop.loopType === "sales" || loop.loopType === "product")
@@ -91,6 +103,9 @@ export function buildDashboardModel({
     questions,
     productInsights,
     outcomeLearnings,
+    driftFindings: driftReview.findings.slice(0, 5),
+    driftSummary: driftReview.summary,
+    latestDriftReport,
     investorLoops,
     customerLoops,
     commandSummary: buildCommandSummary({
@@ -105,7 +120,13 @@ export function buildDashboardModel({
     connectorHealth: failingConnectors.length > 0
       ? `${failingConnectors.length} failing`
       : `${enabledConnectors.length} always-on`,
-    brainHealth: failedSyncs > 0 || overdueLoops.length > 0 || failingConnectors.length > 0 ? "Warning" : "Healthy",
+    brainHealth:
+      failedSyncs > 0 ||
+      overdueLoops.length > 0 ||
+      failingConnectors.length > 0 ||
+      driftReview.findings.some((finding) => finding.severity === "critical" || finding.severity === "warning")
+        ? "Warning"
+        : "Healthy",
   };
 }
 
@@ -116,6 +137,12 @@ export function isOperationalSource(source: SourceItem) {
 
 export function isDailyBriefSource(source: SourceItem) {
   return source.metadata?.domain_type === "daily_brief";
+}
+
+function latestSourceByDomain(sources: SourceItem[], domainType: string) {
+  return sources
+    .filter((source) => source.metadata?.domain_type === domainType)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
 
 export function isOverdueLoop(loop: OpenLoop, currentTime = Date.now()) {

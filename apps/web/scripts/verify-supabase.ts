@@ -48,6 +48,13 @@ async function main() {
       content:
         "Naveen met Jane Investor at Example Capital. Send the updated deck by Friday. Share the demo link with PB. The customer workflow pain is that founder notes are scattered across email and calls.",
     });
+    const priority = await repository.createPriority({
+      brainId: brain.id,
+      statement: `Verify Arvya ingestion schema ${marker}`,
+      setBy: "system",
+      horizon: "today",
+      sourceRefs: [sourceItem.id],
+    });
 
     const [
       persistedSource,
@@ -56,6 +63,7 @@ async function main() {
       openLoops,
       workflows,
       agentRuns,
+      priorities,
     ] = await Promise.all([
       repository.getSourceItem(sourceItem.id),
       repository.listSourceItems(brain.id),
@@ -63,6 +71,7 @@ async function main() {
       repository.listOpenLoops(brain.id),
       repository.listWorkflows(brain.id),
       repository.listAgentRuns(brain.id),
+      repository.listPriorities(brain.id, { status: "active" }),
     ]);
 
     assert.equal(persistedSource?.id, sourceItem.id, "expected source_item to persist");
@@ -74,6 +83,7 @@ async function main() {
       agentRuns.some((run) => run.name === "source_ingestion" && run.sourceItemId === sourceItem.id),
       "expected source_ingestion agent_runs rows",
     );
+    assert.ok(priorities.some((item) => item.id === priority.id), "expected priorities row");
 
     const answer = await answerBrainQuestion(brain.id, "What follow-ups do we owe?");
     assert.ok(answer.citations.length > 0, "expected answer to cite persisted sources");

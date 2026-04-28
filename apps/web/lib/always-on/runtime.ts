@@ -2,7 +2,8 @@ import { generateDailyFounderBrief } from "@/lib/brain/store";
 import { syncGmailConnector, type GmailClient } from "@/lib/connectors/gmail";
 import { syncGoogleDriveConnector, type GoogleDriveClient } from "@/lib/connectors/google-drive";
 import { syncOutlookConnector, type OutlookClient } from "@/lib/connectors/outlook";
-import { getRepository, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
+import type { MemoryObject, OpenLoop, SourceItem } from "@arvya/core";
+import { getRepository, type BrainAlertSeverity, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
 import {
   buildDedupeKeys,
@@ -26,6 +27,31 @@ export type ConnectorSyncSummary = {
 };
 
 const DEFAULT_SYNC_INTERVAL_MINUTES = 10;
+const terminalOpenLoopStatuses = new Set(["done", "dismissed", "closed"]);
+const activeOpenLoopStatuses = new Set(["open", "in_progress", "waiting"]);
+const alignmentStopWords = new Set([
+  "about",
+  "after",
+  "again",
+  "before",
+  "build",
+  "company",
+  "could",
+  "from",
+  "have",
+  "into",
+  "more",
+  "next",
+  "naveen",
+  "should",
+  "that",
+  "their",
+  "there",
+  "this",
+  "with",
+  "work",
+  "would",
+]);
 
 export const CONNECTOR_TYPES: ConnectorType[] = [
   "google_drive",
@@ -37,6 +63,185 @@ export const CONNECTOR_TYPES: ConnectorType[] = [
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function todayKey() {
+  return nowIso().slice(0, 10);
+}
+
+function textTokens(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, " ")
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 3 && !alignmentStopWords.has(token)),
+    ),
+  );
+}
+
+function relatedEnough(target: string, candidate: string) {
+  const targetTokens = textTokens(target);
+  if (targetTokens.length === 0) return false;
+  const candidateTokens = new Set(textTokens(candidate));
+  const matches = targetTokens.filter((token) => candidateTokens.has(token)).length;
+  return matches >= 2 || matches / Math.min(targetTokens.length, 6) >= 0.34;
+}
+
+function openLoopText(loop: OpenLoop) {
+  return [
+    loop.title,
+    loop.description,
+    loop.suggestedAction,
+    loop.owner,
+    loop.sourceQuote,
+    loop.outcome,
+  ].filter(Boolean).join(" ");
+}
+
+function memoryText(memory: MemoryObject) {
+  return [memory.name, memory.description, memory.sourceQuote].filter(Boolean).join(" ");
+}
+
+function isActiveLoop(loop: OpenLoop) {
+  return activeOpenLoopStatuses.has(loop.status);
+}
+
+function isClosedLoop(loop: OpenLoop) {
+  return terminalOpenLoopStatuses.has(loop.status);
+}
+
+function latestSourceByDomain(sources: SourceItem[], domainType: string) {
+  return sources
+    .filter((source) => source.metadata?.domain_type === domainType)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+}
+
+function extractPriorityTexts(latestDailyBrief?: SourceItem) {
+  if (!latestDailyBrief) return [];
+  const structuredBrief = latestDailyBrief.metadata?.structured_brief as
+    | { priorities?: Array<{ title?: unknown; detail?: unknown }> }
+    | undefined;
+  const structuredPriorities = structuredBrief?.priorities
+    ?.map((priority) => [priority.title, priority.detail].filter((value): value is string => typeof value === "string").join(": "))
+    .filter((priority) => priority.trim().length > 0);
+  if (structuredPriorities?.length) return structuredPriorities;
+
+  const prioritiesBlock = latestDailyBrief.content.split(/\n\nNew loops to review:/)[0]?.split(/\n\nPriorities:\n/)[1];
+  return prioritiesBlock
+    ? prioritiesBlock
+        .split("\n")
+        .map((line) => line.replace(/^-\s*/, "").trim())
+        .filter(Boolean)
+    : [];
+}
+
+function hasRelatedActiveLoop(text: string, loops: OpenLoop[], loopTypes?: Set<OpenLoop["loopType"]>) {
+  return loops.some((loop) =>
+    isActiveLoop(loop) &&
+    (!loopTypes || loopTypes.has(loop.loopType)) &&
+    relatedEnough(text, openLoopText(loop)),
+  );
+}
+
+type AlignmentFinding = {
+  alertType: string;
+  title: string;
+  description: string;
+  severity: BrainAlertSeverity;
+};
+
+function createAlignmentFindings(input: {
+  memoryObjects: MemoryObject[];
+  openLoops: OpenLoop[];
+  sourceItems: SourceItem[];
+}) {
+  const findings: AlignmentFinding[] = [];
+  const latestDailyBrief = latestSourceByDomain(input.sourceItems, "daily_brief");
+  const priorityTexts = extractPriorityTexts(latestDailyBrief);
+  const activeLoops = input.openLoops.filter(isActiveLoop);
+
+  for (const priorityText of priorityTexts.slice(0, 6)) {
+    if (hasRelatedActiveLoop(priorityText, activeLoops)) continue;
+    findings.push({
+      alertType: "strategic_priority_drift",
+      title: `Priority has no active loop: ${priorityText.split(":")[0].slice(0, 96)}`,
+      description: `The latest daily brief names this priority, but no active open loop appears related: ${priorityText}`,
+      severity: "warning",
+    });
+  }
+
+  const trackedCommitmentTypes = new Set<OpenLoop["loopType"]>(["follow_up", "product", "sales", "investor", "engineering", "deal", "diligence", "crm", "other"]);
+  const openCommitments = input.memoryObjects.filter(
+    (memory) => memory.objectType === "commitment" && memory.status !== "done" && memory.status !== "closed",
+  );
+  for (const commitment of openCommitments.slice(0, 8)) {
+    const text = memoryText(commitment);
+    if (hasRelatedActiveLoop(text, input.openLoops, trackedCommitmentTypes)) continue;
+    findings.push({
+      alertType: "commitment_without_active_loop",
+      title: `Commitment lacks an active loop: ${commitment.name.slice(0, 96)}`,
+      description: commitment.description,
+      severity: "warning",
+    });
+  }
+
+  const productLoopTypes = new Set<OpenLoop["loopType"]>(["product", "engineering", "marketing"]);
+  const productInsights = input.memoryObjects.filter((memory) =>
+    ["product_insight", "insight"].includes(memory.objectType) &&
+    memory.properties?.memory_source !== "open_loop_outcome" &&
+    memory.status !== "done" &&
+    memory.status !== "closed",
+  );
+  for (const insight of productInsights.slice(0, 8)) {
+    const text = memoryText(insight);
+    if (hasRelatedActiveLoop(text, input.openLoops, productLoopTypes)) continue;
+    findings.push({
+      alertType: "insight_without_product_loop",
+      title: `Insight has no product loop: ${insight.name.slice(0, 96)}`,
+      description: insight.description,
+      severity: "info",
+    });
+  }
+
+  const recentlyClosedWithoutOutcome = input.openLoops.filter((loop) => isClosedLoop(loop) && !loop.outcome?.trim());
+  for (const loop of recentlyClosedWithoutOutcome.slice(0, 5)) {
+    findings.push({
+      alertType: "closed_loop_missing_outcome",
+      title: `Closed loop is missing an outcome: ${loop.title.slice(0, 96)}`,
+      description: "Terminal loops need an outcome so the company Brain can learn from what happened.",
+      severity: "warning",
+    });
+  }
+
+  return findings.slice(0, 20);
+}
+
+function alignmentReportContent(input: {
+  brainName: string;
+  findings: AlignmentFinding[];
+  openLoops: OpenLoop[];
+  memoryObjects: MemoryObject[];
+}) {
+  const activeCount = input.openLoops.filter(isActiveLoop).length;
+  const closedWithOutcomeCount = input.openLoops.filter((loop) => isClosedLoop(loop) && Boolean(loop.outcome?.trim())).length;
+  const outcomeLearningCount = input.memoryObjects.filter((memory) => memory.properties?.memory_source === "open_loop_outcome").length;
+
+  return [
+    `Closed-Loop Alignment Report - ${input.brainName}`,
+    "",
+    `Active loops: ${activeCount}`,
+    `Closed loops with outcomes: ${closedWithOutcomeCount}`,
+    `Outcome memories: ${outcomeLearningCount}`,
+    `Alignment findings: ${input.findings.length}`,
+    "",
+    "Findings:",
+    ...(input.findings.length
+      ? input.findings.map((finding) => `- [${finding.severity}] ${finding.title}: ${finding.description}`)
+      : ["- No alignment gaps detected."]),
+  ].join("\n");
 }
 
 function contentHash(content: string) {
@@ -274,11 +479,16 @@ export async function syncConnectorConfig(
           failedItems: "failedItems" in synced ? synced.failedItems : synced.failedFiles,
         },
       });
+      const nextWatermark = "nextWatermark" in synced ? synced.nextWatermark : undefined;
+      const mergedConfig = nextWatermark
+        ? { ...config.config, watermark: nextWatermark }
+        : config.config;
       await repository.updateConnectorConfig(config.id, {
         lastSyncAt: nowIso(),
         lastSuccessAt: synced.itemsFailed === 0 ? nowIso() : config.lastSuccessAt ?? null,
         lastError: synced.itemsFailed === 0 ? null : `${synced.itemsFailed} ${humanConnectorName(config.connectorType)} item(s) failed to sync.`,
         status: "connected",
+        config: mergedConfig,
       });
       return {
         connectorConfigId: config.id,
@@ -427,6 +637,73 @@ export async function runOpenLoopMonitor() {
   }
 
   return { alertsCreated };
+}
+
+export async function runClosedLoopAlignmentMonitor() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const reportDate = todayKey();
+  let alertsCreated = 0;
+  let reportsStored = 0;
+  let findingsDetected = 0;
+
+  for (const brain of brains.filter((item) => item.kind === "company")) {
+    const [memoryObjects, openLoops, sourceItems, existingAlerts] = await Promise.all([
+      repository.listMemoryObjects(brain.id),
+      repository.listOpenLoops(brain.id),
+      repository.listSourceItems(brain.id),
+      repository.listBrainAlerts({ brainId: brain.id, limit: 500 }),
+    ]);
+    const findings = createAlignmentFindings({ memoryObjects, openLoops, sourceItems });
+    findingsDetected += findings.length;
+
+    const existingAlertKeys = new Set(
+      existingAlerts
+        .filter((alert) => alert.status !== "dismissed")
+        .map((alert) => `${alert.alertType}:${alert.title}`),
+    );
+    for (const finding of findings) {
+      const key = `${finding.alertType}:${finding.title}`;
+      if (existingAlertKeys.has(key)) continue;
+      await repository.createBrainAlert({
+        brainId: brain.id,
+        alertType: finding.alertType,
+        title: finding.title,
+        description: finding.description,
+        severity: finding.severity,
+      });
+      existingAlertKeys.add(key);
+      alertsCreated += 1;
+    }
+
+    const existingReport = sourceItems.find(
+      (source) =>
+        source.metadata?.domain_type === "closed_loop_alignment_report" &&
+        source.metadata?.report_date === reportDate,
+    );
+    if (existingReport) continue;
+    await repository.createSourceItem({
+      brainId: brain.id,
+      title: `Closed-Loop Alignment Report - ${reportDate}`,
+      type: "strategy_output",
+      content: alignmentReportContent({
+        brainName: brain.name,
+        findings,
+        openLoops,
+        memoryObjects,
+      }),
+      metadata: {
+        domain_type: "closed_loop_alignment_report",
+        report_date: reportDate,
+        generated_at: nowIso(),
+        findings_count: findings.length,
+        findings,
+      },
+    });
+    reportsStored += 1;
+  }
+
+  return { alertsCreated, reportsStored, findingsDetected };
 }
 
 export async function runDailyFounderBrief() {

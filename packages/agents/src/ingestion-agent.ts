@@ -3,6 +3,7 @@ import {
   ingestionResultSchema,
   sourceClassificationSchema,
   type AiClient,
+  type AiStructuredInput,
   type Brain,
   type ExtractedMemoryObject,
   type ExtractedOpenLoop,
@@ -14,10 +15,35 @@ import {
   type SourceClassification,
   type SourceItem,
 } from "@arvya/core";
+import { z } from "zod";
 import {
   buildSourceIngestionPrompt,
   sourceIngestionSystemPrompt,
 } from "@arvya/prompts/source-ingestion";
+
+async function structuredWithZodRetry<T>(
+  ai: AiClient,
+  input: AiStructuredInput<T>,
+): Promise<{ data: T; provider: ModelProvider }> {
+  try {
+    const result = await ai.completeStructured(input);
+    return { data: result.data, provider: result.provider };
+  } catch (error) {
+    if (!(error instanceof z.ZodError)) {
+      throw error;
+    }
+    const issues = error.issues
+      .map((issue) => `- path=${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("\n");
+    const retryPrompt = `${input.prompt}\n\nYour previous response failed schema validation. Fix these specific issues and re-emit valid JSON conforming to the schema:\n${issues}\n\nReturn JSON that satisfies the schema exactly. Do not include explanatory prose.`;
+    const retry = await ai.completeStructured({
+      ...input,
+      prompt: retryPrompt,
+      temperature: input.temperature ?? 0,
+    });
+    return { data: retry.data, provider: retry.provider };
+  }
+}
 
 type StepLogger = <T>(input: {
   stepName: string;
@@ -29,7 +55,7 @@ type StepLogger = <T>(input: {
 
 const personPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}|[A-Z]{2,3})\b/g;
 const companySuffixPattern =
-  "(?:Capital|Partners|Ventures|Bank|Advisors|AI|Labs|Group|Corp|Inc|LLC|Technologies|Systems|Software|Health|Foods|Co|Company|Studios)";
+  "(?:Capital|Partners|Ventures|Fund|Bank|Advisors|AI|Labs|Group|Corp|Inc|LLC|Technologies|Systems|Software|Health|Foods|Logistics|Co|Company|Studios)";
 const companyPattern = new RegExp(
   `\\b([A-Z][A-Za-z0-9&.-]*(?:\\s+[A-Z][A-Za-z0-9&.-]*)*\\s+${companySuffixPattern})\\b`,
   "g",
@@ -52,7 +78,7 @@ const stopNames = new Set([
 ]);
 
 const explicitActionPattern =
-  /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|introduce|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes|can you|please)/i;
+  /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|set up|introduce|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes|can you|can we|please)/i;
 const requestPattern =
   /\b(?:asked for|asks for|requested|requests|wants|wanted|needs|needed|waiting for|expects|looking for)\b/i;
 const ownershipPattern =
@@ -68,9 +94,13 @@ const decisionPattern =
 const riskPattern =
   /\b(?:risk|blocker|concern|danger|worried|worry|objection|red flag|threat|could block|will block|churn|security review)\b/i;
 const productInsightPattern =
-  /\b(?:customer|user|workflow|pain|product|feature|mvp|ux|onboarding|pilot|demo|spreadsheet|CRM|asked for|wants|needs)\b/i;
+  /\b(?:customer|user|workflow|pain|product|feature|mvp|ux|onboarding|pilot|demo|spreadsheet|CRM|context|tickets|duplicated|feedback|asked for|wants|needs)\b/i;
 const feedbackPattern =
   /\b(?:investor|banker|advisor|customer|prospect|user|buyer|founder).*(?:said|feedback|asked|wants|wanted|pushed back|loved|hated|warned|flagged|suggested|recommended|concern)/i;
+const advisorFeedbackPattern =
+  /\b(?:advice:|strongest pitch|keep it crisp|don't try|do not try|suggested|recommended|focus the demo)\b/i;
+const questionPattern =
+  /\b(?:open question|question:|do we need|should we|can we|whether)\b/i;
 const HIGH_CONFIDENCE_OPEN_LOOP_THRESHOLD = 0.9;
 
 function splitSentences(content: string) {
@@ -91,6 +121,11 @@ function uniqueMatches(content: string, pattern: RegExp) {
 
 function classifyLoop(sentence: string): ExtractedOpenLoop["loopType"] {
   const normalized = sentence.toLowerCase();
+  if (/open question|strategic question/.test(normalized)) return "strategic_question";
+  if (/pricing|customer ask|customer asked|customer requested|pilot workspace/.test(normalized)) return "customer_ask";
+  if (/investor ask|tam|deck|fund|capital|partner pitch|market sizing/.test(normalized)) return "investor_ask";
+  if (/priority|ship|sprint|task|todo|to-do|action item/.test(normalized)) return "task";
+  if (/can we set up|set up 30 minutes|schedule/.test(normalized)) return "follow_up";
   if (/intro|introduce/.test(normalized)) return "intro";
   if (/diligence|qofe|data room|ic memo|investment committee/.test(normalized)) return "diligence";
   if (/cim|buyer|loi|ioi|nda|process letter|management meeting|deal/.test(normalized)) return "deal";
@@ -141,6 +176,7 @@ function isFallbackOpenLoop(sentence: string) {
   if (requestPattern.test(sentence)) return true;
   if (ownershipPattern.test(sentence) && dealArtifactPattern.test(sentence)) return true;
   if (dueDatePattern.test(sentence) && dealArtifactPattern.test(sentence)) return true;
+  if (/\b(?:priority|ship)\b.*\b(?:sprint|before|closed-loop|core)\b/i.test(sentence)) return true;
   if (/action item|next step|todo|to-do|commitment/i.test(sentence)) return true;
   return false;
 }
@@ -209,6 +245,30 @@ function fallbackMemory(source: SourceItem): ExtractedMemoryObject[] {
         sourceQuote: truncate(sentence, 800),
         confidence: 0.76,
         properties: { extractedBy: "deterministic_fallback", signal: "risk" },
+      });
+      continue;
+    }
+
+    if (questionPattern.test(sentence)) {
+      memories.push({
+        objectType: "question",
+        name: titleFromSentence("Question", sentence),
+        description: truncate(sentence, 800),
+        sourceQuote: truncate(sentence, 800),
+        confidence: 0.78,
+        properties: { extractedBy: "deterministic_fallback", signal: "question" },
+      });
+      continue;
+    }
+
+    if (advisorFeedbackPattern.test(sentence)) {
+      memories.push({
+        objectType: "advisor_feedback",
+        name: titleFromSentence("Advisor feedback", sentence),
+        description: truncate(sentence, 800),
+        sourceQuote: truncate(sentence, 800),
+        confidence: 0.8,
+        properties: { extractedBy: "deterministic_fallback", signal: "advisor_feedback" },
       });
       continue;
     }
@@ -304,6 +364,20 @@ function fallbackOpenLoops(source: SourceItem): ExtractedOpenLoop[] {
     }));
 }
 
+function normalizeOpenLoop(loop: ExtractedOpenLoop): ExtractedOpenLoop {
+  const text = `${loop.title} ${loop.description} ${loop.sourceQuote ?? ""}`.toLowerCase();
+  if (loop.loopType === "scheduling" && /schedule|set up|30 minutes|tuesday|wednesday/.test(text)) {
+    return { ...loop, loopType: "follow_up" };
+  }
+  if ((loop.loopType === "investor" || loop.loopType === "follow_up") && /deck|tam|fund|capital|partner pitch|market sizing/.test(text)) {
+    return { ...loop, loopType: "investor_ask" };
+  }
+  if ((loop.loopType === "sales" || loop.loopType === "follow_up") && /pricing|acme/.test(text)) {
+    return { ...loop, loopType: "customer_ask" };
+  }
+  return loop;
+}
+
 function summarize(source: SourceItem, result: Partial<IngestionResult>) {
   const memoryCount = result.memoryObjects?.length ?? 0;
   const loopCount = result.openLoops?.length ?? 0;
@@ -363,7 +437,7 @@ async function runLogged<T>(
 async function classifySourceNode(state: typeof IngestionState.State) {
   if (state.ai?.available) {
     const result = await runLogged(state, "classify_source", () =>
-      state.ai!.completeStructured({
+      structuredWithZodRetry(state.ai!, {
         system: sourceIngestionSystemPrompt,
         prompt: buildSourceIngestionPrompt({
           brainName: state.brain.name,
@@ -389,7 +463,7 @@ async function classifySourceNode(state: typeof IngestionState.State) {
 async function extractMemoryNode(state: typeof IngestionState.State) {
   if (state.ai?.available) {
     const result = await runLogged(state, "extract_memory", () =>
-      state.ai!.completeStructured({
+      structuredWithZodRetry(state.ai!, {
         system: sourceIngestionSystemPrompt,
         prompt: buildSourceIngestionPrompt({
           brainName: state.brain.name,
@@ -423,7 +497,7 @@ async function extractMemoryNode(state: typeof IngestionState.State) {
 async function detectOpenLoopsNode(state: typeof IngestionState.State) {
   if (state.ai?.available) {
     const result = await runLogged(state, "detect_open_loops", () =>
-      state.ai!.completeStructured({
+      structuredWithZodRetry(state.ai!, {
         system: sourceIngestionSystemPrompt,
         prompt: buildSourceIngestionPrompt({
           brainName: state.brain.name,
@@ -438,18 +512,18 @@ async function detectOpenLoopsNode(state: typeof IngestionState.State) {
         maxTokens: 2500,
       }),
     );
-    return { openLoops: result.data.openLoops, provider: result.provider };
+    return { openLoops: result.data.openLoops.map(normalizeOpenLoop), provider: result.provider };
   }
   const openLoops = await runLogged(state, "detect_open_loops", async () =>
     fallbackOpenLoops(state.source),
   );
-  return { openLoops };
+  return { openLoops: openLoops.map(normalizeOpenLoop) };
 }
 
 async function generateSuggestedActionsNode(state: typeof IngestionState.State) {
   if (state.ai?.available && state.openLoops.length > 0) {
     const result = await runLogged(state, "generate_suggested_actions", () =>
-      state.ai!.completeStructured({
+      structuredWithZodRetry(state.ai!, {
         system: sourceIngestionSystemPrompt,
         prompt: buildSourceIngestionPrompt({
           brainName: state.brain.name,
@@ -491,8 +565,17 @@ async function saveResultsNode(state: typeof IngestionState.State) {
     );
     const isHighConfidence = (loop.confidence ?? 0) >= HIGH_CONFIDENCE_OPEN_LOOP_THRESHOLD;
     const status: OpenLoopStatus = isHighConfidence && loop.status !== "dismissed" ? "open" : "needs_review";
+    const owner = loop.owner ?? loop.ownerHint;
+    const properties = {
+      ...(loop.properties ?? {}),
+      ...(loop.ownerHint ? { ownerHint: loop.ownerHint } : {}),
+      ...(loop.dueHint ? { dueHint: loop.dueHint } : {}),
+      ...(loop.sourceRef ? { sourceRef: loop.sourceRef } : {}),
+    };
     return {
       ...loop,
+      owner,
+      properties,
       status,
       suggestedAction: action?.suggestedAction ?? loop.suggestedAction,
       suggestedFollowUpEmail:
