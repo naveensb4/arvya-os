@@ -1,4 +1,4 @@
-# Arvya Deal OS
+# Arvya Deal OS /AVRYA DEAL BRAIN
 
 Brain-first operating system for Arvya Company Brain today and customer Deal Brains later.
 
