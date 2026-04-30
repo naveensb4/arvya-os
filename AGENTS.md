@@ -17,6 +17,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Preserve deterministic local fallbacks for demos without model keys, but do not represent those fallbacks as production-quality extraction or Q&A.
 - When adding source-backed answers, retrieve memory first, answer only from retrieved memory, and include citations.
 
+## GBrain Configuration (configured by /setup-gbrain)
+- Engine: pglite
+- Config file: ~/.gbrain/config.json (mode 0600)
+- Setup date: 2026-04-28
+- MCP registered: yes (Claude Code user scope)
+- Memory sync: off
+- Current repo policy: read-write
+
 ## gstack
 
 Use `/browse` from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.

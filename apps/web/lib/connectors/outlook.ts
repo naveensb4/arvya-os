@@ -180,7 +180,7 @@ class OutlookGraphClient implements OutlookClient {
   async listMessages(folderId: string, options?: OutlookListMessagesOptions) {
     const url = new URL(`${MICROSOFT_GRAPH}/me/mailFolders/${encodeURIComponent(folderId)}/messages`);
     url.searchParams.set("$top", "50");
-    url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview,body");
+    url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview");
     url.searchParams.set("$orderby", "receivedDateTime desc");
     if (options?.since) {
       const sinceMs = Date.parse(options.since);
@@ -199,7 +199,7 @@ class OutlookGraphClient implements OutlookClient {
   async listMessagesByCategory(categoryName: string, options?: OutlookListMessagesOptions) {
     const url = new URL(`${MICROSOFT_GRAPH}/me/messages`);
     url.searchParams.set("$top", "50");
-    url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview,body");
+    url.searchParams.set("$select", "id,subject,from,toRecipients,categories,receivedDateTime,sentDateTime,webLink,bodyPreview");
     const filters = [`categories/any(c:c eq '${categoryName.replaceAll("'", "''")}')`];
     if (options?.since) {
       const sinceMs = Date.parse(options.since);
