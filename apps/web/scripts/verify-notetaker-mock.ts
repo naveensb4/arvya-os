@@ -139,6 +139,30 @@ async function main() {
       assert.ok(after >= before);
     });
 
+    const outlookBrain = await createBrain({
+      name: "Outlook Notetaker Brain",
+      kind: "company",
+      thesis: "Verify Outlook connector credentials can feed notetaker calendar sync.",
+    });
+    await repository.createConnectorConfig({
+      brainId: outlookBrain.id,
+      connectorType: "outlook",
+      status: "connected",
+      credentials: {
+        access_token: "mock-outlook-token",
+        scope: "offline_access Calendars.ReadWrite",
+      },
+    });
+    await runNotetakerCalendarSync({ brainId: outlookBrain.id, client: new MockRecallClient() });
+    const inheritedOutlookCalendars = await repository.listNotetakerCalendars({ brainId: outlookBrain.id });
+    check("calendar sync inherits Outlook connectors with read-write calendar scope", () => {
+      const inherited = inheritedOutlookCalendars.find((item) => item.provider === "outlook_calendar");
+      assert.ok(inherited);
+      assert.equal(inherited.status, "connected");
+      assert.equal(inherited.autoJoinEnabled, true);
+      assert.equal(inherited.config.inherited_from_connector_type, "outlook");
+    });
+
     const manualMeeting = await repository.createNotetakerMeeting({
       brainId: brain.id,
       notetakerCalendarId: calendar.id,

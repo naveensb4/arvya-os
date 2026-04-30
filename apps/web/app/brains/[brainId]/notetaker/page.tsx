@@ -30,6 +30,11 @@ export default async function Page({ params, searchParams }: PageProps) {
   ]);
   const lastProcessed = meetings.find((meeting) => meeting.sourceItemId);
   const recallConfigured = Boolean(process.env.RECALL_API_KEY?.trim());
+  const zoomConfigured = Boolean(
+    process.env.ZOOM_ACCOUNT_ID?.trim() &&
+    process.env.ZOOM_CLIENT_ID?.trim() &&
+    process.env.ZOOM_CLIENT_SECRET?.trim(),
+  );
   const returnTo = `/brains/${selectedBrain.id}/notetaker`;
 
   return (
@@ -65,6 +70,17 @@ export default async function Page({ params, searchParams }: PageProps) {
             </p>
           </div>
         ) : null}
+        {!zoomConfigured ? (
+          <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Zoom creation is not connected</p>
+            <p className="mt-1">
+              Arvya can join Zoom links found on Google or Outlook calendar events, but it cannot create new Zoom meetings until{" "}
+              <code className="rounded bg-amber-100 px-1">ZOOM_ACCOUNT_ID</code>,{" "}
+              <code className="rounded bg-amber-100 px-1">ZOOM_CLIENT_ID</code>, and{" "}
+              <code className="rounded bg-amber-100 px-1">ZOOM_CLIENT_SECRET</code> are configured.
+            </p>
+          </div>
+        ) : null}
 
         <section className="rounded-2xl bg-stone-50 p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -72,7 +88,7 @@ export default async function Page({ params, searchParams }: PageProps) {
               <p className="eyebrow text-amber-700">Always-on meeting capture</p>
               <h2 className="mt-2 text-2xl font-semibold">Calendar auto-join</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-                Default internal mode is all calls, with hard skips for missing meeting URLs, canceled/all-day/ended calls, private events without details, and no-notetaker markers.
+                Default internal mode is all calls. Arvya detects Google Meet, Zoom, Teams, Webex, GoToMeeting, Whereby, and Chime links, with hard skips for missing meeting URLs, canceled/all-day/ended calls, private events without details, and no-notetaker markers.
               </p>
             </div>
             <form action="/api/notetaker/sync" method="post">

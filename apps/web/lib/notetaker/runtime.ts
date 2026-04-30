@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getRepository, type BrainRepository, type NotetakerAutoJoinMode, type NotetakerCalendar, type NotetakerMeeting, type NotetakerProvider } from "@/lib/db/repository";
+import { getRepository, type BrainRepository, type ConnectorConfig, type NotetakerAutoJoinMode, type NotetakerCalendar, type NotetakerMeeting, type NotetakerProvider } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
 import {
   buildDedupeKeys,
@@ -19,6 +19,67 @@ export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
 
 export function notetakerRecallConfigured() {
   return Boolean(process.env.RECALL_API_KEY?.trim());
+}
+
+function connectorHasAnyScope(config: ConnectorConfig, scopes: string[]) {
+  const credentials = config.credentials as { scope?: unknown } | null | undefined;
+  if (typeof credentials?.scope !== "string") return false;
+  const grantedScopes = new Set(credentials.scope.split(/\s+/).filter(Boolean));
+  return scopes.some((scope) => grantedScopes.has(scope));
+}
+
+function connectorHasAccessToken(config: ConnectorConfig) {
+  const credentials = config.credentials as { access_token?: unknown } | null | undefined;
+  return typeof credentials?.access_token === "string" && credentials.access_token.trim().length > 0;
+}
+
+async function ensureCalendarFromOutlookConnector(input: { brainId?: string } = {}) {
+  const repository = getRepository();
+  const configs = await repository.listConnectorConfigs(input.brainId);
+  const outlookConfigs = configs.filter((config) =>
+    config.connectorType === "outlook" &&
+    config.status === "connected" &&
+    connectorHasAccessToken(config) &&
+    connectorHasAnyScope(config, ["Calendars.Read", "Calendars.ReadWrite"])
+  );
+  const createdOrUpdated: NotetakerCalendar[] = [];
+
+  for (const config of outlookConfigs) {
+    const existing = (await repository.listNotetakerCalendars({ brainId: config.brainId }))
+      .find((calendar) => calendar.provider === "outlook_calendar");
+    const credentials = config.credentials as Record<string, unknown>;
+    const baseConfig = {
+      ...(existing?.config ?? {}),
+      credentials,
+      inherited_from_connector_config_id: config.id,
+      inherited_from_connector_type: "outlook",
+      connected_at: existing?.config?.connected_at ?? new Date().toISOString(),
+    };
+
+    if (existing) {
+      const updated = await repository.updateNotetakerCalendar(existing.id, {
+        status: "connected",
+        autoJoinEnabled: true,
+        autoJoinMode: existing.autoJoinMode || "all_calls",
+        config: baseConfig,
+        lastError: null,
+      });
+      if (updated) createdOrUpdated.push(updated);
+      continue;
+    }
+
+    createdOrUpdated.push(await repository.createNotetakerCalendar({
+      brainId: config.brainId,
+      provider: "outlook_calendar",
+      status: "connected",
+      autoJoinEnabled: true,
+      autoJoinMode: "all_calls",
+      externalCalendarId: null,
+      config: baseConfig,
+    }));
+  }
+
+  return createdOrUpdated;
 }
 
 export async function reuseOrCreateNotetakerCalendar(input: {
@@ -183,6 +244,7 @@ export function shouldJoinMeeting(
     meetingUrl: event.meetingUrl,
   });
   const titleAndDescription = `${event.title} ${event.description ?? ""}`.toLowerCase();
+  const participantText = JSON.stringify(event.participants ?? []).toLowerCase();
 
   if (!policy.autoJoinEnabled) return { decision: "skip", reason: "auto_join_disabled" };
   if (policy.autoJoinMode === "manual_only") return { decision: "needs_review", reason: "manual_only_mode", meetingUrl };
@@ -197,7 +259,10 @@ export function shouldJoinMeeting(
 
   if (policy.autoJoinMode === "all_calls") return { decision: "join", reason: "all_calls_policy", meetingUrl };
   if (policy.autoJoinMode === "arvya_related_only") {
-    return titleAndDescription.includes("arvya")
+    return titleAndDescription.includes("arvya") ||
+      titleAndDescription.includes("aryva") ||
+      participantText.includes("@arvya.") ||
+      participantText.includes("@aryva.")
       ? { decision: "join", reason: "arvya_related_match", meetingUrl }
       : { decision: "skip", reason: "not_arvya_related", meetingUrl };
   }
@@ -530,10 +595,11 @@ async function findBrainAndMeetingForEvent(input: {
   throw new Error("Recall webhook could not be mapped to a Brain. Include brain_id in the bot metadata or schedule the meeting first.");
 }
 
-export async function runNotetakerCalendarSync(options: { client?: RecallClient } = {}) {
+export async function runNotetakerCalendarSync(options: { brainId?: string; client?: RecallClient } = {}) {
   const repository = getRepository();
   const client = getRecallClient(options);
-  const calendars = (await repository.listNotetakerCalendars({ status: "connected" }))
+  await ensureCalendarFromOutlookConnector({ brainId: options.brainId });
+  const calendars = (await repository.listNotetakerCalendars({ brainId: options.brainId, status: "connected" }))
     .filter((calendar) => calendar.autoJoinEnabled && calendar.status !== "disabled");
   const summaries = [];
 

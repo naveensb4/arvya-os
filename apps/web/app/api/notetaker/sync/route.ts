@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   if (!brainId) return NextResponse.json({ error: "brainId is required" }, { status: 400 });
 
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
-  await runNotetakerCalendarSync();
+  await runNotetakerCalendarSync({ brainId: selectedBrain.id });
 
   revalidatePath(`/brains/${selectedBrain.id}/connections`);
   revalidatePath(`/brains/${selectedBrain.id}/notetaker`);

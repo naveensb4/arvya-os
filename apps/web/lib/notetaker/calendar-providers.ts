@@ -7,8 +7,8 @@ const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const MICROSOFT_AUTH_BASE = "https://login.microsoftonline.com";
 const MICROSOFT_GRAPH = "https://graph.microsoft.com/v1.0";
 
-export const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
-export const OUTLOOK_CALENDAR_SCOPE = "offline_access Calendars.Read";
+export const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+export const OUTLOOK_CALENDAR_SCOPE = "offline_access Calendars.ReadWrite";
 
 type OAuthCredentials = {
   access_token?: string;
@@ -32,11 +32,21 @@ type OAuthState = {
   provider: NotetakerProvider;
 };
 
+export type CreateGoogleMeetEventInput = {
+  calendar: NotetakerCalendar;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  attendees?: Array<{ email: string; name?: string; optional?: boolean }>;
+  requestId?: string;
+};
+
 function env(name: string) {
   return process.env[name]?.trim() || undefined;
 }
 
-export const MEETING_URL_PATTERN = /https?:\/\/(?:meet\.google\.com|(?:[\w-]+\.)?zoom\.us|teams\.(?:microsoft|live)\.com|teams\.microsoft\.us|gov\.teams\.microsoft\.us|(?:[\w-]+\.)?webex\.com|(?:[\w-]+\.)?gotomeeting\.com|(?:[\w-]+\.)?goto\.com|whereby\.com|chime\.aws)\/[^\s<>)"]+/i;
+export const MEETING_URL_PATTERN = /https?:\/\/(?:meet\.google\.com|(?:[\w-]+\.)?zoom\.us|(?:[\w-]+\.)?zoomgov\.com|teams\.(?:microsoft|live)\.com|teams\.microsoft\.us|gov\.teams\.microsoft\.us|(?:[\w-]+\.)?webex\.com|(?:[\w-]+\.)?gotomeeting\.com|(?:[\w-]+\.)?goto\.com|whereby\.com|chime\.aws)\/[^\s<>)"]+/i;
 
 export function extractMeetingUrl(input: { title?: string; description?: string; location?: string; meetingUrl?: string }) {
   if (input.meetingUrl?.trim()) {
@@ -59,7 +69,8 @@ function googleOAuthEnv() {
   const redirectUri =
     env("GOOGLE_CALENDAR_REDIRECT_URI") ??
     publicUrl("/api/notetaker/google-calendar/auth/callback") ??
-    env("GOOGLE_REDIRECT_URI");
+    env("GOOGLE_REDIRECT_URI") ??
+    env("GMAIL_REDIRECT_URI");
   if (!clientId || !clientSecret || !redirectUri) {
     throw new Error("Google Calendar OAuth is not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALENDAR_REDIRECT_URI or ARVYA_PUBLIC_BASE_URL.");
   }
@@ -261,6 +272,45 @@ async function getOutlookAccessToken(calendar: NotetakerCalendar) {
 export async function listProviderCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
   if (calendar.provider === "google_calendar") return listGoogleCalendarEvents(calendar);
   return listOutlookCalendarEvents(calendar);
+}
+
+export async function createGoogleMeetCalendarEvent(input: CreateGoogleMeetEventInput): Promise<NotetakerCalendarEvent> {
+  if (input.calendar.provider !== "google_calendar") {
+    throw new Error("Google Meet events require a connected Google Calendar.");
+  }
+  const calendarId = input.calendar.externalCalendarId || "primary";
+  const url = new URL(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`);
+  url.searchParams.set("conferenceDataVersion", "1");
+  url.searchParams.set("sendUpdates", "all");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${await getGoogleAccessToken(input.calendar)}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      summary: input.title,
+      description: input.description,
+      start: { dateTime: input.startTime },
+      end: { dateTime: input.endTime },
+      attendees: input.attendees?.map((attendee) => ({
+        email: attendee.email,
+        displayName: attendee.name,
+        optional: attendee.optional,
+      })),
+      conferenceData: {
+        createRequest: {
+          requestId: input.requestId ?? `arvya-${Date.now()}`,
+          conferenceSolutionKey: { type: "hangoutsMeet" },
+        },
+      },
+    }),
+  });
+  const json = await response.json() as GoogleCalendarEvent & { error?: { message?: string } };
+  if (!response.ok) throw new Error(json.error?.message ?? "Google Calendar event creation failed.");
+  const [event] = normalizeGoogleEvent(json);
+  if (!event?.meetingUrl) throw new Error("Google Calendar created the event but did not return a Google Meet URL.");
+  return event;
 }
 
 async function listGoogleCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
