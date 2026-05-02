@@ -19,6 +19,11 @@ import type {
   SourceEmbedding,
   SourceItem,
   SourceType,
+  User,
+  Workspace,
+  WorkspaceInvite,
+  WorkspaceMember,
+  WorkspaceMemberRole,
   Workflow,
   WorkflowStatus,
 } from "@arvya/core";
@@ -30,6 +35,8 @@ export type CreateBrainData = {
   name: string;
   kind: BrainKind;
   thesis: string;
+  workspaceId?: string;
+  createdByUserId?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -192,8 +199,8 @@ export type UpdateAgentRunData = {
   completedAt?: string;
 };
 
-export type ConnectorType = "google_drive" | "gmail" | "outlook" | "recall" | "mock";
-export type ConnectorStatus = "active" | "connected" | "paused" | "error";
+export type ConnectorType = "google_drive" | "gmail" | "outlook" | "recall" | "mock" | "onedrive" | "slack" | "hubspot" | "github" | "notion";
+export type ConnectorStatus = "active" | "connected" | "paused" | "error" | "needs_reauth";
 export type ConnectorSyncRunStatus = "started" | "completed" | "failed";
 export type BrainAlertSeverity = "info" | "warning" | "error" | "critical";
 export type BrainAlertStatus = "unread" | "read" | "dismissed";
@@ -295,6 +302,30 @@ export type NotetakerEvent = {
   payload: Record<string, unknown>;
   processedAt?: string;
   createdAt: string;
+};
+
+export type CreateUserData = {
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+};
+
+export type CreateWorkspaceData = {
+  name: string;
+};
+
+export type CreateWorkspaceMemberData = {
+  workspaceId: string;
+  userId: string;
+  role?: WorkspaceMemberRole;
+};
+
+export type CreateWorkspaceInviteData = {
+  workspaceId: string;
+  email: string;
+  role?: WorkspaceMemberRole;
+  token: string;
+  expiresAt: string;
 };
 
 export type CreateConnectorConfigData = {
@@ -427,12 +458,24 @@ export type UpdateNotetakerEventData = Partial<{
 export interface BrainRepository {
   readonly mode: "in_memory" | "supabase";
 
+  getUserByEmail(email: string): Promise<User | null>;
+  listUsers(): Promise<User[]>;
+  createUser(input: CreateUserData): Promise<User>;
+
+  getWorkspace(workspaceId: string): Promise<Workspace | null>;
+  listWorkspaces(): Promise<Workspace[]>;
+  createWorkspace(input: CreateWorkspaceData): Promise<Workspace>;
+
+  listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]>;
+  createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember>;
+
   listBrains(): Promise<Brain[]>;
   getBrain(brainId: string): Promise<Brain | null>;
   createBrain(input: CreateBrainData): Promise<Brain>;
 
   createSourceItem(input: CreateSourceData): Promise<SourceItem>;
   getSourceItem(sourceItemId: string): Promise<SourceItem | null>;
+  getSourceItemsByIds(ids: string[]): Promise<SourceItem[]>;
   listSourceItems(brainId: string, options?: ListOptions): Promise<SourceItem[]>;
 
   createMemoryObjects(items: CreateMemoryObjectData[]): Promise<MemoryObject[]>;
@@ -486,6 +529,17 @@ export interface BrainRepository {
   listNotetakerEvents(input?: { brainId?: string; providerEventId?: string; limit?: number }): Promise<NotetakerEvent[]>;
   createNotetakerEvent(input: CreateNotetakerEventData): Promise<NotetakerEvent>;
   updateNotetakerEvent(eventId: string, update: UpdateNotetakerEventData): Promise<NotetakerEvent | null>;
+
+  getWorkspaceMemberRole(workspaceId: string, userId: string): Promise<WorkspaceMemberRole | null>;
+  updateWorkspaceMemberRole(workspaceId: string, userId: string, role: WorkspaceMemberRole): Promise<WorkspaceMember | null>;
+  removeWorkspaceMember(workspaceId: string, userId: string): Promise<boolean>;
+
+  getWorkspaceForUser(userId: string): Promise<Workspace | null>;
+  listBrainsForWorkspace(workspaceId: string): Promise<Brain[]>;
+
+  createWorkspaceInvite(input: CreateWorkspaceInviteData): Promise<WorkspaceInvite>;
+  getWorkspaceInviteByToken(token: string): Promise<WorkspaceInvite | null>;
+  acceptWorkspaceInvite(token: string, userId: string): Promise<WorkspaceMember>;
 }
 
 let cached: BrainRepository | null = null;

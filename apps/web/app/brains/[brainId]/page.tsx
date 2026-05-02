@@ -19,6 +19,14 @@ import {
 } from "@/lib/brain/store";
 import { getRepository } from "@/lib/db/repository";
 
+const SUGGESTED_QUESTIONS = [
+  "What did we promise the client in our last call?",
+  "Which projects have upcoming deadlines this week?",
+  "Summarize the latest emails from our top 3 clients",
+  "What commitments are overdue across all engagements?",
+  "Who are the key contacts we've been communicating with?",
+];
+
 type PageProps = {
   params: Promise<{ brainId: string }>;
 };
@@ -75,6 +83,20 @@ export default async function Page({ params }: PageProps) {
           >
             Drift Review
           </Link>
+        </div>
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/50">Try asking</p>
+          <div className="mt-3 space-y-2">
+            {SUGGESTED_QUESTIONS.map((q) => (
+              <Link
+                key={q}
+                href={`/brains/${selectedBrainId}/ask?q=${encodeURIComponent(q)}`}
+                className="block rounded-xl border border-white/10 px-4 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/5"
+              >
+                {q}
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 

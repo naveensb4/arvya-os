@@ -10,6 +10,7 @@ import {
   sourceFingerprint,
   sourceMatchesFingerprint,
 } from "@/lib/workflows/source-normalization";
+import { getOneDriveConfigForBrain, ensureTranscriptFolder, uploadTranscript } from "@/lib/connectors/onedrive";
 import { listProviderCalendarEvents, MEETING_URL_PATTERN } from "./calendar-providers";
 
 export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
@@ -231,6 +232,21 @@ export function extractMeetingUrl(input: { title?: string; description?: string;
   const haystack = [input.location, input.description, input.title].filter(Boolean).join("\n");
   const match = haystack.match(MEETING_URL_PATTERN);
   return match?.[0];
+}
+
+export function normalizeMeetingUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return url.toLowerCase().replace(/\?.*$/, "").replace(/\/+$/, "");
+  }
+}
+
+const DEDUP_WINDOW_MS = 30 * 60 * 1000;
+
+function meetingHasActiveBot(meeting: NotetakerMeeting): boolean {
+  return meeting.botStatus === "scheduled" || meeting.botStatus === "joining" || meeting.botStatus === "in_call";
 }
 
 export function shouldJoinMeeting(
@@ -621,15 +637,15 @@ export async function runNotetakerCalendarSync(options: { brainId?: string; clie
     try {
       const events = (await client.listCalendarEvents(calendar)).filter((event) => isWithinLookahead(event));
       itemsFound = events.length;
-      const existingMeetings = await repository.listNotetakerMeetings({ calendarId: calendar.id, limit: 500 });
+      const brainMeetings = await repository.listNotetakerMeetings({ brainId: calendar.brainId, limit: 500 });
 
       for (const event of events) {
         const decision = shouldJoinMeeting(event, {
           autoJoinEnabled: calendar.autoJoinEnabled,
           autoJoinMode: calendar.autoJoinMode,
         });
-        const existing = existingMeetings.find((meeting) =>
-          meeting.externalEventId === event.id ||
+        const existing = brainMeetings.find((meeting) =>
+          (meeting.notetakerCalendarId === calendar.id && meeting.externalEventId === event.id) ||
           (event.recallCalendarEventId && meeting.recallCalendarEventId === event.recallCalendarEventId)
         );
         const baseMeeting = {
@@ -664,12 +680,35 @@ export async function runNotetakerCalendarSync(options: { brainId?: string; clie
           skipped += 1;
           continue;
         }
+
+        const eventUrl = decision.meetingUrl ?? event.meetingUrl;
+        if (eventUrl) {
+          const normalizedUrl = normalizeMeetingUrl(eventUrl);
+          const eventStart = new Date(event.startTime).getTime();
+          const dupeMeeting = brainMeetings.find((other) => {
+            if (other.id === meeting.id) return false;
+            if (!other.meetingUrl || !meetingHasActiveBot(other)) return false;
+            const otherStart = new Date(other.startTime).getTime();
+            if (Math.abs(eventStart - otherStart) > DEDUP_WINDOW_MS) return false;
+            return normalizeMeetingUrl(other.meetingUrl) === normalizedUrl;
+          });
+          if (dupeMeeting) {
+            await repository.updateNotetakerMeeting(meeting.id, {
+              botStatus: "not_scheduled",
+              autoJoinReason: `dedup: bot already scheduled via meeting ${dupeMeeting.id}`,
+            });
+            skipped += 1;
+            continue;
+          }
+        }
+
         const bot = await client.scheduleBot({ meeting, joinAt: joinAtForMeeting(meeting) });
         await repository.updateNotetakerMeeting(meeting.id, {
           recallBotId: bot.botId,
           botStatus: bot.status ?? "scheduled",
           metadata: { ...meeting.metadata, ...(bot.metadata ?? {}) },
         });
+        brainMeetings.push(meeting);
         scheduled += 1;
       }
 
@@ -849,6 +888,43 @@ export async function ingestNotetakerTranscript(input: {
       metadata: { ...meeting.metadata, transcriptMetadata: transcript.metadata ?? {} },
     });
   }
+
+  try {
+    const onedriveConfig = await getOneDriveConfigForBrain(input.brainId);
+    if (onedriveConfig) {
+      const brain = await repository.getBrain(input.brainId);
+      let memberEmails: string[] = [];
+      if (brain?.workspaceId) {
+        const members = await repository.listWorkspaceMembers(brain.workspaceId);
+        const users = await repository.listUsers();
+        memberEmails = members
+          .map((m) => users.find((u) => u.id === m.userId)?.email)
+          .filter((e): e is string => Boolean(e));
+      }
+      const folder = await ensureTranscriptFolder(onedriveConfig, memberEmails);
+      const datePrefix = meeting ? meeting.startTime.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const filename = `${datePrefix} - ${sourceItem.title}.txt`;
+      const uploaded = await uploadTranscript(onedriveConfig, folder.id, filename, transcript.text);
+      const updatedSource = await repository.getSourceItem(sourceItem.id);
+      if (updatedSource) {
+        const existingMeta = (updatedSource.metadata ?? {}) as Record<string, unknown>;
+        existingMeta.onedrive_file_id = uploaded.id;
+        existingMeta.onedrive_web_url = uploaded.webUrl;
+      }
+    }
+  } catch (uploadError) {
+    const msg = uploadError instanceof Error ? uploadError.message : "Unknown OneDrive upload error";
+    console.error("[notetaker] OneDrive upload failed (non-blocking):", msg);
+    await repository.createBrainAlert({
+      brainId: input.brainId,
+      alertType: "onedrive_upload_failed",
+      title: `OneDrive upload failed for ${sourceItem.title}`,
+      description: msg,
+      severity: "warning",
+      sourceId: sourceItem.id,
+    });
+  }
+
   return { duplicate: false, sourceItem, ingested };
 }
 

@@ -186,10 +186,21 @@ export const extractedRelationshipSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const meetingTypeSchema = z.enum([
+  "investor_call",
+  "customer_call",
+  "advisor_call",
+  "internal_sync",
+  "partner_call",
+  "product_review",
+  "other",
+]);
+
 export const sourceClassificationSchema = z.object({
   summary: z.string().min(1).max(2400),
   sourceCategory: z.string().min(1).max(80),
   confidence: z.number().min(0).max(1),
+  meetingType: meetingTypeSchema.optional(),
 });
 
 export const extractedSuggestedActionSchema = z.object({

@@ -57,6 +57,7 @@ export const CONNECTOR_TYPES: ConnectorType[] = [
   "google_drive",
   "gmail",
   "outlook",
+  "onedrive",
   "recall",
   "mock",
 ];

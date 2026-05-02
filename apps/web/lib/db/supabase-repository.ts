@@ -9,6 +9,9 @@ import type {
   Relationship,
   SourceEmbedding,
   SourceItem,
+  User,
+  Workspace,
+  WorkspaceMember,
   Workflow,
 } from "@arvya/core";
 import type { Db } from "./client";
@@ -27,6 +30,9 @@ import {
   relationships,
   sourceEmbeddings,
   sourceItems,
+  users,
+  workspaceMembers,
+  workspaces,
   workflows,
   type AgentRunRow,
   type BrainAlertRow,
@@ -42,7 +48,10 @@ import {
   type RelationshipRow,
   type SourceEmbeddingRow,
   type SourceItemRow,
+  type UserRow,
   type WorkflowRow,
+  type WorkspaceMemberRow,
+  type WorkspaceRow,
 } from "./schema";
 import type {
   BrainRepository,
@@ -60,7 +69,10 @@ import type {
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
+  CreateUserData,
   CreateWorkflowData,
+  CreateWorkspaceData,
+  CreateWorkspaceMemberData,
   ListOptions,
   ListPrioritiesOptions,
   UpdateAgentRunData,
@@ -95,12 +107,43 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function toUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toWorkspace(row: WorkspaceRow): Workspace {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toWorkspaceMember(row: WorkspaceMemberRow): WorkspaceMember {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    role: row.role,
+    joinedAt: row.joinedAt.toISOString(),
+  };
+}
+
 function toBrain(row: BrainRow): Brain {
   return {
     id: row.id,
     name: row.name,
     kind: row.kind,
     thesis: row.thesis,
+    workspaceId: row.workspaceId ?? null,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -354,6 +397,66 @@ function toNotetakerEvent(row: NotetakerEventRow) {
 export class SupabaseRepository implements BrainRepository {
   readonly mode = "supabase" as const;
   constructor(private readonly db: Db) {}
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const [row] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+    return row ? toUser(row) : null;
+  }
+
+  async listUsers(): Promise<User[]> {
+    return (await this.db.select().from(users).orderBy(desc(users.createdAt))).map(toUser);
+  }
+
+  async createUser(input: CreateUserData): Promise<User> {
+    const [row] = await this.db
+      .insert(users)
+      .values({
+        email: input.email,
+        displayName: input.displayName,
+        avatarUrl: input.avatarUrl ?? null,
+      })
+      .returning();
+    return toUser(row);
+  }
+
+  async getWorkspace(workspaceId: string): Promise<Workspace | null> {
+    if (!isUuid(workspaceId)) return null;
+    const [row] = await this.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+    return row ? toWorkspace(row) : null;
+  }
+
+  async listWorkspaces(): Promise<Workspace[]> {
+    return (await this.db.select().from(workspaces).orderBy(desc(workspaces.createdAt))).map(toWorkspace);
+  }
+
+  async createWorkspace(input: CreateWorkspaceData): Promise<Workspace> {
+    const [row] = await this.db
+      .insert(workspaces)
+      .values({ name: input.name })
+      .returning();
+    return toWorkspace(row);
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    return (
+      await this.db
+        .select()
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.workspaceId, workspaceId))
+    ).map(toWorkspaceMember);
+  }
+
+  async createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember> {
+    const [row] = await this.db
+      .insert(workspaceMembers)
+      .values({
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        role: input.role ?? "member",
+      })
+      .returning();
+    return toWorkspaceMember(row);
+  }
 
   async listBrains(): Promise<Brain[]> {
     return (await this.db.select().from(brains).orderBy(desc(brains.createdAt))).map(toBrain);
