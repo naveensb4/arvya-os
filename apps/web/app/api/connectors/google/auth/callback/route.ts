@@ -86,6 +86,13 @@ export async function GET(request: Request) {
 
   const configs = await repository.listConnectorConfigs(selectedBrainId);
 
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const gmailOnboardingConfig = {
+    labelIds: ["INBOX"],
+    mode: "onboarding",
+    watermark: sevenDaysAgo,
+  };
+
   const gmailConfig = configs.find((c) => c.connectorType === "gmail");
   if (gmailConfig) {
     await repository.updateConnectorConfig(gmailConfig.id, {
@@ -93,18 +100,24 @@ export async function GET(request: Request) {
       status: "connected",
       syncEnabled: true,
       syncIntervalMinutes: 10,
+      config: { ...gmailConfig.config, ...gmailOnboardingConfig },
     });
   } else {
     await repository.createConnectorConfig({
       brainId: selectedBrainId,
       connectorType: "gmail",
       status: "connected",
-      config: {},
+      config: gmailOnboardingConfig,
       credentials,
       syncEnabled: true,
       syncIntervalMinutes: 10,
     });
   }
+
+  const driveOnboardingConfig = {
+    mode: "recent_files",
+    watermark: sevenDaysAgo,
+  };
 
   const driveConfig = configs.find((c) => c.connectorType === "google_drive");
   if (driveConfig) {
@@ -113,13 +126,14 @@ export async function GET(request: Request) {
       status: "connected",
       syncEnabled: true,
       syncIntervalMinutes: 10,
+      config: { ...driveConfig.config, ...driveOnboardingConfig },
     });
   } else {
     await repository.createConnectorConfig({
       brainId: selectedBrainId,
       connectorType: "google_drive",
       status: "connected",
-      config: {},
+      config: driveOnboardingConfig,
       credentials,
       syncEnabled: true,
       syncIntervalMinutes: 10,

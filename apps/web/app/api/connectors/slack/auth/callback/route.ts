@@ -63,18 +63,24 @@ export async function GET(request: Request) {
   const configs = await getRepository().listConnectorConfigs(selectedBrainId);
   const existing = configs.find((c) => c.connectorType === "slack");
 
+  const sevenDaysAgoTs = String(Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000));
   if (existing) {
     await getRepository().updateConnectorConfig(existing.id, {
       credentials: slackConfig,
       status: "connected",
+      syncEnabled: true,
+      syncIntervalMinutes: 10,
+      config: { ...existing.config, teamId: slackConfig.teamId, teamName: slackConfig.teamName, watermark: existing.config.watermark ?? sevenDaysAgoTs },
     });
   } else {
     await getRepository().createConnectorConfig({
       brainId: selectedBrainId,
       connectorType: "slack",
       status: "connected",
-      config: { teamId: slackConfig.teamId, teamName: slackConfig.teamName },
+      config: { teamId: slackConfig.teamId, teamName: slackConfig.teamName, watermark: sevenDaysAgoTs },
       credentials: slackConfig,
+      syncEnabled: true,
+      syncIntervalMinutes: 10,
     });
   }
 
