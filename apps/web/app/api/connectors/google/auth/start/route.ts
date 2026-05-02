@@ -28,11 +28,15 @@ function requireEnv() {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const brainId = url.searchParams.get("brainId")?.trim();
+  const returnUrl = url.searchParams.get("return")?.trim();
   if (!brainId) return NextResponse.json({ error: "brainId is required" }, { status: 400 });
 
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const selectedBrainId = selectedBrain.id;
   await ensureDefaultConnectorConfigs(selectedBrainId);
+
+  const statePayload: Record<string, string> = { brainId: selectedBrainId, connectorConfigId: "unified" };
+  if (returnUrl) statePayload.returnUrl = returnUrl;
 
   const { clientId, redirectUri } = requireEnv();
   const authUrl = new URL(GOOGLE_AUTH_URL);
@@ -42,7 +46,7 @@ export async function GET(request: Request) {
   authUrl.searchParams.set("scope", UNIFIED_SCOPES);
   authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "consent");
-  authUrl.searchParams.set("state", encodeOAuthState({ brainId: selectedBrainId, connectorConfigId: "unified" }));
+  authUrl.searchParams.set("state", Buffer.from(JSON.stringify(statePayload), "utf8").toString("base64url"));
 
   return NextResponse.redirect(authUrl);
 }

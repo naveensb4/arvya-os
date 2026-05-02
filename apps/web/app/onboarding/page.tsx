@@ -217,7 +217,7 @@ function ConnectStep({ brainId, onDone }: { brainId: string; onDone: () => void 
           <span className="text-sm font-medium text-stone-500">Connected</span>
         ) : (
           <a
-            href={`/api/connectors/google/auth/start?brainId=${encodeURIComponent(brainId)}`}
+            href={`/api/connectors/google/auth/start?brainId=${encodeURIComponent(brainId)}&return=${encodeURIComponent("/onboarding?connected=google")}`}
             className="button shrink-0"
           >
             Connect Google
@@ -239,7 +239,7 @@ function ConnectStep({ brainId, onDone }: { brainId: string; onDone: () => void 
           <span className="text-sm font-medium text-stone-500">Connected</span>
         ) : (
           <a
-            href={`/api/connectors/slack/auth/start?brainId=${encodeURIComponent(brainId)}`}
+            href={`/api/connectors/slack/auth/start?brainId=${encodeURIComponent(brainId)}&return=${encodeURIComponent("/onboarding?connected=slack")}`}
             className="button shrink-0"
           >
             Connect Slack

@@ -24,11 +24,33 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code")?.trim();
   const oauthError = url.searchParams.get("error")?.trim();
 
-  if (oauthError) return NextResponse.json({ error: oauthError }, { status: 400 });
-  if (!code) return NextResponse.json({ error: "Slack OAuth callback requires code" }, { status: 400 });
+  const rawState = url.searchParams.get("state")?.trim();
+  let brainId: string | undefined;
+  let stateReturnUrl: string | undefined;
+  if (rawState) {
+    try {
+      const parsed = JSON.parse(Buffer.from(rawState, "base64url").toString("utf8")) as {
+        brainId?: string;
+        returnUrl?: string;
+      };
+      brainId = parsed.brainId;
+      stateReturnUrl = parsed.returnUrl;
+    } catch {
+      brainId = rawState;
+    }
+  }
+  brainId = brainId || url.searchParams.get("brainId")?.trim();
+  const fallbackUrl = brainId ? `/brains/${brainId}/connections` : "/onboarding";
 
-  const brainId = url.searchParams.get("state")?.trim() || url.searchParams.get("brainId")?.trim();
-  if (!brainId) return NextResponse.json({ error: "brainId is required (pass via state or brainId param)" }, { status: 400 });
+  if (oauthError) {
+    return NextResponse.redirect(new URL(`${fallbackUrl}?error=slack_denied`, url.origin));
+  }
+  if (!code) {
+    return NextResponse.redirect(new URL(`${fallbackUrl}?error=slack_missing_code`, url.origin));
+  }
+  if (!brainId) {
+    return NextResponse.redirect(new URL(`/onboarding?error=slack_no_brain`, url.origin));
+  }
 
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const selectedBrainId = selectedBrain.id;
@@ -60,5 +82,6 @@ export async function GET(request: Request) {
 
   revalidatePath(`/brains/${selectedBrainId}`);
   revalidatePath(`/brains/${selectedBrainId}/connections`);
-  return NextResponse.redirect(new URL(`/brains/${selectedBrainId}/connections`, request.url));
+  const returnUrl = stateReturnUrl || `/brains/${selectedBrainId}/connections`;
+  return NextResponse.redirect(new URL(returnUrl, url.origin));
 }

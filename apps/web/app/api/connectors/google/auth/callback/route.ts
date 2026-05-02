@@ -42,7 +42,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Google OAuth callback requires code and state" }, { status: 400 });
   }
 
-  const { brainId } = decodeOAuthState(state);
+  const stateData = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
+    brainId?: string;
+    returnUrl?: string;
+  };
+  const brainId = stateData.brainId;
+  if (!brainId) {
+    return NextResponse.json({ error: "Invalid OAuth state" }, { status: 400 });
+  }
+  const stateReturnUrl = stateData.returnUrl;
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const selectedBrainId = selectedBrain.id;
   const repository = getRepository();
@@ -134,6 +142,6 @@ export async function GET(request: Request) {
   revalidatePath(`/brains/${selectedBrainId}`);
   revalidatePath(`/brains/${selectedBrainId}/connections`);
 
-  const returnUrl = url.searchParams.get("return") || `/brains/${selectedBrainId}/connections`;
+  const returnUrl = stateReturnUrl || `/brains/${selectedBrainId}/connections`;
   return NextResponse.redirect(new URL(returnUrl, url.origin));
 }
