@@ -102,14 +102,17 @@ class StatefulGmailClient implements GmailClient {
   async listLabels() {
     return [{ id: "Label_ArvyaBrain", name: "Arvya Brain" }];
   }
-  async listMessages(labelId: string, options?: { since?: string }) {
+  async listMessages(labelId: string, options?: { since?: string; maxResults?: number }) {
     assert.equal(labelId, "Label_ArvyaBrain");
     this.lastListSince = options?.since;
-    if (!options?.since) return this.store.map((fixture) => fixture.list);
-    const sinceMs = Date.parse(options.since);
-    return this.store
-      .filter((fixture) => Number(fixture.message.internalDate) > sinceMs)
-      .map((fixture) => fixture.list);
+    let rows = !options?.since
+      ? this.store.map((fixture) => fixture.list)
+      : this.store
+          .filter((fixture) => Number(fixture.message.internalDate) > Date.parse(options.since!))
+          .map((fixture) => fixture.list);
+    const cap = options?.maxResults;
+    if (cap != null && Number.isFinite(cap)) rows = rows.slice(0, Math.max(0, cap));
+    return rows;
   }
   async getMessage(messageId: string) {
     const found = this.store.find((fixture) => fixture.message.id === messageId);
@@ -162,15 +165,18 @@ class StatefulOutlookClient implements OutlookClient {
   async listMailFolders() {
     return [{ id: "arvya-brain-folder", displayName: "Arvya Brain" }];
   }
-  async listMessages(folderId: string, options?: { since?: string }) {
+  async listMessages(folderId: string, options?: { since?: string; maxResults?: number }) {
     assert.equal(folderId, "arvya-brain-folder");
     this.lastListSince = options?.since;
-    if (!options?.since) return this.store;
-    const sinceMs = Date.parse(options.since);
-    return this.store.filter((message) => {
-      const ts = Date.parse(message.receivedDateTime ?? "");
-      return Number.isFinite(ts) ? ts > sinceMs : true;
-    });
+    let rows = !options?.since
+      ? this.store
+      : this.store.filter((message) => {
+          const ts = Date.parse(message.receivedDateTime ?? "");
+          return Number.isFinite(ts) ? ts > Date.parse(options.since!) : true;
+        });
+    const cap = options?.maxResults;
+    if (cap != null && Number.isFinite(cap)) rows = rows.slice(0, Math.max(0, cap));
+    return rows;
   }
 }
 
@@ -199,7 +205,9 @@ async function main() {
       status: "connected",
       syncEnabled: true,
       syncIntervalMinutes: 10,
-      config: { labelIds: ["Arvya Brain"] },
+      // Narrow to Aryva-related mail inside the label so personal receipts in the
+      // same label are skipped (matches production recommendation in connections UI).
+      config: { labelIds: ["Arvya Brain"], requireAryvaRelated: true },
       credentials: { access_token: "mock-gmail-token" },
     });
     const outlookConfig = await repository.createConnectorConfig({
@@ -208,7 +216,7 @@ async function main() {
       status: "connected",
       syncEnabled: true,
       syncIntervalMinutes: 10,
-      config: { outlookFolderIds: ["Arvya Brain"] },
+      config: { outlookFolderIds: ["Arvya Brain"], requireAryvaRelated: true },
       credentials: { access_token: "mock-outlook-token" },
     });
 
@@ -328,6 +336,30 @@ async function main() {
       .filter((source) => ["gmail", "outlook"].includes(String(source.metadata?.connector_type)))
       .length;
     check("idempotency: only one source_item per provider message id", () => assert.equal(finalSourceCount, 4));
+
+    // WS5 brain_event ledger: every successful sync that found items should
+    // emit a connector_sync_completed event with the cursor + counts. Daily
+    // brief, dashboard cards, and dream-cycle replay all read this stream.
+    const events = await repository.listBrainEvents(brain.id, { limit: 200 });
+    const gmailSyncEvents = events.filter(
+      (event) => event.eventType === "connector_sync_completed" && event.sourceSystem === "gmail",
+    );
+    const outlookSyncEvents = events.filter(
+      (event) => event.eventType === "connector_sync_completed" && event.sourceSystem === "outlook",
+    );
+    check("gmail sync emits connector_sync_completed brain_events", () => {
+      assert.ok(gmailSyncEvents.length >= 1, `expected gmail brain_events, got ${gmailSyncEvents.length}`);
+      const sample = gmailSyncEvents[0];
+      assert.ok(sample.payload?.connector_config_id === gmailConfig.id, "expected connector_config_id payload");
+      assert.ok("ingested_count" in (sample.payload ?? {}), "expected ingested_count payload");
+      assert.ok("sync_started_at" in (sample.payload ?? {}), "expected sync_started_at payload");
+      assert.ok("sync_finished_at" in (sample.payload ?? {}), "expected sync_finished_at payload");
+    });
+    check("outlook sync emits connector_sync_completed brain_events", () => {
+      assert.ok(outlookSyncEvents.length >= 1, `expected outlook brain_events, got ${outlookSyncEvents.length}`);
+      const sample = outlookSyncEvents[0];
+      assert.ok(sample.payload?.connector_config_id === outlookConfig.id, "expected connector_config_id payload");
+    });
 
     if (fail > 0) {
       console.log(`\nEmail connector mock verification: ${pass} passed, ${fail} failed`);
