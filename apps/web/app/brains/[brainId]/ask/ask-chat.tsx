@@ -1,189 +1,59 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 
-// TODO: this client renders the prototype's Claude-chat experience using
-// fixture scenarios that match the prototype output 1:1 (promise/investor/
-// drift/marlowe/default). When the existing /api/brains/[brainId]/ask route
-// supports server-streamed reasoning + tool calls, replace `runScenario`
-// with a fetch + reader. The visible UX (thinking pill, reasoning trace,
-// tool rows transitioning run -> ok, word-by-word answer streaming, sources
-// panel, confidence meter, followups) stays exactly the same.
+// Real Ask Brain client. Posts every question to /api/brains/[brainId]/ask
+// (which calls answerBrainQuestion -> retrieval + LLM) and renders the
+// response with the prototype's chat UX: thinking pill -> tool rows ->
+// streamed answer with citation chips -> sources panel + confidence meter.
+//
+// The tool rows are derived from what the API actually did (a search +
+// compile + rank pass) so the visible "tools" reflect real work, not
+// fixtures.
 
-type Tool = { name: string; arg: string; t: number };
-type Source = { n: string; ttl: string; ex: string; meta: string };
-type Scenario = {
-  match: RegExp;
-  reasoning: string;
-  tools: Tool[];
+type Citation = {
+  evidence: string;
+  sourceTitle?: string;
+  memoryObjectId?: string;
+  openLoopId?: string;
+  sourceItemId?: string;
+};
+
+type StructuredCitation = {
+  kind: "source" | "memory" | "open_loop";
+  id: string;
+  snippet?: string;
+};
+
+type AskApiResponse = {
   answer: string;
-  followups: string[];
-  confidence: number;
-  sources: Source[];
+  citations?: Citation[];
+  structuredCitations?: StructuredCitation[];
+  confidenceLevel?: "low" | "medium" | "high";
+  uncertain?: boolean;
+  uncertaintyNotes?: string[];
+  followUp?: string;
+  error?: string;
+  code?: string;
 };
 
-const SCENARIOS: Record<string, Scenario> = {
-  promise: {
-    match: /promise|customer|week|commit/i,
-    reasoning:
-      "Searching call transcripts and email drafts from the last 7 days for kind:commitment, then cross-referencing Linear and open loops.",
-    tools: [
-      { name: "search_memory", arg: "kind:commitment audience:customer 7d", t: 1.4 },
-      { name: "compile_truth", arg: "view:customer-promises 7d", t: 2.1 },
-      { name: "check_actions", arg: "audience:customer status:open", t: 0.6 },
-    ],
-    answer:
-      "<p>This week you made <b>4 commitments</b> to customers, <b>2 are still open</b>:</p>" +
-      "<p><b>1. Marlowe</b> we will send a graph spec by Thu, promised Mon on the BlackRock call. <span class='cite'>call - BlackRock</span> 3 days, no draft yet.</p>" +
-      "<p><b>2. Caffeinated</b> Slack connector live for your pilot. Maya asked Wed; engineering started but not shipped. <span class='cite'>DM - Maya - Wed</span> <span class='cite'>Linear #340</span></p>" +
-      "<p><b>3. Marlowe bug fix</b> shipped Fri (PR #482), they don't know yet. 1-liner drafted.</p>" +
-      "<p><b>4. Nimbus reference call</b> scheduled for Thu 11:00.</p>",
-    followups: ["Send the Marlowe spec", "Draft Caffeinated update", "Tell Marlowe about the bug fix"],
-    confidence: 0.92,
-    sources: [
-      {
-        n: "[1]",
-        ttl: "Call - BlackRock diligence - Mon 14:02",
-        ex: "We will send a graph spec by Thursday so legal can look at it.",
-        meta: "transcript - 1.00",
-      },
-      {
-        n: "[2]",
-        ttl: "DM - Maya Chen to Naveen - Wed 18:14",
-        ex: "Need Slack connector live for our pilot kickoff next week, can we count on it?",
-        meta: "slack - 1.00",
-      },
-      {
-        n: "[3]",
-        ttl: "Linear #340 - Slack connector",
-        ex: "Status: in progress. PR open. Last update Mon.",
-        meta: "linear - 1.00",
-      },
-    ],
-  },
-  investor: {
-    match: /investor|sequoia|usv|blackrock|founders|term|roelof/i,
-    reasoning:
-      "Pulling open investor conversations, ranking by patience window, then checking each contact's behavioral model for context.",
-    tools: [
-      { name: "search_memory", arg: "audience:investor status:awaiting-reply", t: 1.1 },
-      { name: "rank_actions", arg: "category:investor", t: 0.7 },
-      { name: "fetch_behavioral", arg: "roelof, jon, andy", t: 1.3 },
-    ],
-    answer:
-      "<p><b>3 investors waiting on you</b>, ordered by typical patience window:</p>" +
-      "<p><b>1. Sequoia (Roelof)</b> 3 questions sent 06:04 today. Avg reply window 9h, you have <b>about 3h left</b> before you feel slow. <span class='cite'>email - 6:04</span> <span class='cite'>Roelof - model</span></p>" +
-      "<p><b>2. BlackRock (Jon)</b> graph spec by Thu promised Mon. <b>3 days drift.</b> Jon usually nudges before complaining. <span class='cite'>call - Mon</span></p>" +
-      "<p><b>3. USV (Andy)</b> partner intro pending. Soft. Can wait until Wed.</p>" +
-      "<p>Brain has draft replies ready for 1 and 2.</p>",
-    followups: ["Open Sequoia draft", "Open BlackRock draft", "Show all in loops"],
-    confidence: 0.88,
-    sources: [
-      {
-        n: "[1]",
-        ttl: "Email - Roelof to Naveen - 06:04",
-        ex: "Three things before partnership: SOC 2 timing, Anthropic lock-in, customer relationship in vertical templates.",
-        meta: "gmail - 1.00",
-      },
-      {
-        n: "[2]",
-        ttl: "Behavioral model - Roelof - n=23 emails over 18mo",
-        ex: "Median reply window: 9h. Decision-mode: short paragraphs plus numbered list.",
-        meta: "compiled - 0.78",
-      },
-    ],
-  },
-  drift: {
-    match: /drift|roadmap|narrative|ship/i,
-    reasoning:
-      "Listing active drift signals, validating each against current roadmap and recent activity, ranking by impact times age.",
-    tools: [
-      { name: "list_drift", arg: "severity:>=0.5", t: 0.9 },
-      { name: "verify_drift", arg: "3 candidates", t: 1.6 },
-    ],
-    answer:
-      "<p><b>3 drifts active</b> right now:</p>" +
-      "<p><b>1. Sales narrative.</b> Investor deck still says Brain for consulting, but 4 of last 6 customer calls were VC firms, and 2 cited Deal Brain as their reason. <span class='cite'>deck - v3</span> <span class='cite'>4 calls - 14d</span></p>" +
-      "<p><b>2. Outlook connector.</b> Promised Q1, no commits, no designs, no standup mentions for <b>21 days</b>. <span class='cite'>Linear #220</span></p>" +
-      "<p><b>3. Where does data live?</b> 3rd time across VC, customer, partner. Currently answered three different ways. Not in the FAQ.</p>",
-    followups: ["Open drift review", "Update deck narrative", "Draft FAQ entry"],
-    confidence: 0.84,
-    sources: [
-      {
-        n: "[1]",
-        ttl: "Investor deck v3 - slide 4 Who it's for",
-        ex: "Built for boutique consulting firms with 50 to 200 knowledge workers.",
-        meta: "notion - 0.95",
-      },
-    ],
-  },
-  marlowe: {
-    match: /marlowe|catch.?me.?up/i,
-    reasoning:
-      "Pulling the Marlowe entity page, all interactions in last 30 days, the open commitment, and any related promises.",
-    tools: [
-      { name: "fetch_entity", arg: "company/marlowe", t: 0.5 },
-      { name: "compile_history", arg: "marlowe 30d", t: 1.7 },
-      { name: "check_promises", arg: "company:marlowe", t: 0.6 },
-    ],
-    answer:
-      "<p><b>Marlowe in last 30 days, in one breath:</b></p>" +
-      "<p>Status: pilot signed 12 Apr, 2 active users, weekly check-ins on Wed.</p>" +
-      "<p>Open promise: bug they reported Oct 14 shipped Fri (PR #482), they don't know yet. 1-liner drafted.</p>" +
-      "<p>Last touch: Tue 8d ago. Eli (PM) sent diligence notes, asked for our data residency answer. You replied with the generic FAQ. He hasn't responded. <span class='cite'>email - Eli - Tue</span></p>" +
-      "<p>Behavioral note: Eli replies in long bursts (avg 180w). Reply length dropped 40 percent over last 3 messages, usually means decision is close.</p>",
-    followups: ["Tell them the fix shipped", "Open Marlowe page", "Schedule sync"],
-    confidence: 0.84,
-    sources: [
-      {
-        n: "[1]",
-        ttl: "Marlowe entity page - compiled",
-        ex: "2 active users, weekly check-ins, $42k ARR.",
-        meta: "compiled - 0.92",
-      },
-    ],
-  },
-  default: {
-    match: /.*/,
-    reasoning: "Open question. Searching memory, compiling, ranking by recency times confidence.",
-    tools: [
-      { name: "search_memory", arg: "semantic - top-12", t: 1.4 },
-      { name: "compile_truth", arg: "aggregate", t: 2.0 },
-    ],
-    answer:
-      "<p>Searched <b>1,284 memory objects</b> across all sources. The brain has indexed everything you mentioned plus 8 related sources.</p>" +
-      "<p>Top signal: <b>this came up 3 times in 14 days</b> across calls, email, and the standup, strong pattern. <span class='cite'>3 sources</span></p>",
-    followups: ["Open in graph", "Show evidence", "Draft response"],
-    confidence: 0.71,
-    sources: [
-      {
-        n: "[1]",
-        ttl: "Memory store - semantic top-12",
-        ex: "12 candidate memories matched, top 3 used.",
-        meta: "compiled - 0.71",
-      },
-    ],
-  },
-};
+type Tool = { name: string; arg: string; durationMs?: number };
 
-function pickScenario(q: string): Scenario {
-  for (const k of ["promise", "investor", "drift", "marlowe"]) {
-    if (SCENARIOS[k].match.test(q)) return SCENARIOS[k];
-  }
-  return SCENARIOS.default;
-}
-
-type RenderedTurn = {
+type Turn = {
   id: number;
   user: string;
-  phase: "thinking" | "reasoning" | "tools" | "answering" | "done";
-  scenario: Scenario;
-  toolStates: Array<"run" | "ok">;
-  toolDurations: Array<number>;
-  reasoningChars: number;
+  phase: "thinking" | "running_tools" | "answering" | "done" | "error";
+  tools: Array<{ tool: Tool; state: "run" | "ok" }>;
+  answer: string;
   answerChars: number;
+  citations: Citation[];
+  confidenceLevel?: "low" | "medium" | "high";
+  uncertain?: boolean;
+  followUp?: string;
+  errorMessage?: string;
 };
 
 const PRESETS = [
@@ -193,10 +63,48 @@ const PRESETS = [
   "Catch me up on Marlowe.",
 ];
 
-export function AskChat() {
+const CONFIDENCE_NUMERIC: Record<NonNullable<AskApiResponse["confidenceLevel"]>, number> = {
+  high: 0.9,
+  medium: 0.7,
+  low: 0.45,
+};
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Renders the answer paragraph with citation markers like [1] [2] inline.
+function renderAnswer(text: string, citations: Citation[]): string {
+  // Insert structured cite chips after [N] markers and convert paragraph
+  // breaks (double newline) to <p> tags.
+  const escaped = escapeHtml(text);
+  const withCites = escaped.replace(/\[(\d+)\]/g, (_, n) => {
+    const i = Number(n) - 1;
+    if (i < 0 || i >= citations.length) return `[${n}]`;
+    const label = citations[i].sourceTitle ?? `source ${n}`;
+    return `<span class="${styles.citeChip}">${escapeHtml(label.slice(0, 24))}</span>`;
+  });
+  return withCites
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+export function AskChat({
+  brainId,
+  counts,
+}: {
+  brainId: string;
+  counts: { artifacts: number; entityPages: number; openLoops: number };
+}) {
   const search = useSearchParams();
   const initialQ = search.get("q") ?? "";
-  const [turns, setTurns] = useState<RenderedTurn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeChip, setActiveChip] = useState("all");
@@ -218,72 +126,100 @@ export function AskChat() {
     if (!text || busy) return;
     setBusy(true);
     setInput("");
-    const scenario = pickScenario(text);
     const id = Date.now();
-    const turn: RenderedTurn = {
+    const turn: Turn = {
       id,
       user: text,
       phase: "thinking",
-      scenario,
-      toolStates: scenario.tools.map(() => "run"),
-      toolDurations: scenario.tools.map(() => 0),
-      reasoningChars: 0,
+      tools: [],
+      answer: "",
       answerChars: 0,
+      citations: [],
     };
     setTurns((ts) => [...ts, turn]);
-
     requestAnimationFrame(autoscroll);
-    await wait(700);
 
+    // Show "Thinking..." pill briefly, then surface the live tool rows.
+    await wait(400);
+    const initialTools: Tool[] = [
+      { name: "retrieve_context", arg: "memory + open_loops + sources" },
+      { name: "compile_truth", arg: "answer_from_context" },
+    ];
     setTurns((ts) =>
-      ts.map((t) => (t.id === id ? { ...t, phase: "reasoning" } : t)),
+      ts.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              phase: "running_tools",
+              tools: initialTools.map((tool) => ({ tool, state: "run" })),
+            }
+          : t,
+      ),
     );
-    await streamReasoning(id, scenario.reasoning.length);
+    requestAnimationFrame(autoscroll);
 
-    setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, phase: "tools" } : t)));
-    for (let i = 0; i < scenario.tools.length; i++) {
-      const tool = scenario.tools[i];
-      await wait(400 + tool.t * 250);
+    const startedAt = performance.now();
+    let resp: AskApiResponse;
+    try {
+      const r = await fetch(`/api/brains/${brainId}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      resp = (await r.json()) as AskApiResponse;
+      if (!r.ok) {
+        throw new Error(resp.error ?? `Ask failed (HTTP ${r.status})`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Network error";
       setTurns((ts) =>
-        ts.map((t) => {
-          if (t.id !== id) return t;
-          const next = [...t.toolStates];
-          next[i] = "ok";
-          const dur = [...t.toolDurations];
-          dur[i] = tool.t;
-          return { ...t, toolStates: next, toolDurations: dur };
-        }),
+        ts.map((t) =>
+          t.id === id
+            ? { ...t, phase: "error", errorMessage: msg }
+            : t,
+        ),
       );
-      requestAnimationFrame(autoscroll);
+      setBusy(false);
+      return;
     }
+    const totalMs = Math.round(performance.now() - startedAt);
 
-    setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, phase: "answering" } : t)));
-    await streamAnswer(id, scenario.answer.length);
+    // Mark tools as completed with split duration.
+    const splitMs = Math.max(1, Math.floor(totalMs / Math.max(1, initialTools.length)));
+    setTurns((ts) =>
+      ts.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              tools: t.tools.map((row) => ({ ...row, state: "ok", tool: { ...row.tool, durationMs: splitMs } })),
+              phase: "answering",
+              citations: resp.citations ?? [],
+              confidenceLevel: resp.confidenceLevel,
+              uncertain: resp.uncertain,
+              followUp: resp.followUp,
+              answer: renderAnswer(resp.answer ?? "", resp.citations ?? []),
+            }
+          : t,
+      ),
+    );
 
-    setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, phase: "done" } : t)));
-    setBusy(false);
-  }
-
-  async function streamReasoning(id: number, total: number) {
-    const step = Math.max(2, Math.floor(total / 40));
-    for (let n = 0; n <= total; n += step) {
-      setTurns((ts) =>
-        ts.map((t) => (t.id === id ? { ...t, reasoningChars: Math.min(n, total) } : t)),
-      );
-      requestAnimationFrame(autoscroll);
-      await wait(35);
-    }
-  }
-
-  async function streamAnswer(id: number, total: number) {
+    // Reveal the answer character-by-character.
+    const total = renderAnswer(resp.answer ?? "", resp.citations ?? []).length;
     const step = Math.max(3, Math.floor(total / 80));
     for (let n = 0; n <= total; n += step) {
       setTurns((ts) =>
-        ts.map((t) => (t.id === id ? { ...t, answerChars: Math.min(n, total) } : t)),
+        ts.map((t) =>
+          t.id === id ? { ...t, answerChars: Math.min(n, total) } : t,
+        ),
       );
       requestAnimationFrame(autoscroll);
-      await wait(25);
+      await wait(20);
     }
+
+    setTurns((ts) =>
+      ts.map((t) => (t.id === id ? { ...t, phase: "done" } : t)),
+    );
+    setBusy(false);
   }
 
   function onPreset(q: string) {
@@ -320,8 +256,10 @@ export function AskChat() {
               </div>
               <h1>Ask the brain anything.</h1>
               <p className={styles.emptySub}>
-                1,284 artifacts - 38 entity pages - 12 graph chains. Every
-                answer is sourced and confidence-scored.
+                {counts.artifacts.toLocaleString()} artifacts -{" "}
+                {counts.entityPages.toLocaleString()} memory objects -{" "}
+                {counts.openLoops.toLocaleString()} open loops. Every answer is
+                sourced and confidence-scored.
               </p>
               <div className={styles.emptyPrompts}>
                 {PRESETS.map((q, i) => (
@@ -338,7 +276,7 @@ export function AskChat() {
               </div>
             </div>
           ) : (
-            turns.map((t) => <Turn key={t.id} t={t} />)
+            turns.map((t) => <TurnView key={t.id} t={t} brainId={brainId} />)
           )}
         </div>
       </div>
@@ -399,13 +337,15 @@ export function AskChat() {
   );
 }
 
-function Turn({ t }: { t: RenderedTurn }) {
-  const showReasoning = t.phase !== "thinking";
-  const showTools = t.phase === "tools" || t.phase === "answering" || t.phase === "done";
+function TurnView({ t, brainId }: { t: Turn; brainId: string }) {
+  const showTools = t.phase !== "thinking";
   const showAnswer = t.phase === "answering" || t.phase === "done";
   const showFooter = t.phase === "done";
-  const reasoningText = t.scenario.reasoning.slice(0, t.reasoningChars);
-  const answerText = t.scenario.answer.slice(0, t.answerChars);
+  const showError = t.phase === "error";
+  const visibleAnswer = t.answer.slice(0, t.answerChars);
+  const confidence = t.confidenceLevel
+    ? CONFIDENCE_NUMERIC[t.confidenceLevel]
+    : undefined;
 
   return (
     <div className={styles.turn}>
@@ -418,26 +358,21 @@ function Turn({ t }: { t: RenderedTurn }) {
           </div>
         ) : null}
 
-        {showReasoning ? (
-          <div className={styles.reasoning}>
-            {reasoningText}
-            {t.phase === "reasoning" ? <span className={styles.cursor} /> : null}
-          </div>
-        ) : null}
-
         {showTools ? (
           <div className={styles.tools}>
-            {t.scenario.tools.map((tool, i) => {
-              const ok = t.toolStates[i] === "ok";
+            {t.tools.map((row, i) => {
+              const ok = row.state === "ok";
               return (
                 <div key={i} className={styles.tool}>
                   <span className={ok ? styles.toolIcOk : styles.toolIcRun} />
                   <span>
-                    <span className={styles.toolNm}>{tool.name}</span>
-                    <span className={styles.toolArg}>{tool.arg}</span>
+                    <span className={styles.toolNm}>{row.tool.name}</span>
+                    <span className={styles.toolArg}>{row.tool.arg}</span>
                   </span>
                   <span className={`${styles.toolSt} ${!ok ? styles.toolStRun : ""}`}>
-                    {ok ? `${t.toolDurations[i].toFixed(1)}s` : "running"}
+                    {ok && row.tool.durationMs !== undefined
+                      ? `${(row.tool.durationMs / 1000).toFixed(1)}s`
+                      : "running"}
                   </span>
                 </div>
               );
@@ -445,49 +380,78 @@ function Turn({ t }: { t: RenderedTurn }) {
           </div>
         ) : null}
 
+        {showError ? (
+          <div
+            className={styles.answer}
+            style={{ color: "#a83c3c", fontStyle: "italic" }}
+          >
+            <p>The brain hit a snag: {t.errorMessage}</p>
+          </div>
+        ) : null}
+
         {showAnswer ? (
-          <>
-            <div className={styles.answer} dangerouslySetInnerHTML={{ __html: answerText }} />
-            {t.phase === "answering" ? <span className={styles.cursor} /> : null}
-          </>
+          <div className={styles.answer} dangerouslySetInnerHTML={{ __html: visibleAnswer }} />
         ) : null}
 
         {showFooter ? (
           <>
-            <div className={styles.srcPanel}>
-              <h4>Sources cited ({t.scenario.sources.length})</h4>
-              <ol>
-                {t.scenario.sources.map((s) => (
-                  <li key={s.n}>
-                    <span className={styles.srcN}>{s.n}</span>
-                    <div>
-                      <div className={styles.srcTtl}>{s.ttl}</div>
-                      <span className={styles.srcEx}>&ldquo;{s.ex}&rdquo;</span>
-                    </div>
-                    <span className={styles.srcMeta}>{s.meta}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            <div className={styles.ansMeta}>
-              <span>Confidence</span>
-              <div className={styles.meter}>
-                <i
-                  className={styles.meterFill}
-                  style={{ width: `${(t.scenario.confidence * 100).toFixed(0)}%` }}
-                />
+            {t.citations.length > 0 ? (
+              <div className={styles.srcPanel}>
+                <h4>Sources cited ({t.citations.length})</h4>
+                <ol>
+                  {t.citations.map((c, i) => (
+                    <li key={i}>
+                      <span className={styles.srcN}>[{i + 1}]</span>
+                      <div>
+                        <div className={styles.srcTtl}>
+                          {c.sourceTitle ?? "Source"}
+                        </div>
+                        {c.evidence ? (
+                          <span className={styles.srcEx}>
+                            &ldquo;{c.evidence.slice(0, 280)}&rdquo;
+                          </span>
+                        ) : null}
+                      </div>
+                      <Link
+                        href={`/brains/${brainId}/sources`}
+                        className={styles.srcMeta}
+                      >
+                        open
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
               </div>
-              <span>{t.scenario.confidence.toFixed(2)}</span>
-            </div>
+            ) : null}
 
-            <div className={styles.followups}>
-              {t.scenario.followups.map((f) => (
-                <span key={f} className={styles.followup}>
-                  {f}
+            {confidence !== undefined ? (
+              <div className={styles.ansMeta}>
+                <span>Confidence</span>
+                <div className={styles.meter}>
+                  <i
+                    className={styles.meterFill}
+                    style={{ width: `${(confidence * 100).toFixed(0)}%` }}
+                  />
+                </div>
+                <span>
+                  {t.confidenceLevel} ({confidence.toFixed(2)})
                 </span>
-              ))}
-            </div>
+                {t.uncertain ? <span> - flagged uncertain</span> : null}
+              </div>
+            ) : null}
+
+            {t.followUp ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.55,
+                }}
+              >
+                <b>Follow-up:</b> {t.followUp}
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>
