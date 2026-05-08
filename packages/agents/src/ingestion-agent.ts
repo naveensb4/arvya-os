@@ -138,11 +138,27 @@ function classifyLoop(sentence: string): ExtractedOpenLoop["loopType"] {
   return "follow_up";
 }
 
+function fallbackMeetingType(source: SourceItem): SourceClassification["meetingType"] {
+  if (source.type !== "transcript") return undefined;
+  const content = `${source.title} ${source.content}`.toLowerCase();
+  const metadata = source.metadata ?? {};
+  const participants = Array.isArray(metadata.participants) ? JSON.stringify(metadata.participants).toLowerCase() : "";
+  const all = `${content} ${participants}`;
+  if (/investor|vc|fund|raise|term sheet|cap table|angel/.test(all)) return "investor_call";
+  if (/customer|prospect|demo|pilot|pricing|onboard/.test(all)) return "customer_call";
+  if (/advisor|mentor|board/.test(all)) return "advisor_call";
+  if (/partner|integration|channel/.test(all)) return "partner_call";
+  if (/product review|roadmap|feature review|bug triage|design review/.test(all)) return "product_review";
+  if (/@arvya\.co/.test(participants) && !/[^@\w](?!arvya\.co)[a-z0-9.-]+\.[a-z]{2,}/.test(participants)) return "internal_sync";
+  return "other";
+}
+
 function fallbackClassification(source: SourceItem): SourceClassification {
   return {
     summary: `${source.title} is a ${source.type} source with manually parsed operating context.`,
     sourceCategory: source.type,
     confidence: 0.7,
+    meetingType: fallbackMeetingType(source),
   };
 }
 

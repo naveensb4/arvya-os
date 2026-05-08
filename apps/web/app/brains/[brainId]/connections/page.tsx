@@ -14,9 +14,11 @@ type PageProps = {
 };
 
 const connectorDescriptions: Record<string, string> = {
+  slack: "Connect your Slack workspace. The brain reads channels you choose and can send you DMs with meeting prep, daily briefs, and action items.",
   google_drive: "Scheduled polling for selected transcript folders only. Ingests .txt and .md files into the Brain.",
   gmail: "Scheduled polling for selected labels, then a required Aryva relevance check. Never sends email.",
   outlook: "Scheduled polling for selected folders or categories, then a required Aryva relevance check. Never sends email.",
+  onedrive: "Shared transcript folder on OneDrive. Meeting transcripts are automatically uploaded after Brain ingestion.",
   recall: "Webhook-first transcript ingestion. Scheduled sync stays off by default.",
   mock: "Local always-on verifier that exercises source creation, ingestion, sync runs, and alerts.",
 };
@@ -40,9 +42,27 @@ export default async function Page({ params }: PageProps) {
     }),
   ]);
 
+  const hasGoogleConnected = configs.some(
+    (c) => (c.connectorType === "gmail" || c.connectorType === "google_drive") && c.status === "connected",
+  );
+
   return (
     <SectionShell brainId={selectedBrainId} title="Connections" description="Configure always-on source capture. Manual sync and scheduled sync use the same runtime path.">
       <div className="grid gap-4">
+        <section className="rounded-2xl bg-stone-50 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow text-amber-700">{hasGoogleConnected ? "Connected" : "Not connected"}</p>
+              <h2 className="mt-2 text-2xl font-semibold">Google Workspace</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
+                One click connects Gmail, Google Drive, and Calendar. Ingestion starts immediately.
+              </p>
+            </div>
+            <a className={hasGoogleConnected ? "button-secondary" : "button"} href={`/api/connectors/google/auth/start?brainId=${encodeURIComponent(selectedBrainId)}`}>
+              {hasGoogleConnected ? "Reconnect Google" : "Connect Google Workspace"}
+            </a>
+          </div>
+        </section>
         {CONNECTOR_TYPES.map((connectorType) => {
           const config = configs.find((item) => item.connectorType === connectorType);
           if (!config) return null;
@@ -77,14 +97,16 @@ function ConnectorCard({
   upcomingMeetings: NotetakerMeeting[];
 }) {
   const label = config.connectorType.replace("_", " ");
-  const isOAuthConnector = config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook";
+  const isOAuthConnector = config.connectorType === "slack" || config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook" || config.connectorType === "onedrive";
   const connected = isOAuthConnector
     ? config.status === "connected"
     : config.status === "active";
   const alwaysOnStatus = config.syncEnabled && connected ? "Always-on" : "Manual";
+  const isSlack = config.connectorType === "slack";
   const isGoogleDrive = config.connectorType === "google_drive";
   const isGmail = config.connectorType === "gmail";
   const isOutlook = config.connectorType === "outlook";
+  const isOneDrive = config.connectorType === "onedrive";
   const folderIds = Array.isArray(config.config.folderIds)
     ? config.config.folderIds.map((item) => String(item)).join("\n")
     : "";
@@ -102,9 +124,11 @@ function ConnectorCard({
   const recallConfigured = Boolean(process.env.RECALL_API_KEY?.trim());
   const primaryNotetakerCalendar = notetakerCalendars[0];
   const authStartPath =
+    isSlack ? "/api/connectors/slack/auth/start" :
     isGoogleDrive ? "/api/connectors/google-drive/auth/start" :
     isGmail ? "/api/connectors/gmail/auth/start" :
     isOutlook ? "/api/connectors/outlook/auth/start" :
+    isOneDrive ? "/api/connectors/onedrive/auth/start" :
     "";
   const syncPath =
     isGoogleDrive ? "/api/connectors/google-drive/sync" :
@@ -138,7 +162,7 @@ function ConnectorCard({
 
       {isOAuthConnector ? (
         <div className="mt-5 rounded-xl bg-white p-4 text-sm">
-          <p className="font-medium">{connected ? `${connectorDisplayName(config.connectorType)} connected` : `${connectorDisplayName(config.connectorType)} not connected`}</p>
+          <p className="font-medium">{config.status === "needs_reauth" ? `${connectorDisplayName(config.connectorType)} needs reconnection` : connected ? `${connectorDisplayName(config.connectorType)} connected` : `${connectorDisplayName(config.connectorType)} not connected`}</p>
           <p className="mt-1 text-stone-500">Credentials are stored server-side and are never sent to the browser.</p>
           {isGmail ? (
             <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
@@ -148,6 +172,11 @@ function ConnectorCard({
           {isOutlook ? (
             <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
               Create an Outlook folder or category named <span className="font-semibold">Arvya Brain</span>, move or categorize 5-10 important emails, then save that folder/category name below. A second message-level gate still skips anything that does not mention Aryva/Arvya or an Aryva domain.
+            </p>
+          ) : null}
+          {isOneDrive ? (
+            <p className="mt-3 rounded-lg bg-blue-50 p-3 text-blue-900">
+              Once connected, meeting transcripts will be automatically uploaded to an <span className="font-semibold">Arvya Transcripts</span> folder in your OneDrive. The folder is shared with all workspace members.
             </p>
           ) : null}
         </div>
@@ -311,9 +340,11 @@ function ConnectorCard({
 }
 
 function connectorDisplayName(type: ConnectorConfig["connectorType"]) {
+  if (type === "slack") return "Slack";
   if (type === "google_drive") return "Google Drive";
   if (type === "gmail") return "Gmail";
   if (type === "outlook") return "Outlook";
+  if (type === "onedrive") return "OneDrive";
   return type.replace("_", " ");
 }
 

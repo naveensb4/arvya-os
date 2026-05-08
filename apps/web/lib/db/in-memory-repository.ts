@@ -8,6 +8,9 @@ import type {
   Relationship,
   SourceEmbedding,
   SourceItem,
+  User,
+  Workspace,
+  WorkspaceMember,
   Workflow,
 } from "@arvya/core";
 import type {
@@ -29,7 +32,10 @@ import type {
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
+  CreateUserData,
   CreateWorkflowData,
+  CreateWorkspaceData,
+  CreateWorkspaceMemberData,
   ListPrioritiesOptions,
   NotetakerCalendar,
   NotetakerEvent,
@@ -49,6 +55,49 @@ import type {
 
 const seedAt = new Date("2026-04-25T16:00:00.000Z").toISOString();
 
+const seedUsers: User[] = [
+  {
+    id: "user-pb",
+    email: "prashanthbabu1329@gmail.com",
+    displayName: "Prashanth Babu",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+  {
+    id: "user-naveen",
+    email: "naveen@arvya.co",
+    displayName: "Naveen SB",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+];
+
+const seedWorkspaces: Workspace[] = [
+  {
+    id: "workspace-arvya",
+    name: "Arvya",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+];
+
+const seedWorkspaceMembers: WorkspaceMember[] = [
+  {
+    id: "wm-pb",
+    workspaceId: "workspace-arvya",
+    userId: "user-pb",
+    role: "owner",
+    joinedAt: seedAt,
+  },
+  {
+    id: "wm-naveen",
+    workspaceId: "workspace-arvya",
+    userId: "user-naveen",
+    role: "owner",
+    joinedAt: seedAt,
+  },
+];
+
 const seedBrains: Brain[] = [
   {
     id: "arvya-company-brain",
@@ -56,6 +105,7 @@ const seedBrains: Brain[] = [
     kind: "company",
     thesis:
       "A living operating brain for Arvya that compounds every investor, customer, advisor, product, and engineering signal into a single source-backed memory.",
+    workspaceId: "workspace-arvya",
     createdAt: seedAt,
     updatedAt: seedAt,
   },
@@ -150,6 +200,9 @@ const seedNotetakerEvents: NotetakerEvent[] = [];
 const seedPriorities: Priority[] = [];
 
 type InMemoryState = {
+  users: User[];
+  workspaces: Workspace[];
+  workspaceMembers: WorkspaceMember[];
   brains: Brain[];
   sources: SourceItem[];
   memories: MemoryObject[];
@@ -205,6 +258,9 @@ declare global {
 
 function createSeedState(): InMemoryState {
   return {
+    users: clone(seedUsers),
+    workspaces: clone(seedWorkspaces),
+    workspaceMembers: clone(seedWorkspaceMembers),
     brains: clone(seedBrains),
     sources: clone(seedSources),
     memories: clone(seedMemories),
@@ -249,6 +305,64 @@ function loadState(): InMemoryState {
 
 export class InMemoryRepository implements BrainRepository {
   readonly mode = "in_memory" as const;
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const found = loadState().users.find((u) => u.email === email);
+    return found ? clone(found) : null;
+  }
+
+  async listUsers(): Promise<User[]> {
+    return clone(loadState().users);
+  }
+
+  async createUser(input: CreateUserData): Promise<User> {
+    const user: User = {
+      id: nanoid(),
+      email: input.email,
+      displayName: input.displayName,
+      avatarUrl: input.avatarUrl ?? null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().users.unshift(user);
+    return clone(user);
+  }
+
+  async getWorkspace(workspaceId: string): Promise<Workspace | null> {
+    const found = loadState().workspaces.find((w) => w.id === workspaceId);
+    return found ? clone(found) : null;
+  }
+
+  async listWorkspaces(): Promise<Workspace[]> {
+    return clone(loadState().workspaces);
+  }
+
+  async createWorkspace(input: CreateWorkspaceData): Promise<Workspace> {
+    const workspace: Workspace = {
+      id: nanoid(),
+      name: input.name,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().workspaces.unshift(workspace);
+    return clone(workspace);
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    return clone(loadState().workspaceMembers.filter((m) => m.workspaceId === workspaceId));
+  }
+
+  async createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember> {
+    const member: WorkspaceMember = {
+      id: nanoid(),
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      role: input.role ?? "member",
+      joinedAt: now(),
+    };
+    loadState().workspaceMembers.unshift(member);
+    return clone(member);
+  }
 
   async listBrains(): Promise<Brain[]> {
     return clone(loadState().brains);

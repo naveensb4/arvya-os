@@ -83,10 +83,22 @@ class StatefulDriveClient implements GoogleDriveClient {
       return Number.isFinite(ts) ? ts > sinceMs : true;
     });
   }
+  async listRecentFiles(options?: { since?: string }) {
+    this.lastListSince = options?.since;
+    if (!options?.since) return this.store;
+    const sinceMs = Date.parse(options.since);
+    return this.store.filter((file) => {
+      const ts = Date.parse(file.modifiedTime ?? "");
+      return Number.isFinite(ts) ? ts > sinceMs : true;
+    });
+  }
   async downloadText(fileId: string) {
     const content = contentById[fileId];
     if (!content) throw new Error(`Missing mock content for ${fileId}`);
     return content;
+  }
+  async exportText(fileId: string, _mimeType: string) {
+    return this.downloadText(fileId);
   }
 }
 

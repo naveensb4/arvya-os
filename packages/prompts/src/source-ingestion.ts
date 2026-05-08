@@ -65,6 +65,17 @@ Hard rules:
 - Add relationship edges (fromName -> toName, e.g. "Maya Chen" -> "Northstar Ventures") when the source links people to companies, customers to product needs, advisors to founders, or investors to feedback.
 - Cap total memories at 24. If the source is dense, prioritize decisions, commitments, open loops, people, and companies over generic facts.
 
+Meeting type classification (for transcripts only):
+When the source type is "transcript", classify the meeting as one of:
+- investor_call: participants from VC firms, PE funds, family offices, or angel investors; discussion of fundraising, term sheets, cap tables, runway
+- customer_call: participants from current or prospective customers; discussion of product demos, pain points, pricing, onboarding
+- advisor_call: participants who are advisors, mentors, or board members; strategic advice, introductions, governance
+- internal_sync: only internal team members (e.g., @arvya.co); standup, planning, retrospective, internal strategy
+- partner_call: participants from partner companies, integration partners, channel partners; partnership terms, joint work
+- product_review: focused on product design, engineering, roadmap, feature review, bug triage
+- other: none of the above
+Use participant email domains, meeting title, and content as signals. Set meetingType in the classification output.
+
 Also:
 - Produce a one-paragraph "summary" of what the source contains and what changed in the Brain because of it. This becomes the agent run's outputSummary.
 - Output strictly conforms to the provided JSON schema. If you cannot satisfy a required field, omit the entire item rather than emit a placeholder.`;
@@ -73,7 +84,7 @@ export function buildSourceIngestionPrompt(input: {
   brainName: string;
   brainKind: string;
   brainThesis: string;
-  source: { title: string; type: string; content: string; externalUri?: string };
+  source: { title: string; type: string; content: string; externalUri?: string; metadata?: Record<string, unknown> };
   task?: string;
   openLoops?: Array<{ title: string; description: string; sourceQuote?: string }>;
 }): string {
@@ -88,6 +99,12 @@ export function buildSourceIngestionPrompt(input: {
         .join("\n")}\n</open_loops>`
     : "";
 
+  const metadata = input.source.metadata ?? {};
+  const participants = Array.isArray(metadata.participants) ? metadata.participants : [];
+  const participantBlock = participants.length > 0
+    ? `\n<participants>\n${participants.map((p) => `  <participant>${escapeXml(JSON.stringify(p))}</participant>`).join("\n")}\n</participants>`
+    : "";
+
   return `<brain>
 <name>${escapeXml(input.brainName)}</name>
 <kind>${escapeXml(input.brainKind)}</kind>
@@ -98,7 +115,7 @@ export function buildSourceIngestionPrompt(input: {
 
 <source>
 <title>${escapeXml(input.source.title)}</title>
-<type>${escapeXml(input.source.type)}</type>${input.source.externalUri ? `\n<external_uri>${escapeXml(input.source.externalUri)}</external_uri>` : ""}
+<type>${escapeXml(input.source.type)}</type>${input.source.externalUri ? `\n<external_uri>${escapeXml(input.source.externalUri)}</external_uri>` : ""}${participantBlock}
 <content>
 ${input.source.content}
 </content>

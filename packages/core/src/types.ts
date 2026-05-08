@@ -77,10 +77,46 @@ export type Brain = {
   name: string;
   kind: BrainKind;
   thesis: string;
+  workspaceId?: string | null;
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt?: string;
 };
+
+export type User = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type WorkspaceMemberRole = "owner" | "member";
+
+export type WorkspaceMember = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceMemberRole;
+  joinedAt: string;
+};
+
+export type MeetingType =
+  | "investor_call"
+  | "customer_call"
+  | "advisor_call"
+  | "internal_sync"
+  | "partner_call"
+  | "product_review"
+  | "other";
 
 export type SourceItem = {
   id: string;

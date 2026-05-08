@@ -17,7 +17,17 @@ export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonl
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3";
-const SUPPORTED_EXTENSIONS = new Set([".txt", ".md"]);
+const SUPPORTED_EXTENSIONS = new Set([".txt", ".md", ".csv"]);
+
+const GOOGLE_WORKSPACE_MIME_TYPES: Record<string, string> = {
+  "application/vnd.google-apps.document": "text/plain",
+  "application/vnd.google-apps.spreadsheet": "text/csv",
+  "application/vnd.google-apps.presentation": "text/plain",
+};
+
+function isGoogleWorkspaceFile(mimeType: string) {
+  return mimeType in GOOGLE_WORKSPACE_MIME_TYPES;
+}
 
 type GoogleTokenResponse = {
   access_token: string;
@@ -54,7 +64,9 @@ export type GoogleDriveListFilesOptions = {
 
 export type GoogleDriveClient = {
   listFiles(folderId: string, options?: GoogleDriveListFilesOptions): Promise<GoogleDriveFile[]>;
+  listRecentFiles(options?: GoogleDriveListFilesOptions): Promise<GoogleDriveFile[]>;
   downloadText(fileId: string): Promise<string>;
+  exportText(fileId: string, mimeType: string): Promise<string>;
 };
 
 type GoogleDriveSyncResult = {
@@ -197,18 +209,24 @@ export async function exchangeGoogleDriveCode(code: string, existing?: GoogleDri
 
 async function refreshGoogleDriveCredentials(config: ConnectorConfig, credentials: GoogleDriveCredentials) {
   if (!credentials.refresh_token) {
+    await getRepository().updateConnectorConfig(config.id, { status: "needs_reauth" as any });
     throw new Error("Google Drive refresh token is missing. Reconnect Google Drive.");
   }
   const { clientId, clientSecret } = requireGoogleOAuthEnv();
-  const response = await postToken(new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    refresh_token: credentials.refresh_token,
-    grant_type: "refresh_token",
-  }));
-  const refreshed = tokenResponseToCredentials(response, credentials);
-  await connectorCredentialStore.write(config.id, refreshed);
-  return refreshed;
+  try {
+    const response = await postToken(new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: credentials.refresh_token,
+      grant_type: "refresh_token",
+    }));
+    const refreshed = tokenResponseToCredentials(response, credentials);
+    await connectorCredentialStore.write(config.id, refreshed);
+    return refreshed;
+  } catch (err) {
+    await getRepository().updateConnectorConfig(config.id, { status: "needs_reauth" as any });
+    throw err;
+  }
 }
 
 class GoogleDriveRestClient implements GoogleDriveClient {
@@ -240,6 +258,39 @@ class GoogleDriveRestClient implements GoogleDriveClient {
     return json.files ?? [];
   }
 
+  async listRecentFiles(options?: GoogleDriveListFilesOptions) {
+    const url = new URL(`${GOOGLE_DRIVE_API}/files`);
+    const supportedMimeClause = [
+      ...Object.keys(GOOGLE_WORKSPACE_MIME_TYPES).map((m) => `mimeType = '${m}'`),
+      "mimeType = 'text/plain'",
+      "mimeType = 'text/markdown'",
+      "mimeType = 'text/csv'",
+    ].join(" or ");
+    const filters = [
+      "trashed = false",
+      `(${supportedMimeClause})`,
+    ];
+    if (options?.since) {
+      const sinceMs = Date.parse(options.since);
+      if (Number.isFinite(sinceMs)) {
+        filters.push(`modifiedTime > '${new Date(sinceMs).toISOString()}'`);
+      }
+    }
+    url.searchParams.set("q", filters.join(" and "));
+    url.searchParams.set("fields", "files(id,name,mimeType,webViewLink,modifiedTime)");
+    url.searchParams.set("orderBy", "modifiedTime desc");
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("supportsAllDrives", "true");
+    url.searchParams.set("includeItemsFromAllDrives", "true");
+
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${await this.getAccessToken()}` },
+    });
+    const json = await response.json() as { files?: GoogleDriveFile[]; error?: { message?: string } };
+    if (!response.ok) throw new Error(json.error?.message ?? "Google Drive recent files listing failed.");
+    return json.files ?? [];
+  }
+
   async downloadText(fileId: string) {
     const url = new URL(`${GOOGLE_DRIVE_API}/files/${fileId}`);
     url.searchParams.set("alt", "media");
@@ -250,6 +301,19 @@ class GoogleDriveRestClient implements GoogleDriveClient {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || "Google Drive file download failed.");
+    }
+    return response.text();
+  }
+
+  async exportText(fileId: string, exportMimeType: string) {
+    const url = new URL(`${GOOGLE_DRIVE_API}/files/${fileId}/export`);
+    url.searchParams.set("mimeType", exportMimeType);
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${await this.getAccessToken()}` },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Google Drive file export failed.");
     }
     return response.text();
   }
@@ -293,17 +357,45 @@ async function hasDuplicateSource(input: {
   });
 }
 
-export async function syncGoogleDriveConnector(config: ConnectorConfig, client?: GoogleDriveClient): Promise<GoogleDriveSyncResult> {
-  const repository = getRepository();
+async function fetchAllDriveFiles(config: ConnectorConfig, drive: GoogleDriveClient, since?: string): Promise<GoogleDriveFile[]> {
+  const isRecentFilesMode = config.config.mode === "recent_files";
   const folderIds = folderIdsFromConfig(config);
-  if (folderIds.length === 0) {
-    throw new Error('Google Drive sync requires at least one configured folder ID. Create an "Arvya Brain" folder in Drive, drop 5-10 transcripts into it, then save that folder ID.');
-  }
-  const broadFolders = folderIds.filter(isBroadDriveFolderId);
-  if (broadFolders.length > 0) {
-    throw new Error(`Google Drive sync refused: folder "${broadFolders[0]}" is a top-level/shared root. Point sync at a specific transcript folder so we never ingest unrelated files.`);
+
+  if (folderIds.length > 0) {
+    const broadFolders = folderIds.filter(isBroadDriveFolderId);
+    if (broadFolders.length > 0) {
+      throw new Error(`Google Drive sync refused: folder "${broadFolders[0]}" is a top-level/shared root. Point sync at a specific transcript folder.`);
+    }
+    const allFiles: GoogleDriveFile[] = [];
+    for (const folderId of folderIds) {
+      const files = await drive.listFiles(folderId, since ? { since } : undefined);
+      allFiles.push(...files);
+    }
+    return allFiles;
   }
 
+  if (isRecentFilesMode) {
+    return drive.listRecentFiles(since ? { since } : undefined);
+  }
+
+  throw new Error('Google Drive sync requires configured folder IDs or "recent_files" mode.');
+}
+
+function isSupportedDriveFile(file: GoogleDriveFile) {
+  if (isGoogleWorkspaceFile(file.mimeType)) return true;
+  return SUPPORTED_EXTENSIONS.has(extensionFor(file.name));
+}
+
+async function downloadDriveFileContent(drive: GoogleDriveClient, file: GoogleDriveFile): Promise<string> {
+  if (isGoogleWorkspaceFile(file.mimeType)) {
+    const exportMime = GOOGLE_WORKSPACE_MIME_TYPES[file.mimeType]!;
+    return drive.exportText(file.id, exportMime);
+  }
+  return drive.downloadText(file.id);
+}
+
+export async function syncGoogleDriveConnector(config: ConnectorConfig, client?: GoogleDriveClient): Promise<GoogleDriveSyncResult> {
+  const repository = getRepository();
   const drive = client ?? await getGoogleDriveClient(config);
   const itemLimit = googleDriveItemLimit(config);
   const since = googleDriveWatermark(config);
@@ -318,136 +410,132 @@ export async function syncGoogleDriveConnector(config: ConnectorConfig, client?:
     failedFiles: [],
   };
 
-  for (const folderId of folderIds) {
-    const files = await drive.listFiles(folderId, since ? { since } : undefined);
-    result.itemsFound += files.length;
-    const filesToSync = files.slice(0, itemLimit);
-    if (files.length > filesToSync.length) {
-      const skippedByCap = files.length - filesToSync.length;
-      result.itemsSkipped += skippedByCap;
-      result.skippedFiles.push({
-        fileId: `google_drive:${folderId}:safety-cap`,
-        fileName: folderId,
-        reason: `safety_cap_${itemLimit}`,
-      });
+  const files = await fetchAllDriveFiles(config, drive, since);
+  result.itemsFound = files.length;
+  const filesToSync = files.slice(0, itemLimit);
+  if (files.length > filesToSync.length) {
+    result.itemsSkipped += files.length - filesToSync.length;
+    result.skippedFiles.push({
+      fileId: "google_drive:safety-cap",
+      fileName: "cap",
+      reason: `safety_cap_${itemLimit}`,
+    });
+  }
+
+  for (const file of filesToSync) {
+    if (file.modifiedTime) {
+      const ms = Date.parse(file.modifiedTime);
+      if (Number.isFinite(ms)) {
+        const iso = new Date(ms).toISOString();
+        if (!nextWatermark || iso > nextWatermark) nextWatermark = iso;
+      }
+    }
+    if (!isSupportedDriveFile(file)) {
+      result.itemsSkipped += 1;
+      result.skippedFiles.push({ fileId: file.id, fileName: file.name, reason: "unsupported_file_type" });
+      continue;
     }
 
-    for (const file of filesToSync) {
-      if (file.modifiedTime) {
-        const ms = Date.parse(file.modifiedTime);
-        if (Number.isFinite(ms)) {
-          const iso = new Date(ms).toISOString();
-          if (!nextWatermark || iso > nextWatermark) nextWatermark = iso;
-        }
-      }
-      const extension = extensionFor(file.name);
-      if (!SUPPORTED_EXTENSIONS.has(extension)) {
+    try {
+      const content = normalizeSourceContent(await downloadDriveFileContent(drive, file));
+      const hash = hashNormalizedSourceContent(content);
+      const parsed = parseTranscriptFilename(file.name);
+      const sourceKind = isGoogleWorkspaceFile(file.mimeType) ? "document" : "transcript";
+      const traceMetadata = buildSourceTraceMetadata({
+        sourceKind,
+        sourceSystem: "google_drive",
+        connectorType: "google_drive",
+        connectorConfigId: config.id,
+        externalId: `google_drive:${file.id}`,
+        externalUri: file.webViewLink,
+        originalTitle: file.name,
+        occurredAt: parsed.occurredAt,
+      });
+      const fingerprint = sourceFingerprint({
+        title: cleanTitle(file.name, parsed),
+        content,
+        externalUri: file.webViewLink,
+        metadata: {
+          ...traceMetadata,
+          content_hash: hash,
+          source_content_hash: hash,
+        },
+      });
+      const duplicate = await hasDuplicateSource({
+        brainId: config.brainId,
+        driveFileId: file.id,
+        fingerprint,
+      });
+      if (duplicate) {
+        await processSourceItemIntoBrain({
+          brainId: config.brainId,
+          sourceItemId: duplicate.id,
+        });
         result.itemsSkipped += 1;
-        result.skippedFiles.push({ fileId: file.id, fileName: file.name, reason: "unsupported_file_type" });
+        result.skippedFiles.push({ fileId: file.id, fileName: file.name, reason: "duplicate" });
         continue;
       }
 
-      try {
-        const content = normalizeSourceContent(await drive.downloadText(file.id));
-        const hash = hashNormalizedSourceContent(content);
-        const parsed = parseTranscriptFilename(file.name);
-        const traceMetadata = buildSourceTraceMetadata({
-          sourceKind: "transcript",
-          sourceSystem: "google_drive",
-          connectorType: "google_drive",
-          connectorConfigId: config.id,
-          externalId: `google_drive:${file.id}`,
-          externalUri: file.webViewLink,
-          originalTitle: file.name,
-          occurredAt: parsed.occurredAt,
-        });
-        const fingerprint = sourceFingerprint({
-          title: cleanTitle(file.name, parsed),
-          content,
-          externalUri: file.webViewLink,
-          metadata: {
-            ...traceMetadata,
-            content_hash: hash,
-            source_content_hash: hash,
-          },
-        });
-        const duplicate = await hasDuplicateSource({
-          brainId: config.brainId,
-          driveFileId: file.id,
-          fingerprint,
-        });
-        if (duplicate) {
-          await processSourceItemIntoBrain({
+      const sourceItem = await repository.createSourceItem({
+        brainId: config.brainId,
+        type: sourceKind as "transcript" | "document",
+        title: cleanTitle(file.name, parsed),
+        content,
+        externalUri: file.webViewLink,
+        metadata: mergeSourceTraceMetadata(traceMetadata, {
+          domain_type: parsed.domainType ?? sourceKind,
+          source_type_label: parsed.sourceTypeLabel,
+          company_person_text: parsed.companyPersonText,
+          topic: parsed.topic,
+          drive_file_id: file.id,
+          filename: file.name,
+          mime_type: file.mimeType,
+          content_hash: hash,
+          source_content_hash: hash,
+          dedupe_keys: buildDedupeKeys(fingerprint),
+          parsed_metadata: parsed,
+          google_drive_modified_time: file.modifiedTime,
+          google_drive_synced_at: new Date().toISOString(),
+        }),
+      });
+
+      const ingested = await processSourceItemIntoBrain({
+        brainId: config.brainId,
+        sourceItemId: sourceItem.id,
+      });
+
+      await repository.createBrainAlert({
+        brainId: config.brainId,
+        alertType: "important_new_source_processed",
+        title: "Google Drive document processed",
+        description: sourceItem.title,
+        severity: "info",
+        sourceId: sourceItem.id,
+      });
+
+      for (const loop of ingested.openLoops) {
+        if (loop.priority === "high" || loop.priority === "critical") {
+          await repository.createBrainAlert({
             brainId: config.brainId,
-            sourceItemId: duplicate.id,
+            alertType: "high_priority_open_loop_created",
+            title: loop.title,
+            description: loop.description,
+            severity: loop.priority === "critical" ? "critical" : "warning",
+            sourceId: sourceItem.id,
+            openLoopId: loop.id,
           });
-          result.itemsSkipped += 1;
-          result.skippedFiles.push({ fileId: file.id, fileName: file.name, reason: "duplicate" });
-          continue;
         }
-
-        const sourceItem = await repository.createSourceItem({
-          brainId: config.brainId,
-          type: "transcript",
-          title: cleanTitle(file.name, parsed),
-          content,
-          externalUri: file.webViewLink,
-          metadata: mergeSourceTraceMetadata(traceMetadata, {
-            domain_type: parsed.domainType ?? "transcript",
-            source_type_label: parsed.sourceTypeLabel,
-            company_person_text: parsed.companyPersonText,
-            topic: parsed.topic,
-            drive_file_id: file.id,
-            drive_folder_id: folderId,
-            filename: file.name,
-            mime_type: file.mimeType,
-            content_hash: hash,
-            source_content_hash: hash,
-            dedupe_keys: buildDedupeKeys(fingerprint),
-            parsed_metadata: parsed,
-            google_drive_modified_time: file.modifiedTime,
-            google_drive_synced_at: new Date().toISOString(),
-          }),
-        });
-
-        const ingested = await processSourceItemIntoBrain({
-          brainId: config.brainId,
-          sourceItemId: sourceItem.id,
-        });
-
-        await repository.createBrainAlert({
-          brainId: config.brainId,
-          alertType: "important_new_source_processed",
-          title: "Google Drive transcript processed",
-          description: sourceItem.title,
-          severity: "info",
-          sourceId: sourceItem.id,
-        });
-
-        for (const loop of ingested.openLoops) {
-          if (loop.priority === "high" || loop.priority === "critical") {
-            await repository.createBrainAlert({
-              brainId: config.brainId,
-              alertType: "high_priority_open_loop_created",
-              title: loop.title,
-              description: loop.description,
-              severity: loop.priority === "critical" ? "critical" : "warning",
-              sourceId: sourceItem.id,
-              openLoopId: loop.id,
-            });
-          }
-        }
-
-        result.itemsIngested += 1;
-        result.sourceItemIds.push(sourceItem.id);
-      } catch (error) {
-        result.itemsFailed += 1;
-        result.failedFiles.push({
-          fileId: file.id,
-          fileName: file.name,
-          error: error instanceof Error ? error.message : "Unknown Google Drive file sync error",
-        });
       }
+
+      result.itemsIngested += 1;
+      result.sourceItemIds.push(sourceItem.id);
+    } catch (error) {
+      result.itemsFailed += 1;
+      result.failedFiles.push({
+        fileId: file.id,
+        fileName: file.name,
+        error: error instanceof Error ? error.message : "Unknown Google Drive file sync error",
+      });
     }
   }
 

@@ -146,17 +146,25 @@ export async function exchangeGmailCode(code: string, existing?: GmailCredential
 }
 
 async function refreshGmailCredentials(config: ConnectorConfig, credentials: GmailCredentials) {
-  if (!credentials.refresh_token) throw new Error("Gmail refresh token is missing. Reconnect Gmail.");
+  if (!credentials.refresh_token) {
+    await getRepository().updateConnectorConfig(config.id, { status: "needs_reauth" as any });
+    throw new Error("Gmail refresh token is missing. Reconnect Gmail.");
+  }
   const { clientId, clientSecret } = requireGmailOAuthEnv();
-  const response = await postToken(new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    refresh_token: credentials.refresh_token,
-    grant_type: "refresh_token",
-  }));
-  const refreshed = tokenResponseToCredentials(response, credentials);
-  await connectorCredentialStore.write(config.id, refreshed);
-  return refreshed;
+  try {
+    const response = await postToken(new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: credentials.refresh_token,
+      grant_type: "refresh_token",
+    }));
+    const refreshed = tokenResponseToCredentials(response, credentials);
+    await connectorCredentialStore.write(config.id, refreshed);
+    return refreshed;
+  } catch (err) {
+    await getRepository().updateConnectorConfig(config.id, { status: "needs_reauth" as any });
+    throw err;
+  }
 }
 
 class GmailRestClient implements GmailClient {
@@ -294,7 +302,8 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
   if (configuredLabels.length === 0) {
     throw new Error('Gmail sync requires a configured label. Create "Arvya Brain", apply it to 5-10 important threads, then save that label name or ID.');
   }
-  if (!maxItemTestMode(config) && configuredLabels.some(isBroadGmailLabel)) {
+  const isOnboardingMode = config.config.mode === "onboarding";
+  if (!isOnboardingMode && !maxItemTestMode(config) && configuredLabels.some(isBroadGmailLabel)) {
     throw new Error('Gmail INBOX sync is disabled for live runs. Use the "Arvya Brain" label, or explicitly enable max-item test mode for a capped inbox test.');
   }
 

@@ -2,6 +2,7 @@ import { generateDailyFounderBrief } from "@/lib/brain/store";
 import { syncGmailConnector, type GmailClient } from "@/lib/connectors/gmail";
 import { syncGoogleDriveConnector, type GoogleDriveClient } from "@/lib/connectors/google-drive";
 import { syncOutlookConnector, type OutlookClient } from "@/lib/connectors/outlook";
+import { listSlackChannels, syncChannelHistory, type SlackConfig } from "@/lib/connectors/slack";
 import type { MemoryObject, OpenLoop, SourceItem } from "@arvya/core";
 import { getRepository, type BrainAlertSeverity, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
@@ -54,9 +55,11 @@ const alignmentStopWords = new Set([
 ]);
 
 export const CONNECTOR_TYPES: ConnectorType[] = [
+  "slack",
   "google_drive",
   "gmail",
   "outlook",
+  "onedrive",
   "recall",
   "mock",
 ];
@@ -257,7 +260,7 @@ function minutesSince(value?: string | null) {
 
 function shouldRunConnector(config: ConnectorConfig) {
   if (!config.syncEnabled || config.status === "paused") return false;
-  if (["google_drive", "gmail", "outlook"].includes(config.connectorType) && config.status !== "connected") return false;
+  if (["google_drive", "gmail", "outlook", "slack"].includes(config.connectorType) && config.status !== "connected") return false;
   const interval = config.syncIntervalMinutes ?? DEFAULT_SYNC_INTERVAL_MINUTES;
   return minutesSince(config.lastSyncAt) >= interval;
 }
@@ -377,6 +380,68 @@ async function createConnectorSource(input: {
   return { duplicate: false, sourceItem, ingested };
 }
 
+type SlackSyncResult = {
+  itemsFound: number;
+  itemsIngested: number;
+  itemsSkipped: number;
+  itemsFailed: number;
+  sourceItemIds: string[];
+  nextWatermark?: string;
+};
+
+async function syncSlackConnector(config: ConnectorConfig): Promise<SlackSyncResult> {
+  const credentials = config.credentials as SlackConfig | null;
+  if (!credentials?.botToken) throw new Error("Slack is not connected. No bot token found.");
+  const channels = await listSlackChannels(credentials.botToken);
+  const since = typeof config.config.watermark === "string" ? config.config.watermark : undefined;
+  const result: SlackSyncResult = { itemsFound: 0, itemsIngested: 0, itemsSkipped: 0, itemsFailed: 0, sourceItemIds: [] };
+  let nextWatermark = since;
+
+  for (const channel of channels) {
+    try {
+      const messages = await syncChannelHistory(credentials.botToken, channel.id, since);
+      result.itemsFound += messages.length;
+      if (messages.length === 0) continue;
+
+      const grouped = new Map<string, typeof messages>();
+      for (const msg of messages) {
+        const day = new Date(Number(msg.ts) * 1000).toISOString().slice(0, 10);
+        const key = `${channel.id}:${day}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(msg);
+        if (!nextWatermark || msg.ts > nextWatermark) nextWatermark = msg.ts;
+      }
+
+      for (const [key, dayMessages] of grouped) {
+        const [, day] = key.split(":");
+        const title = `#${channel.name} — ${day}`;
+        const content = dayMessages.map((m) => `${m.user}: ${m.text}`).join("\n");
+        const externalId = `slack:${config.config.teamId ?? "team"}:${channel.id}:${day}`;
+        const created = await createConnectorSource({
+          config,
+          title,
+          content,
+          externalId,
+          domainType: "slack_message",
+          sourceType: "note",
+        });
+        if (created.duplicate) {
+          result.itemsSkipped += dayMessages.length;
+        } else {
+          result.itemsIngested += dayMessages.length;
+          result.sourceItemIds.push(created.sourceItem.id);
+        }
+      }
+    } catch (err) {
+      result.itemsFailed += 1;
+      console.error(`[slack-sync] Failed to sync channel #${channel.name}:`, err);
+    }
+  }
+
+  if (nextWatermark) result.nextWatermark = nextWatermark;
+  return result;
+}
+
 function verifierContent(config: ConnectorConfig) {
   const connector = humanConnectorName(config.connectorType);
   return [
@@ -460,12 +525,15 @@ export async function syncConnectorConfig(
   });
 
   try {
-    if (config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook") {
+    if (config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook" || config.connectorType === "slack") {
       const synced = config.connectorType === "google_drive"
         ? await syncGoogleDriveConnector(config, options.googleDriveClient)
         : config.connectorType === "gmail"
           ? await syncGmailConnector(config, options.gmailClient)
-          : await syncOutlookConnector(config, options.outlookClient);
+          : config.connectorType === "slack"
+            ? await syncSlackConnector(config)
+            : await syncOutlookConnector(config, options.outlookClient);
+      const syncedAny = synced as Record<string, unknown>;
       await repository.updateConnectorSyncRun(run.id, {
         status: "completed",
         completedAt: nowIso(),
@@ -475,8 +543,8 @@ export async function syncConnectorConfig(
         metadata: {
           sourceItemIds: synced.sourceItemIds,
           itemsFailed: synced.itemsFailed,
-          skippedItems: "skippedItems" in synced ? synced.skippedItems : synced.skippedFiles,
-          failedItems: "failedItems" in synced ? synced.failedItems : synced.failedFiles,
+          skippedItems: syncedAny.skippedItems ?? syncedAny.skippedFiles ?? [],
+          failedItems: syncedAny.failedItems ?? syncedAny.failedFiles ?? [],
         },
       });
       const nextWatermark = "nextWatermark" in synced ? synced.nextWatermark : undefined;
