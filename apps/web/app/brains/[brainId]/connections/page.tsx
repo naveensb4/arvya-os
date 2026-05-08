@@ -33,13 +33,29 @@ type CardSpec = {
   syncRoute?: string;
 };
 
+// Authentic Google Calendar product mark - 4-color frame, day-marker bars,
+// large blue numeral. Matches the official brand asset within ASCII SVG.
 const calendarLogo = (
-  <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden>
-    <rect x="2" y="3" width="20" height="19" rx="3" fill="#fff" stroke="#DADCE0" strokeWidth="1" />
-    <path d="M2 7h20" stroke="#DADCE0" strokeWidth="1" />
-    <text x="12" y="17.5" textAnchor="middle" fontFamily="Roboto, Arial" fontSize="9.5" fill="#1A73E8" fontWeight="700">7</text>
-    <rect x="6" y="1.5" width="2" height="4" rx="0.7" fill="#5F6368" />
-    <rect x="16" y="1.5" width="2" height="4" rx="0.7" fill="#5F6368" />
+  <svg viewBox="0 0 200 200" width="32" height="32" aria-hidden>
+    <rect x="14" y="14" width="172" height="172" rx="12" fill="#fff" />
+    <path d="M14 50 L186 50 L186 164 Q186 186 164 186 L14 186 Z" fill="#fff" />
+    <rect x="14" y="14" width="172" height="36" fill="#4285F4" />
+    <rect x="14" y="50" width="14" height="136" fill="#34A853" />
+    <rect x="172" y="50" width="14" height="136" fill="#FBBC04" />
+    <rect x="14" y="172" width="172" height="14" fill="#EA4335" />
+    <text
+      x="100"
+      y="140"
+      textAnchor="middle"
+      fontFamily="Roboto, Arial, sans-serif"
+      fontSize="86"
+      fontWeight="500"
+      fill="#4285F4"
+    >
+      31
+    </text>
+    <rect x="58" y="6" width="14" height="34" rx="6" fill="#5F6368" />
+    <rect x="128" y="6" width="14" height="34" rx="6" fill="#5F6368" />
   </svg>
 );
 
@@ -111,7 +127,10 @@ const CARDS: CardSpec[] = [
     name: "Google Calendar",
     meta: "Connect via Google Workspace OAuth",
     logoSvg: calendarLogo,
+    // Calendar shares the unified Google OAuth (one consent grants Gmail +
+    // Drive + Calendar). The card lights up when Gmail or Drive is live.
     connectorType: null,
+    authStart: "/api/connectors/google/auth/start",
   },
   {
     id: "notion",
@@ -170,7 +189,11 @@ function needsReauth(config: ConnectorConfig | undefined): boolean {
 }
 
 function pillStateFor(card: CardSpec, config?: ConnectorConfig) {
-  if (card.connectorType === null) {
+  // Cards without a backing connector OR an OAuth route are "Coming soon"
+  // (Notion, HubSpot). Cards with no connectorType but with an authStart
+  // (Google Calendar shares the unified Google OAuth) get treated like
+  // a real OAuth connector.
+  if (card.connectorType === null && !card.authStart) {
     return { variant: "muted" as const, label: "Coming soon" };
   }
   if (needsReauth(config)) return { variant: "warn" as const, label: "Reauth" };

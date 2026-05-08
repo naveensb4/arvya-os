@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { NotetakerMeeting } from "@/lib/db/repository";
+import { getRepository } from "@/lib/db/repository";
 import {
   getBrainSnapshot,
   getLatestDriftReview,
@@ -25,29 +27,6 @@ const PRESET_PROMPTS = [
   "Catch me up on Marlowe",
 ];
 
-const PLACEHOLDER_MEETINGS = [
-  {
-    when: "Now - 14:00 to 14:45",
-    title: "BlackRock - graph spec walkthrough",
-    sub: "Jon Smith - graph-spec.md attached",
-    live: true,
-  },
-  {
-    when: "15:30 to 16:00",
-    title: "Sequoia - term-sheet questions",
-    sub: "Roelof plus 1",
-  },
-  {
-    when: "17:00 to 17:15",
-    title: "Standup - sprint #18",
-    sub: "4 attendees",
-  },
-  {
-    when: "18:00 to 18:45",
-    title: "Caffeinated - pilot kickoff",
-    sub: "Maya Chen",
-  },
-];
 
 const PLACEHOLDER_DRIFT_SIGNALS = [
   {
@@ -87,13 +66,6 @@ const LIVE_STREAM = [
   { name: "propose_edge", arg: "BlackRock to Google - introduced_to", state: "ok" as const, t: "1.1s" },
 ];
 
-const SUGGESTED_QUESTIONS = [
-  "What did we promise the client in our last call?",
-  "Which projects have upcoming deadlines this week?",
-  "Summarize the latest emails from our top 3 clients",
-  "What commitments are overdue across all engagements?",
-  "Who are the key contacts we've been communicating with?",
-];
 
 type PageProps = {
   params: Promise<{ brainId: string }>;
@@ -108,6 +80,131 @@ function ageDays(iso: string | undefined): number {
   if (!iso) return 0;
   const ms = Date.now() - new Date(iso).getTime();
   return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+const AVATAR_PALETTE = [
+  "#29B36B",
+  "#E64C4C",
+  "#4E91F0",
+  "#D89A3F",
+  "#B85FD9",
+  "#5C5CE6",
+  "#2DBBB0",
+  "#F08531",
+];
+
+function avatarFor(name: string): { initials: string; color: string } {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? "")
+    .join("") || "?";
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  const color = AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
+  return { initials, color };
+}
+
+function renderMeetingRows(meetings: NotetakerMeeting[]) {
+  // Group consecutive meetings on the same day so only the first row of each
+  // day shows the date-block; later rows on the same day get a hidden block.
+  // Also flag the meeting that is currently happening as `now`.
+  const now = Date.now();
+  let lastDay = "";
+  return meetings.map((m, i) => {
+    const start = new Date(m.startTime);
+    const end = new Date(m.endTime);
+    const dayKey = start.toISOString().slice(0, 10);
+    const showDayLab =
+      i > 0 && dayKey !== lastDay
+        ? start.toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          })
+        : null;
+    const showDateBlock = i === 0 || dayKey !== lastDay;
+    lastDay = dayKey;
+    const isLive = start.getTime() <= now && now <= end.getTime();
+    const dow = start.toLocaleDateString(undefined, { weekday: "short" });
+    const day = start.getDate();
+    const startLabel = start.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const endLabel = end.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const participants = Array.isArray(m.participants) ? m.participants : [];
+    const avatars = participants
+      .slice(0, 4)
+      .map((p) => {
+        if (typeof p === "string") return avatarFor(p);
+        if (p && typeof p === "object") {
+          const obj = p as Record<string, unknown>;
+          const label =
+            (typeof obj.name === "string" && obj.name) ||
+            (typeof obj.email === "string" && obj.email) ||
+            "?";
+          return avatarFor(label);
+        }
+        return avatarFor("?");
+      });
+
+    return (
+      <div key={m.id}>
+        {showDayLab ? (
+          <div className={styles.meetDayLab}>{showDayLab}</div>
+        ) : null}
+        <div
+          className={`${styles.meetRow} ${isLive ? styles.meetRowNow : ""}`}
+        >
+          <div
+            className={`${styles.dateBlock} ${
+              !showDateBlock ? styles.dateBlockBare : ""
+            }`}
+          >
+            <span className={styles.dow}>{dow}</span>
+            <span className={styles.day}>{day}</span>
+          </div>
+          <span className={styles.meetRail} />
+          <div className={styles.meetBody}>
+            <div className={styles.meetTitle}>
+              {m.title}
+              {isLive ? (
+                <span className={styles.live}>
+                  ▶ Now - {startLabel} - {endLabel}
+                </span>
+              ) : null}
+            </div>
+            <div className={styles.meetTime}>
+              {!isLive
+                ? `${startLabel} - ${endLabel}`
+                : null}
+              {participants.length > 0
+                ? `${!isLive ? " - " : ""}${participants.length} attendees`
+                : null}
+            </div>
+          </div>
+          <div className={styles.meetRight}>
+            <div className={styles.avStack}>
+              {avatars.map((a, j) => (
+                <span
+                  key={j}
+                  className={styles.av}
+                  style={{ background: a.color }}
+                >
+                  {a.initials}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  });
 }
 
 function buildSparklinePath(data: number[]): { path: string; fillPath: string; tip: { x: number; y: number } } {
@@ -158,6 +255,18 @@ export default async function DashboardPage({ params }: PageProps) {
   const memoryObjects = snapshot.memoryObjects ?? [];
   const sourceItems = snapshot.sourceItems ?? [];
   const agentRuns = snapshot.agentRuns ?? [];
+
+  // Real meetings from the notetaker pipeline. Window: now -> +48h.
+  const repository = getRepository();
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const upcomingMeetings = await repository.listNotetakerMeetings({
+    brainId: selectedBrainId,
+    from: now.toISOString(),
+    to: windowEnd.toISOString(),
+    limit: 10,
+  });
+  const sourceById = new Map(sourceItems.map((s) => [s.id, s]));
 
   const driftSignals = latestDrift?.review.signals ?? [];
   const driftDisplay =
@@ -272,50 +381,27 @@ export default async function DashboardPage({ params }: PageProps) {
 
       <div className={styles.dashGrid}>
         <div>
-          <div className={styles.card}>
+          <div className={styles.card} style={{ paddingBottom: 4 }}>
             <div className={styles.cardHead}>
               <h3>Today&apos;s meetings</h3>
               <span className={styles.cardMeta}>
-                {PLACEHOLDER_MEETINGS.length} - 2 with auto-join
+                {upcomingMeetings.length} upcoming
               </span>
             </div>
-            <div className={styles.cardBody}>
-              {PLACEHOLDER_MEETINGS.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    padding: "10px 0",
-                    borderTop: i === 0 ? "0" : "1px solid var(--cream-200)",
-                  }}
-                >
-                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                    {m.title}
-                    {m.live && (
-                      <span
-                        style={{
-                          color: "var(--arvya-gold-700)",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
-                          marginLeft: 6,
-                        }}
-                      >
-                        Now
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11.5,
-                      color: "var(--text-tertiary)",
-                      fontFamily: "var(--font-mono)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {m.when} - {m.sub}
-                  </div>
-                </div>
-              ))}
-            </div>
+            {upcomingMeetings.length === 0 ? (
+              <div
+                style={{
+                  padding: "32px 20px",
+                  textAlign: "center",
+                  fontSize: 13,
+                  color: "var(--text-tertiary)",
+                }}
+              >
+                No upcoming meetings on the calendar.
+              </div>
+            ) : (
+              renderMeetingRows(upcomingMeetings)
+            )}
           </div>
 
           <div className={styles.driftCard}>
@@ -364,18 +450,40 @@ export default async function DashboardPage({ params }: PageProps) {
               topActions.map((loop) => {
                 const age = ageDays(loop.dueDate ?? loop.createdAt);
                 const old = age >= 3;
+                const sourceTitle = loop.sourceItemId
+                  ? sourceById.get(loop.sourceItemId)?.title
+                  : undefined;
                 return (
-                  <div key={loop.id} className="row">
-                    <span className="ck" />
+                  <div key={loop.id} className={styles.row}>
+                    <span className={styles.ck} />
                     <div>
-                      <div className="t">{loop.title || loop.description || "Untitled action"}</div>
-                      {loop.owner ? (
-                        <div className="meta">
-                          <span className="who">{loop.owner.toUpperCase()}</span>
-                        </div>
-                      ) : null}
+                      <div className={styles.t}>
+                        {loop.title || loop.description || "Untitled action"}
+                      </div>
+                      <div className={styles.meta}>
+                        {loop.owner ? (
+                          <span className={styles.who}>{loop.owner.toUpperCase()}</span>
+                        ) : null}
+                        {loop.priority ? (
+                          <span> - {loop.priority}</span>
+                        ) : null}
+                        {sourceTitle ? (
+                          <span>
+                            {" "}
+                            -{" "}
+                            <Link
+                              className={styles.cite}
+                              href={`/brains/${selectedBrainId}/sources`}
+                            >
+                              source: {sourceTitle.slice(0, 32)}
+                            </Link>
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <span className={`age ${old ? "old" : ""}`}>
+                    <span
+                      className={`${styles.age} ${old ? styles.ageOld : ""}`}
+                    >
                       {age <= 0 ? "today" : `${age}d`}
                     </span>
                   </div>

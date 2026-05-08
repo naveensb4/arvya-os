@@ -578,3 +578,139 @@
   color: var(--arvya-gold-700);
   text-decoration: none;
 }
+
+/* Meeting card - port of prototype Dashboard.html .meet-row markup. */
+.meetRow {
+  display: grid;
+  grid-template-columns: 56px 4px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--cream-200);
+  transition:
+    transform 0.14s,
+    background 0.14s;
+}
+.meetRow:hover {
+  background: var(--cream-50);
+  transform: translateX(2px);
+}
+.meetRowNow {
+  background: linear-gradient(90deg, #fbf6e8 0%, #fff 60%);
+}
+.meetRowNow:hover {
+  background: linear-gradient(90deg, #f8efd4 0%, var(--cream-50) 60%);
+}
+.dateBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  padding: 4px 0 5px;
+  width: 44px;
+  background: #fff;
+}
+.dateBlock .dow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.dateBlock .day {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-top: 3px;
+  line-height: 1;
+}
+.dateBlockBare {
+  visibility: hidden;
+}
+.meetRail {
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--cream-300);
+  justify-self: center;
+}
+.meetRowNow .meetRail {
+  background: var(--arvya-gold);
+}
+.meetBody {
+  min-width: 0;
+}
+.meetTitle {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meetTitle .live {
+  color: var(--arvya-gold-700);
+  font-size: 12px;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.meetTime {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+  font-family: var(--font-mono);
+}
+.meetRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avStack {
+  display: inline-flex;
+}
+.avStack .av {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  margin-left: -6px;
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+}
+.avStack .av:first-child {
+  margin-left: 0;
+}
+.meetDayLab {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 12px 20px 6px;
+  border-top: 1px solid var(--cream-200);
+}
+
+/* Cite chips on action items */
+.cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--cream-200);
+  color: var(--arvya-dark-700);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cream-300);
+  margin-right: 4px;
+  text-decoration: none;
+}
