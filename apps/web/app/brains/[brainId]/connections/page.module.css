@@ -240,3 +240,30 @@
 .toggleOn::after {
   left: 18px;
 }
+
+/* Connector card actions */
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btnLink {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.btnLink:hover { background: var(--arvya-dark-800); }
+.inlineForm { display: inline-flex; margin: 0; }
+.pillMuted { color: var(--text-tertiary); background: var(--cream-200); }
+.pillMuted .dot { background: var(--cream-400); }
