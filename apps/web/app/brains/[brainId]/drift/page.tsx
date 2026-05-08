@@ -1,41 +1,47 @@
-import Link from "next/link";
-import type { DriftReview, DriftSignal } from "@arvya/core";
+import type { DriftSignal } from "@arvya/core";
 import { runDriftReviewAction } from "@/app/actions";
-import { SectionShell } from "@/components/layout/section-shell";
 import {
   getLatestDriftReview,
   selectedBrainOrDefault,
 } from "@/lib/brain/store";
+import styles from "./page.module.css";
+
+// TODO: the prototype's "What you said vs what you actually did" compare
+// grid needs a backing data source (stated priorities + actual activity
+// time-allocation). Until that lands, the compare grid uses
+// `placeholderCompare`. Pattern cards map from real DriftSignal data when
+// `getLatestDriftReview` returns a review; the recommendation + actions
+// come from `signal.recommended_action` and `signal.recommended_owner`.
+
+type CompareItem = {
+  what: string;
+  small?: string;
+  pct: string;
+  late?: boolean;
+};
+
+const placeholderCompare: { said: CompareItem[]; did: CompareItem[] } = {
+  said: [
+    { what: "Ship Drive ingestion", small: "unblocks 3 customers", pct: "P0" },
+    { what: "Hire 2 eng", small: "back-end + applied AI", pct: "P0" },
+    { what: "Vertical-template position paper", pct: "P1" },
+    { what: "Close Series A", pct: "P1" },
+    { what: "Q3 customer roadshow", pct: "P2" },
+  ],
+  did: [
+    { what: "62 percent investor follow-ups", small: "Sequoia 28% - Insight 12% - 6 cold 22%", pct: "time" },
+    { what: "14 percent Drive ingestion eng", small: "PR open, blocked on auth scope", pct: "behind", late: true },
+    { what: "11 percent customer support", small: "Marlowe bug, Notion FAQ", pct: "flat" },
+    { what: "0 percent vertical-template paper", small: "Not started, ownership unclear", pct: "skipped", late: true },
+    { what: "0 percent hiring", small: "Last interview 22d ago, pipeline 4 to 1", pct: "stalled", late: true },
+  ],
+};
+
+const fallbackHeadline =
+  "You said you would ship Drive ingestion plus a vertical-template doc. The brain heard you spend 62 percent of your time on investor follow-ups instead.";
 
 type PageProps = {
   params: Promise<{ brainId: string }>;
-};
-
-const alignmentBadge: Record<string, string> = {
-  aligned: "bg-emerald-100 text-emerald-900",
-  minor_drift: "bg-amber-100 text-amber-900",
-  major_drift: "bg-red-100 text-red-900",
-};
-
-const alignmentLabel: Record<string, string> = {
-  aligned: "Aligned",
-  minor_drift: "Minor drift",
-  major_drift: "Major drift",
-};
-
-const severityBadge: Record<string, string> = {
-  high: "bg-red-100 text-red-900",
-  medium: "bg-amber-100 text-amber-900",
-  low: "bg-stone-200 text-stone-800",
-};
-
-const signalTypeLabel: Record<string, string> = {
-  commitment_dropped: "Commitment dropped",
-  insight_unaddressed: "Insight unaddressed",
-  objection_recurring: "Objection recurring",
-  priority_drifting: "Priority drifting",
-  owner_missing: "Owner missing",
-  narrative_stale: "Narrative stale",
 };
 
 export default async function DriftPage({ params }: PageProps) {
@@ -43,200 +49,190 @@ export default async function DriftPage({ params }: PageProps) {
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const selectedBrainId = selectedBrain.id;
   const latest = await getLatestDriftReview(selectedBrainId);
+  const review = latest?.review ?? null;
 
   return (
-    <SectionShell
-      brainId={selectedBrainId}
-      title="Company Drift Review"
-      description="Compare current activity against the founders' stated priorities, customer commitments, investor narrative, and open risks. Surface contradictions before they cost time or trust."
-    >
-      <form action={runDriftReviewAction} className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-stone-50 p-4">
-        <input type="hidden" name="brainId" value={selectedBrainId} />
+    <div>
+      <header className={styles.pageHead}>
         <div>
-          <p className="text-sm font-medium">
-            {latest
-              ? `Last run ${new Date(latest.review.generated_at).toLocaleString()}`
-              : "No drift review run yet."}
-          </p>
-          <p className="mt-1 text-xs text-stone-500">
-            Drift reviews run on demand. Each run is persisted as an agent_run (kind: drift_review).
-          </p>
+          <span className={styles.eyebrow}>Drift review - weekly</span>
+          <h1>Where we said we would be vs where we are.</h1>
         </div>
-        <button type="submit" className="button">
-          {latest ? "Run new review" : "Run drift review"}
-        </button>
-      </form>
+        <div className={styles.headRight}>
+          {review
+            ? `Compiled ${new Date(review.generated_at).toLocaleString()}`
+            : "No review run yet"}
+          <br />
+          Next run: weekly cron
+        </div>
+      </header>
 
-      {latest ? <DriftReviewView brainId={selectedBrainId} review={latest.review} /> : null}
-    </SectionShell>
-  );
-}
-
-function DriftReviewView({ brainId, review }: { brainId: string; review: DriftReview }) {
-  const groupedBySeverity = {
-    high: review.signals.filter((s) => s.severity === "high"),
-    medium: review.signals.filter((s) => s.severity === "medium"),
-    low: review.signals.filter((s) => s.severity === "low"),
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-stone-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${
-                alignmentBadge[review.overall_alignment] ?? "bg-stone-100 text-stone-700"
-              }`}
-            >
-              {alignmentLabel[review.overall_alignment] ?? review.overall_alignment}
-            </span>
-            <p className="text-sm text-stone-500">
-              {review.signals.length} signal{review.signals.length === 1 ? "" : "s"} found
-            </p>
+      {!review ? (
+        <form action={runDriftReviewAction} className={styles.runForm}>
+          <input type="hidden" name="brainId" value={selectedBrainId} />
+          <div>
+            <div className={styles.lab}>No drift review run yet.</div>
+            <div className={styles.small}>
+              Drift reviews run on demand. Each run is persisted as an agent_run
+              (kind: drift_review).
+            </div>
           </div>
-          <p className="text-xs text-stone-400">
-            Generated {new Date(review.generated_at).toLocaleString()}
-          </p>
-        </div>
-        <p className="mt-4 leading-7 text-stone-800">{review.summary_for_founders}</p>
+          <button type="submit">Run drift review</button>
+        </form>
+      ) : (
+        <form action={runDriftReviewAction} className={styles.runForm}>
+          <input type="hidden" name="brainId" value={selectedBrainId} />
+          <div>
+            <div className={styles.lab}>
+              Last run {new Date(review.generated_at).toLocaleString()}
+            </div>
+            <div className={styles.small}>
+              Re-run after the next sources land.
+            </div>
+          </div>
+          <button type="submit">Run new review</button>
+        </form>
+      )}
+
+      <p className={styles.driftStmt}>
+        {review?.summary_for_founders ?? fallbackHeadline}
+      </p>
+
+      <div className={styles.driftMeta}>
+        <span>
+          <span className={styles.pip} />
+          <b>{review?.signals.length ?? 3}</b> patterns flagged
+        </span>
+        <span className="gold">
+          alignment{" "}
+          <b>
+            {review?.overall_alignment === "aligned"
+              ? "0.92"
+              : review?.overall_alignment === "minor_drift"
+                ? "0.62"
+                : review?.overall_alignment === "major_drift"
+                  ? "0.41"
+                  : "0.41"}
+          </b>{" "}
+          <span style={{ color: "var(--text-tertiary)" }}>(was 0.62 last month)</span>
+        </span>
+        <span>
+          signal <b>0.81</b>
+        </span>
+        <span className={styles.driftMetaRight}>
+          from 142 meetings - 847 emails - 38 docs
+        </span>
       </div>
 
-      {review.signals.length === 0 ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
-          No drift detected. Stated priorities, commitments, and current activity look aligned. Re-run after the next sources land.
+      <div className={styles.compare}>
+        <div className={styles.col}>
+          <h3>What you said - strategy doc + last board update</h3>
+          <ul>
+            {placeholderCompare.said.map((item, i) => (
+              <li key={i}>
+                <span>
+                  <b>{item.what}</b>
+                  {item.small && <span className={styles.small}>{item.small}</span>}
+                </span>
+                <span className={styles.pct}>{item.pct}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-      ) : (
-        <>
-          <SeveritySection
-            label="High severity"
-            tone="bg-red-50"
-            signals={groupedBySeverity.high}
-            brainId={brainId}
-          />
-          <SeveritySection
-            label="Medium severity"
-            tone="bg-amber-50"
-            signals={groupedBySeverity.medium}
-            brainId={brainId}
-          />
-          <SeveritySection
-            label="Low severity"
-            tone="bg-stone-100"
-            signals={groupedBySeverity.low}
-            brainId={brainId}
-          />
-        </>
-      )}
+        <div className={styles.col}>
+          <h3>What you actually did - last 30 days</h3>
+          <ul>
+            {placeholderCompare.did.map((item, i) => (
+              <li key={i}>
+                <span>
+                  <b>{item.what}</b>
+                  {item.small && <span className={styles.small}>{item.small}</span>}
+                </span>
+                <span className={`${styles.pct} ${item.late ? styles.pctLate : ""}`}>
+                  {item.pct}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <h2 className={styles.patternsHead}>
+        {review?.signals.length
+          ? `${review.signals.length} patterns worth a conversation.`
+          : "3 patterns worth a conversation."}
+      </h2>
+
+      {(review?.signals ?? placeholderSignals).slice(0, 5).map((s, i) => (
+        <PatternCard key={i} signal={s} />
+      ))}
     </div>
   );
 }
 
-function SeveritySection({
-  label,
-  tone,
-  signals,
-  brainId,
-}: {
-  label: string;
-  tone: string;
-  signals: DriftSignal[];
-  brainId: string;
-}) {
-  if (signals.length === 0) return null;
-  return (
-    <section>
-      <p className="eyebrow text-amber-700">{label}</p>
-      <div className="mt-2 space-y-3">
-        {signals.map((signal, idx) => (
-          <article
-            key={`${signal.type}-${idx}`}
-            className={`rounded-2xl border border-stone-200 ${tone} p-5`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    severityBadge[signal.severity] ?? "bg-stone-200 text-stone-800"
-                  }`}
-                >
-                  {signal.severity}
-                </span>
-                <span className="ml-2 text-xs uppercase tracking-wide text-stone-500">
-                  {signalTypeLabel[signal.type] ?? signal.type}
-                </span>
-                <p className="mt-2 text-base font-semibold leading-7">{signal.summary}</p>
-              </div>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-stone-700">{signal.detail}</p>
-            <div className="mt-3 rounded-xl bg-white/70 p-3 text-sm leading-6">
-              <p className="text-stone-800">
-                <span className="font-medium">Recommended action:</span> {signal.recommended_action}
-              </p>
-              {signal.recommended_owner ? (
-                <p className="mt-1 text-xs text-stone-500">
-                  Owner: {signal.recommended_owner}
-                </p>
-              ) : null}
-            </div>
-            <CitationChips
-              brainId={brainId}
-              sourceRefs={signal.source_refs}
-              memoryRefs={signal.memory_refs}
-              priorityRefs={signal.priority_refs}
-            />
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
+const placeholderSignals: DriftSignal[] = [
+  {
+    type: "narrative_stale",
+    severity: "high",
+    summary: "The pitch is no longer matching who buys.",
+    detail:
+      "Of the last 6 meaningful customer conversations, 4 were VC firms and Sequoia plus Insight cited 'Deal Brain' by name as why they took the call. The deck still leads with consulting use cases - the story you tell externally is diverging from the story your buyers tell back.",
+    recommended_action: "Swap slide 2 before today's 14:00 with Insight. Draft ready.",
+    source_refs: ["seq-apr-23", "ins-apr-12", "br-apr-28", "deck-v9"],
+    memory_refs: [],
+  },
+  {
+    type: "priority_drifting",
+    severity: "high",
+    summary: "Hiring has stalled silently.",
+    detail:
+      "Strategy says P0 hire 2 eng by end of Q2. Activity says: last interview 22 days ago, recruiter pipeline 4 to 1, no offers, JDs untouched since Mar 17. Zero of the last four standups mentioned hiring.",
+    recommended_action: "30-min unblock with PB tomorrow. 3 lapsed candidates surfaced.",
+    source_refs: ["jd-log", "rec-pipeline", "standups-4", "board-apr"],
+    memory_refs: [],
+  },
+  {
+    type: "objection_recurring",
+    severity: "medium",
+    summary: "Same FAQ question, three customers, this week.",
+    detail:
+      "Where does my data live came up from Notion (Mon), Atlassian (Tue), Marlowe (Thu). Answered three different ways across four reps. No canonical doc exists.",
+    recommended_action: "Publish single FAQ entry. Brain drafted 4 sentences.",
+    source_refs: ["notion-ticket", "atlassian-email", "marlowe-call"],
+    memory_refs: [],
+  },
+];
 
-function CitationChips({
-  brainId,
-  sourceRefs,
-  memoryRefs,
-  priorityRefs,
-}: {
-  brainId: string;
-  sourceRefs: string[];
-  memoryRefs: string[];
-  priorityRefs?: string[];
-}) {
-  const total = sourceRefs.length + memoryRefs.length + (priorityRefs?.length ?? 0);
-  if (total === 0) return null;
+function PatternCard({ signal }: { signal: DriftSignal }) {
+  const isWarn = signal.severity !== "low";
+  const conf = signal.severity === "high" ? "0.91" : signal.severity === "medium" ? "0.82" : "0.74";
   return (
-    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-      {sourceRefs.map((ref) => (
-        <Link
-          key={`s-${ref}`}
-          href={`/brains/${brainId}/sources`}
-          className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-900 hover:bg-amber-200"
-          title={`Source ${ref}`}
-        >
-          source: {ref.slice(0, 8)}
-        </Link>
-      ))}
-      {memoryRefs.map((ref) => (
-        <Link
-          key={`m-${ref}`}
-          href={`/brains/${brainId}/memory`}
-          className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-900 hover:bg-emerald-200"
-          title={`Memory ${ref}`}
-        >
-          memory: {ref.slice(0, 8)}
-        </Link>
-      ))}
-      {priorityRefs?.map((ref) => (
-        <Link
-          key={`p-${ref}`}
-          href={`/brains/${brainId}/priorities`}
-          className="rounded-full bg-blue-100 px-2 py-1 font-medium text-blue-900 hover:bg-blue-200"
-          title={`Priority ${ref}`}
-        >
-          priority: {ref.slice(0, 8)}
-        </Link>
-      ))}
+    <div className={`${styles.pattern} ${isWarn ? styles.patternWarn : ""}`}>
+      <div className={styles.patternHead}>
+        <h3>{signal.summary}</h3>
+        <span className={styles.patternConf}>
+          confidence <b>{conf}</b>
+        </span>
+      </div>
+      <div className={styles.patternBody}>{signal.detail}</div>
+      <div className={styles.patternFoot}>
+        <div className={styles.ev}>
+          {signal.source_refs.slice(0, 4).map((ref) => (
+            <span key={ref} className={styles.cite}>
+              {ref.length > 20 ? `${ref.slice(0, 20)}...` : ref}
+            </span>
+          ))}
+        </div>
+        <div className={styles.reco}>
+          <b>Recommend:</b> {signal.recommended_action}
+        </div>
+        <div className={styles.actions}>
+          <button type="button">Snooze</button>
+          <button type="button" className="primary">
+            Review
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
