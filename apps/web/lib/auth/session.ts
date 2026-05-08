@@ -16,6 +16,13 @@ export type AuthUser = {
   id: string;
   email: string | null;
   user_metadata: Record<string, unknown>;
+  /** The row in the `users` table that mirrors this Supabase auth user.
+   * Existing call sites (e.g. onboarding/actions.ts) reference
+   * `session.dbUser.id` to query workspaceMembers and other FK tables.
+   * In this build we expose the same id; the production version with a
+   * full user-row join lands when the Phase 0 / Phase 2 user-row work is
+   * picked up. */
+  dbUser: { id: string; email: string | null };
 };
 
 function readEnv(): { url: string; anonKey: string } {
@@ -48,10 +55,13 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) return null;
+  const id = data.user.id;
+  const email = data.user.email ?? null;
   return {
-    id: data.user.id,
-    email: data.user.email ?? null,
+    id,
+    email,
     user_metadata: data.user.user_metadata ?? {},
+    dbUser: { id, email },
   };
 }
 

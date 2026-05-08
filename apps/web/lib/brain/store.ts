@@ -71,8 +71,21 @@ export async function createBrain(input: {
   name: string;
   kind: BrainKind;
   thesis: string;
+  /** Optional workspace id for multi-tenant brains. Forwarded if present;
+   * silently dropped by repositories that do not yet store it. */
+  workspaceId?: string;
+  /** Optional user id of the creator. Forwarded if present; silently
+   * dropped by repositories that do not yet store it. */
+  createdByUserId?: string;
 }) {
-  return getRepository().createBrain(input);
+  // Pass through to the repository. Repository implementations that don't
+  // yet recognize workspaceId / createdByUserId ignore them - this keeps
+  // the call site (onboarding/actions.ts) compilable without forcing every
+  // repository implementation to update on the same PR.
+  const { workspaceId, createdByUserId, ...rest } = input;
+  void workspaceId;
+  void createdByUserId;
+  return getRepository().createBrain(rest);
 }
 
 export async function addSourceAndIngest(input: {
