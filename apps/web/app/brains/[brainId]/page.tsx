@@ -1,23 +1,91 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type {
-  DriftReview,
-  MemoryObject,
-  OpenLoop,
-} from "@arvya/core";
-import { SectionShell } from "@/components/layout/section-shell";
-import { AgentRunCard } from "@/components/brain/agent-run-card";
-import { MemoryCard } from "@/components/memory/memory-card";
-import { OpenLoopCard } from "@/components/open-loops/open-loop-card";
-import { SourceCard } from "@/components/sources/source-card";
-import { buildDashboardModel } from "@/lib/brain/dashboard";
 import {
   getBrainSnapshot,
   getLatestDriftReview,
   isBrainNotFoundError,
-  listBrainPriorities,
 } from "@/lib/brain/store";
-import { getRepository } from "@/lib/db/repository";
+import styles from "./page.module.css";
+
+// Dashboard - prototype-matched layout per docs/prototype/Dashboard.html.
+// Clean Octolane-style header (no big dark hero card), pulse strip, 2-col
+// grid. Real data flows through getBrainSnapshot + getLatestDriftReview;
+// placeholder content fills the meetings card and the right-rail charts
+// until /api/brains/[brainId]/pulse, /meetings, /agent-stream (Phase 3.1
+// / 3.2 / 3.9) and the heat-score / brief-persist materializations land.
+//
+// Charts (sparkline / donut / bars / live agent stream rotation) render as
+// static SVGs here; the prototype's animated versions become small client
+// components in a follow-up once the data is real.
+
+const PRESET_PROMPTS = [
+  "What did we promise customers this week?",
+  "Which investors need follow-up?",
+  "What is drifting from the roadmap?",
+  "Catch me up on Marlowe",
+];
+
+const PLACEHOLDER_MEETINGS = [
+  {
+    when: "Now - 14:00 to 14:45",
+    title: "BlackRock - graph spec walkthrough",
+    sub: "Jon Smith - graph-spec.md attached",
+    live: true,
+  },
+  {
+    when: "15:30 to 16:00",
+    title: "Sequoia - term-sheet questions",
+    sub: "Roelof plus 1",
+  },
+  {
+    when: "17:00 to 17:15",
+    title: "Standup - sprint #18",
+    sub: "4 attendees",
+  },
+  {
+    when: "18:00 to 18:45",
+    title: "Caffeinated - pilot kickoff",
+    sub: "Maya Chen",
+  },
+];
+
+const PLACEHOLDER_DRIFT_SIGNALS = [
+  {
+    title: "Sales narrative drift",
+    body: "Investor deck says Brain for consulting, but 4 of 6 last customer calls were VC firms, and 2 cited Deal Brain as why they signed.",
+  },
+  {
+    title: "Promise has no owner",
+    body: "Monday's BlackRock call: we will send a graph spec by Thursday. Not on Linear, not in drafts.",
+  },
+  {
+    title: "Same objection, third time",
+    body: "Where does the data live? Clearco, Founders Fund, Caffeinated. Not in the FAQ.",
+  },
+];
+
+const SOURCE_SPARK = [62, 71, 58, 82, 75, 90, 103, 88, 112, 98, 124, 131, 118, 142];
+const DONUT_SEGMENTS = [
+  { lab: "People", val: 0.94, color: "#0E1726" },
+  { lab: "Companies", val: 0.91, color: "#D89A3F" },
+  { lab: "Promises", val: 0.86, color: "#2ECC7A" },
+  { lab: "Topics", val: 0.81, color: "#5C5CE6" },
+];
+
+const PROMISE_BARS = [
+  { lab: "On track", val: 14, total: 22, kind: "green" as const },
+  { lab: "Drifting", val: 5, total: 22, kind: "gold" as const },
+  { lab: "Overdue", val: 3, total: 22, kind: "red" as const },
+];
+
+const LIVE_STREAM = [
+  { name: "extract_memory", arg: "email - Sequoia thread", state: "run" as const },
+  { name: "resolve_entity", arg: "J. Smith resolved to Jon Smith (BlackRock)", state: "ok" as const, t: "0.4s" },
+  { name: "compile_truth", arg: "person/sarah-chen", state: "ok" as const, t: "2.1s" },
+  { name: "detect_commitment", arg: "send by Thu - Jon", state: "ok" as const, t: "0.8s" },
+  { name: "embed_segment", arg: "call/marlowe-q4 - 47 turns", state: "ok" as const, t: "3.4s" },
+  { name: "propose_edge", arg: "BlackRock to Google - introduced_to", state: "ok" as const, t: "1.1s" },
+];
 
 const SUGGESTED_QUESTIONS = [
   "What did we promise the client in our last call?",
@@ -31,372 +99,455 @@ type PageProps = {
   params: Promise<{ brainId: string }>;
 };
 
-export default async function Page({ params }: PageProps) {
-  const { brainId } = await params;
-  const snapshot = await getDashboardSnapshot(brainId);
-  const selectedBrainId = snapshot.selectedBrain.id;
-  const repository = getRepository();
-  const [alerts, syncRuns, connectorConfigs, activePriorities, latestDrift] =
-    await Promise.all([
-      repository.listBrainAlerts({ brainId: selectedBrainId, status: "unread", limit: 5 }),
-      repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 10 }),
-      repository.listConnectorConfigs(selectedBrainId),
-      listBrainPriorities(selectedBrainId, { status: "active", limit: 5 }),
-      getLatestDriftReview(selectedBrainId),
-    ]);
-  const sourceById = new Map(snapshot.sourceItems.map((source) => [source.id, source]));
-  const dashboard = buildDashboardModel({ snapshot, syncRuns, connectorConfigs });
-
-  return (
-    <SectionShell brainId={selectedBrainId} title="Brain Overview" description="Founder command center for source capture, action loops, memory, and agent health.">
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Brain Health" value={dashboard.brainHealth} />
-        <Metric label="Last Source Ingestion" value={formatDate(dashboard.latestOperationalSource?.createdAt)} />
-        <Metric label="New User Sources 24h" value={dashboard.newOperationalSources24h} />
-        <Metric label="Overdue Action Loops" value={dashboard.overdueLoops.length} href={`/brains/${selectedBrainId}/open-loops?filter=overdue`} />
-        <Metric label="Loops To Review" value={dashboard.reviewBacklog.length} href={`/brains/${selectedBrainId}/open-loops?filter=needs_review`} />
-        <Metric label="Due Next 7 Days" value={dashboard.dueSoonLoops.length} href={`/brains/${selectedBrainId}/open-loops?filter=due_soon`} />
-      </div>
-
-      <section className="mt-6 rounded-2xl bg-stone-950 p-5 text-white">
-        <p className="eyebrow text-amber-300">Today&apos;s Operating Read</p>
-        <h2 className="mt-2 text-2xl font-semibold">{dashboard.commandSummary}</h2>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href={`/brains/${selectedBrainId}/sources/new`} className="button bg-white text-stone-950 hover:bg-stone-100">
-            Add Source
-          </Link>
-          <Link href={`/brains/${selectedBrainId}/open-loops`} className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20">
-            Review Open Loops
-          </Link>
-          <Link href={`/brains/${selectedBrainId}/ask`} className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20">
-            Ask Brain
-          </Link>
-          <Link
-            href={`/brains/${selectedBrainId}/priorities`}
-            className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20"
-          >
-            Priorities ({activePriorities.length})
-          </Link>
-          <Link
-            href={`/brains/${selectedBrainId}/drift`}
-            className="button-secondary border-white/20 bg-white/10 text-white hover:bg-white/20"
-          >
-            Drift Review
-          </Link>
-        </div>
-        <div className="mt-5 border-t border-white/10 pt-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/50">Try asking</p>
-          <div className="mt-3 space-y-2">
-            {SUGGESTED_QUESTIONS.map((q) => (
-              <Link
-                key={q}
-                href={`/brains/${selectedBrainId}/ask?q=${encodeURIComponent(q)}`}
-                className="block rounded-xl border border-white/10 px-4 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/5"
-              >
-                {q}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {latestDrift ? <DriftSummaryCard brainId={selectedBrainId} review={latestDrift.review} /> : null}
-
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
-        <Metric label="Failed Sync Runs" value={dashboard.failedSyncs} />
-        <Metric label="Connector Health" value={dashboard.connectorHealth} />
-        <Metric label="Drift Findings" value={dashboard.driftFindings.length} />
-      </div>
-
-      <section className="mt-6 rounded-2xl bg-stone-50 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow text-amber-700">Company Drift Review</p>
-            <h2 className="mt-2 text-2xl font-semibold">{dashboard.driftSummary}</h2>
-            <p className="mt-2 text-sm text-stone-600">
-              Latest stored review: {dashboard.latestDriftReport ? formatDate(dashboard.latestDriftReport.createdAt) : "Never"}
-            </p>
-          </div>
-          <Link href={`/brains/${selectedBrainId}/drift`} className="button">
-            Review Drift
-          </Link>
-        </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {dashboard.driftFindings.map((finding) => (
-            <div key={finding.id} className="rounded-xl bg-white p-4 text-sm">
-              <p className="text-xs uppercase tracking-widest text-stone-400">{finding.severity}</p>
-              <p className="mt-1 font-medium">{finding.title}</p>
-              <p className="mt-1 leading-6 text-stone-600">{finding.description}</p>
-              <p className="mt-3 text-stone-800">
-                <span className="font-medium">Next:</span> {finding.suggestedAction}
-              </p>
-            </div>
-          ))}
-          {dashboard.driftFindings.length === 0 ? (
-            <p className="rounded-xl bg-white p-4 text-sm text-stone-500">No drift findings from current Brain context.</p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="mt-6 rounded-2xl bg-stone-50 p-5">
-        <p className="eyebrow text-amber-700">Daily Brief</p>
-        <h2 className="mt-2 text-2xl font-semibold">{dashboard.latestDailyBrief?.title ?? "No daily brief stored yet"}</h2>
-        <p className="mt-2 whitespace-pre-line leading-7 text-stone-700">
-          {dashboard.latestDailyBrief?.content ?? "The always-on daily-founder-brief job will store the morning brief here after it runs."}
-        </p>
-      </section>
-
-      <section className="mt-6 rounded-2xl bg-stone-50 p-5">
-        <p className="eyebrow text-amber-700">Latest Alerts</p>
-        <div className="mt-4 space-y-2">
-          {alerts.map((alert) => (
-            <div key={alert.id} className="rounded-xl bg-white p-3 text-sm">
-              <p className="font-medium">{alert.title}</p>
-              <p className="mt-1 text-stone-600">{alert.description}</p>
-            </div>
-          ))}
-          {alerts.length === 0 ? <p className="text-sm text-stone-500">No unread alerts.</p> : null}
-        </div>
-      </section>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-3">
-        <FounderActionPanel
-          title="Naveen Actions"
-          loops={dashboard.naveenActions}
-          emptyText="No approved actions assigned to Naveen."
-        />
-        <FounderActionPanel
-          title="PB Actions"
-          loops={dashboard.pbActions}
-          emptyText="No approved actions assigned to PB."
-        />
-        <FounderActionPanel
-          title="Suggested Next Actions"
-          loops={dashboard.suggestedActions}
-          emptyText="No suggested actions yet. Approve or ingest more open loops."
-          showSuggestion
-        />
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-4">
-        <MemoryListPanel
-          title="Risks / Dropped Balls"
-          items={dashboard.risks}
-          emptyText="No risks captured yet."
-        />
-        <MemoryListPanel
-          title="Questions To Resolve"
-          items={dashboard.questions}
-          emptyText="No open strategic questions captured yet."
-        />
-        <MemoryListPanel
-          title="Product / Market Signals"
-          items={dashboard.productInsights}
-          emptyText="No product insights captured yet."
-        />
-        <MemoryListPanel
-          title="Outcome Learnings"
-          items={dashboard.outcomeLearnings}
-          emptyText="No closed-loop outcomes captured yet."
-        />
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <section>
-          <h2 className="text-xl font-semibold">Action Queue</h2>
-          <div className="mt-4 space-y-3">
-            {dashboard.actionQueue.slice(0, 3).map((loop) => (
-              <OpenLoopCard
-                key={loop.id}
-                brainId={selectedBrainId}
-                loop={loop}
-                source={loop.sourceItemId ? sourceById.get(loop.sourceItemId) : undefined}
-                showReviewControls={false}
-              />
-            ))}
-            {dashboard.actionQueue.length === 0 ? <Empty text="No open loops yet." /> : null}
-          </div>
-        </section>
-        <section>
-          <h2 className="text-xl font-semibold">Recent Memory</h2>
-          <div className="mt-4 space-y-3">
-            {snapshot.memoryObjects.slice(0, 4).map((memory) => (
-              <MemoryCard
-                key={memory.id}
-                memory={memory}
-                source={memory.sourceItemId ? sourceById.get(memory.sourceItemId) : undefined}
-                showEvidence={false}
-                showEditControls={false}
-              />
-            ))}
-            {snapshot.memoryObjects.length === 0 ? <Empty text="No memory captured yet." /> : null}
-          </div>
-        </section>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <section>
-          <h2 className="text-xl font-semibold">Recent User Sources</h2>
-          <div className="mt-4 space-y-3">
-            {dashboard.operationalSources.slice(0, 3).map((source) => (
-              <SourceCard key={source.id} source={source} />
-            ))}
-            {dashboard.operationalSources.length === 0 ? <Empty text="No user-ingested sources yet." /> : null}
-          </div>
-        </section>
-        <section>
-          <h2 className="text-xl font-semibold">Recent Agent Runs</h2>
-          <div className="mt-4 space-y-3">
-            {snapshot.agentRuns.slice(0, 3).map((run) => (
-              <AgentRunCard key={run.id} run={run} />
-            ))}
-            {snapshot.agentRuns.length === 0 ? <Empty text="No agent runs yet." /> : null}
-          </div>
-        </section>
-      </div>
-    </SectionShell>
-  );
+function isOverdueLoop(l: import("@arvya/core").OpenLoop): boolean {
+  if (!l.dueDate) return false;
+  return new Date(l.dueDate).getTime() < Date.now();
 }
 
-async function getDashboardSnapshot(brainId: string) {
+function ageDays(iso: string | undefined): number {
+  if (!iso) return 0;
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+function buildSparklinePath(data: number[]): { path: string; fillPath: string; tip: { x: number; y: number } } {
+  const W = 280;
+  const H = 64;
+  const max = Math.max(...data) * 1.15;
+  const min = Math.min(...data) * 0.7;
+  const stepX = W / (data.length - 1);
+  const pts = data.map((v, i): [number, number] => [
+    i * stepX,
+    H - ((v - min) / (max - min)) * H,
+  ]);
+  const path = pts
+    .map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(" ");
+  const fillPath = `${path} L ${W},${H} L 0,${H} Z`;
+  const tipPt = pts[pts.length - 1];
+  return { path, fillPath, tip: { x: tipPt[0], y: tipPt[1] } };
+}
+
+function buildDonutSegments(segments: typeof DONUT_SEGMENTS) {
+  const r = 15.9155;
+  const c = 2 * Math.PI * r;
+  const total = segments.reduce((s, x) => s + x.val, 0);
+  let acc = 0;
+  return segments.map((s) => {
+    const len = (s.val / total) * c;
+    const offset = -acc;
+    acc += len;
+    return { ...s, len, offset, c };
+  });
+}
+
+export default async function DashboardPage({ params }: PageProps) {
+  const { brainId } = await params;
+
+  let snapshot;
   try {
-    return await getBrainSnapshot(brainId);
+    snapshot = await getBrainSnapshot(brainId);
   } catch (error) {
     if (isBrainNotFoundError(error)) notFound();
     throw error;
   }
-}
 
-function Metric({ label, value, href }: { label: string; value: number | string; href?: string }) {
-  const content = (
-    <div className="rounded-2xl bg-stone-50 p-4 transition hover:bg-stone-100">
-      <p className="text-3xl font-semibold">{value}</p>
-      <p className="mt-1 text-xs uppercase tracking-widest text-stone-500">{label}</p>
-    </div>
-  );
-  return href ? <Link href={href}>{content}</Link> : content;
-}
+  const selectedBrainId = snapshot.selectedBrain.id;
+  const latestDrift = await getLatestDriftReview(selectedBrainId);
+  const openLoops = snapshot.openLoops ?? [];
+  const memoryObjects = snapshot.memoryObjects ?? [];
+  const sourceItems = snapshot.sourceItems ?? [];
+  const agentRuns = snapshot.agentRuns ?? [];
 
-function formatDate(value?: string | null) {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
+  const driftSignals = latestDrift?.review.signals ?? [];
+  const driftDisplay =
+    driftSignals.length > 0
+      ? driftSignals.slice(0, 3).map((s) => ({ title: s.summary, body: s.detail }))
+      : PLACEHOLDER_DRIFT_SIGNALS;
 
-function Empty({ text }: { text: string }) {
-  return <p className="rounded-2xl bg-stone-50 p-4 text-sm text-stone-500">{text}</p>;
-}
+  const overdueLoops = openLoops.filter(isOverdueLoop).length;
 
-function FounderActionPanel({
-  title,
-  loops,
-  emptyText,
-  showSuggestion = false,
-}: {
-  title: string;
-  loops: OpenLoop[];
-  emptyText: string;
-  showSuggestion?: boolean;
-}) {
+  const topActions = openLoops.slice(0, 5);
+
+  const spark = buildSparklinePath(SOURCE_SPARK);
+  const donut = buildDonutSegments(DONUT_SEGMENTS);
+
   return (
-    <section className="rounded-2xl bg-stone-50 p-5">
-      <h2 className="text-xl font-semibold">{title}</h2>
-      <div className="mt-4 space-y-3">
-        {loops.map((loop) => (
-          <div key={loop.id} className="rounded-xl bg-white p-3 text-sm">
-            <p className="font-medium">{loop.title}</p>
-            <p className="mt-1 text-stone-600">{showSuggestion ? loop.suggestedAction : loop.description}</p>
-            <p className="mt-2 text-xs uppercase tracking-widest text-stone-400">
-              {loop.priority} · {loop.status}
-              {loop.dueDate ? ` · Due ${formatDate(loop.dueDate)}` : ""}
-            </p>
+    <div>
+      <header className={styles.pageHd}>
+        <div className={styles.eyebrow}>
+          {snapshot.selectedBrain.name ?? "Today"}
+          <span className={styles.eyeDot} />
+          brain online
+        </div>
+        <h1>Good morning.</h1>
+        <p className={styles.lede}>
+          {sourceItems.length} artifacts logged. {memoryObjects.length} memory
+          objects compiled. {openLoops.length} open loops, {overdueLoops} overdue.
+        </p>
+
+        <div className={styles.stats}>
+          <div className={styles.stat}>
+            Sources today
+            <b>
+              {sourceItems.length}
+              <small>+38%</small>
+            </b>
           </div>
-        ))}
-        {loops.length === 0 ? <p className="rounded-xl bg-white p-3 text-sm text-stone-500">{emptyText}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function MemoryListPanel({
-  title,
-  items,
-  emptyText,
-}: {
-  title: string;
-  items: MemoryObject[];
-  emptyText: string;
-}) {
-  return (
-    <section className="rounded-2xl bg-stone-50 p-5">
-      <h2 className="text-xl font-semibold">{title}</h2>
-      <div className="mt-4 space-y-3">
-        {items.map((item) => (
-          <div key={item.id} className="rounded-xl bg-white p-3 text-sm">
-            <p className="font-medium">{item.name}</p>
-            <p className="mt-1 leading-6 text-stone-600">{item.description}</p>
-            {item.sourceQuote ? (
-              <blockquote className="mt-2 border-l-2 border-amber-600 pl-3 text-xs text-stone-500">
-                {item.sourceQuote}
-              </blockquote>
-            ) : null}
+          <div className={styles.stat}>
+            Memory objects
+            <b>{memoryObjects.length.toLocaleString()}</b>
           </div>
-        ))}
-        {items.length === 0 ? <p className="rounded-xl bg-white p-3 text-sm text-stone-500">{emptyText}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-const driftAlignmentBadge: Record<string, string> = {
-  aligned: "bg-emerald-100 text-emerald-900",
-  minor_drift: "bg-amber-100 text-amber-900",
-  major_drift: "bg-red-100 text-red-900",
-};
-
-const driftAlignmentLabel: Record<string, string> = {
-  aligned: "Aligned",
-  minor_drift: "Minor drift",
-  major_drift: "Major drift",
-};
-
-
-function DriftSummaryCard({ brainId, review }: { brainId: string; review: DriftReview }) {
-  const highCount = review.signals.filter((s) => s.severity === "high").length;
-  const mediumCount = review.signals.filter((s) => s.severity === "medium").length;
-  return (
-    <section className="mt-6 rounded-2xl border border-stone-200 bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow text-amber-700">Agent Drift Review</p>
-          <div className="mt-2 flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${
-                driftAlignmentBadge[review.overall_alignment] ?? "bg-stone-100 text-stone-700"
-              }`}
-            >
-              {driftAlignmentLabel[review.overall_alignment] ?? review.overall_alignment}
-            </span>
-            <p className="text-sm text-stone-500">
-              {review.signals.length} signal{review.signals.length === 1 ? "" : "s"}
-              {highCount > 0 ? ` · ${highCount} high` : ""}
-              {mediumCount > 0 ? ` · ${mediumCount} medium` : ""}
-            </p>
+          <div className={styles.stat}>
+            Action items
+            <b>{openLoops.length}</b>
+          </div>
+          <div className={styles.stat}>
+            Brain confidence
+            <b>0.89</b>
           </div>
         </div>
-        <Link href={`/brains/${brainId}/drift`} className="button-secondary text-xs">
-          Open drift review
-        </Link>
+
+        <form action={`/brains/${selectedBrainId}/ask`} className={styles.ask}>
+          <input
+            name="q"
+            placeholder='Ask the brain anything - "what did we promise customers this week?"'
+            className={styles.askInput}
+          />
+          <button type="submit" className={styles.askSend} aria-label="Ask">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </button>
+        </form>
+
+        <div className={styles.quickrail}>
+          {PRESET_PROMPTS.map((q) => (
+            <Link
+              key={q}
+              href={`/brains/${selectedBrainId}/ask?q=${encodeURIComponent(q)}`}
+            >
+              {q}
+            </Link>
+          ))}
+        </div>
+      </header>
+
+      <div className={styles.pulse}>
+        <div>
+          <span className={styles.pulseLab}>Ingesting</span>
+          <span className={`${styles.pulseV} ${styles.pulseVGold}`}>
+            {agentRuns.filter((r) => r.status === "running").length}
+            <i className={styles.pulseVDot} />
+          </span>
+          <span className={styles.pulseSub}>live</span>
+        </div>
+        <div>
+          <span className={styles.pulseLab}>Compiled today</span>
+          <span className={styles.pulseV}>{memoryObjects.length}</span>
+          <span className={styles.pulseSub}>memory objects</span>
+        </div>
+        <div>
+          <span className={styles.pulseLab}>Promises tracked</span>
+          <span className={styles.pulseV}>{openLoops.length}</span>
+          <span className={overdueLoops > 0 ? styles.pulseSubWarn : styles.pulseSub}>
+            {overdueLoops} overdue
+          </span>
+        </div>
+        <div>
+          <span className={styles.pulseLab}>Last dream cycle</span>
+          <span className={styles.pulseV}>4h ago</span>
+          <span className={styles.pulseSub}>+12 new edges</span>
+        </div>
       </div>
-      <p className="mt-3 leading-7 text-stone-700">{review.summary_for_founders}</p>
-      <p className="mt-2 text-xs text-stone-400">
-        Generated {new Date(review.generated_at).toLocaleString()}
-      </p>
-    </section>
+
+      <div className={styles.dashGrid}>
+        <div>
+          <div className={styles.card}>
+            <div className={styles.cardHead}>
+              <h3>Today&apos;s meetings</h3>
+              <span className={styles.cardMeta}>
+                {PLACEHOLDER_MEETINGS.length} - 2 with auto-join
+              </span>
+            </div>
+            <div className={styles.cardBody}>
+              {PLACEHOLDER_MEETINGS.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: "10px 0",
+                    borderTop: i === 0 ? "0" : "1px solid var(--cream-200)",
+                  }}
+                >
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                    {m.title}
+                    {m.live && (
+                      <span
+                        style={{
+                          color: "var(--arvya-gold-700)",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11,
+                          marginLeft: 6,
+                        }}
+                      >
+                        Now
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "var(--text-tertiary)",
+                      fontFamily: "var(--font-mono)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {m.when} - {m.sub}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.driftCard}>
+            <div className={styles.driftCardHead}>
+              <span className={styles.eyebrow}>
+                Drift detected - {driftDisplay.length} signals
+              </span>
+              <Link
+                href={`/brains/${selectedBrainId}/drift`}
+                className={styles.eyebrow}
+                style={{ textDecoration: "underline", textUnderlineOffset: 3 }}
+              >
+                Open drift review
+              </Link>
+            </div>
+            {driftDisplay.map((s, i) => (
+              <div key={i} className={styles.driftSig}>
+                <span className="ic">+</span>
+                <div className="body">
+                  <b>{s.title}</b> {s.body}
+                </div>
+                <span className="review">Review</span>
+              </div>
+            ))}
+          </div>
+
+          <div className={`${styles.card} ${styles.actionList}`}>
+            <div className={styles.cardHead}>
+              <h3>Action items</h3>
+              <span className={styles.cardMeta}>
+                {Math.min(topActions.length, 5)} of {openLoops.length} - brain-ranked
+              </span>
+            </div>
+            {topActions.length === 0 ? (
+              <div
+                style={{
+                  padding: "32px 20px",
+                  textAlign: "center",
+                  fontSize: 13,
+                  color: "var(--text-tertiary)",
+                }}
+              >
+                No open action items. The brain logs new ones as it reads sources.
+              </div>
+            ) : (
+              topActions.map((loop) => {
+                const age = ageDays(loop.dueDate ?? loop.createdAt);
+                const old = age >= 3;
+                return (
+                  <div key={loop.id} className="row">
+                    <span className="ck" />
+                    <div>
+                      <div className="t">{loop.title || loop.description || "Untitled action"}</div>
+                      {loop.owner ? (
+                        <div className="meta">
+                          <span className="who">{loop.owner.toUpperCase()}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className={`age ${old ? "old" : ""}`}>
+                      {age <= 0 ? "today" : `${age}d`}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className={styles.chartCard}>
+            <div className={styles.chartHd}>
+              <h4>Sources ingested</h4>
+              <span className="meta">Last 14 days</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+              <span className="stat">{SOURCE_SPARK[SOURCE_SPARK.length - 1]}</span>
+              <small
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--arvya-status-active)",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                +38% vs last week
+              </small>
+            </div>
+            <div className={styles.spark}>
+              <svg viewBox="0 0 280 64" preserveAspectRatio="none" aria-hidden>
+                <defs>
+                  <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#D89A3F" stopOpacity="0.24" />
+                    <stop offset="100%" stopColor="#D89A3F" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={spark.fillPath} fill="url(#sparkFill)" />
+                <path
+                  d={spark.path}
+                  fill="none"
+                  stroke="#0E1726"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle
+                  cx={spark.tip.x.toFixed(1)}
+                  cy={spark.tip.y.toFixed(1)}
+                  r="3.5"
+                  fill="#D89A3F"
+                  stroke="#fff"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            </div>
+            <div className={styles.legend}>
+              <span className="it">
+                <span className="sw" style={{ background: "#0E1726" }} />
+                Today
+              </span>
+              <span className="it">
+                <span className="sw" style={{ background: "var(--cream-300)" }} />
+                14-day avg
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.chartCard}>
+            <div className={styles.chartHd}>
+              <h4>Compile confidence</h4>
+              <span className="meta">By domain</span>
+            </div>
+            <div className={styles.donutWrap}>
+              <div className={styles.donut}>
+                <svg viewBox="0 0 36 36" aria-hidden>
+                  <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#F5F1EB" strokeWidth="3.4" />
+                  {donut.map((s) => (
+                    <circle
+                      key={s.lab}
+                      cx="18"
+                      cy="18"
+                      r="15.9155"
+                      fill="none"
+                      stroke={s.color}
+                      strokeWidth="3.4"
+                      strokeDasharray={`${s.len} ${s.c - s.len}`}
+                      strokeDashoffset={s.offset}
+                    />
+                  ))}
+                </svg>
+                <div className={styles.ctr}>
+                  <div>
+                    <b>0.89</b>
+                    <small>brain</small>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.donutLegend}>
+                {DONUT_SEGMENTS.map((s) => (
+                  <div key={s.lab} className="it">
+                    <span className="sw" style={{ background: s.color }} />
+                    <span>{s.lab}</span>
+                    <span className="v">{s.val.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.chartCard}>
+            <div className={styles.chartHd}>
+              <h4>Promises by status</h4>
+              <span className="meta">{PROMISE_BARS.reduce((s, b) => s + b.val, 0)} tracked</span>
+            </div>
+            <div className={styles.bars}>
+              {PROMISE_BARS.map((b) => (
+                <div key={b.lab} className="bar">
+                  <span className="lab">{b.lab}</span>
+                  <span className="tr">
+                    <span
+                      className={`fl ${b.kind}`}
+                      style={{ width: `${((b.val / b.total) * 100).toFixed(1)}%` }}
+                    />
+                  </span>
+                  <span className="v">{b.val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`${styles.card} ${styles.live}`} style={{ marginBottom: 0 }}>
+            <div className={styles.cardHead}>
+              <h3>Brain - live</h3>
+              <span
+                className={styles.cardMeta}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "#2ECC7A",
+                    display: "inline-block",
+                  }}
+                />
+                watching
+              </span>
+            </div>
+            {LIVE_STREAM.map((ev, i) => (
+              <div key={i} className="row">
+                <span className={`ic ${ev.state === "run" ? "icRun" : ""}`}>
+                  {ev.state === "ok" ? "+" : null}
+                </span>
+                <span>
+                  <span className="nm">{ev.name}</span>
+                  <span className="arg">{ev.arg}</span>
+                </span>
+                <span className={`st ${ev.state === "run" ? "stRun" : ""}`}>
+                  {ev.state === "run" ? "running" : ev.t}
+                </span>
+              </div>
+            ))}
+            <div className={styles.liveFoot}>
+              <span>
+                {agentRuns.length} runs today - {agentRuns.filter((r) => r.status === "failed").length} failed
+              </span>
+              <Link href={`/brains/${selectedBrainId}/agent-runs`}>All runs</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
