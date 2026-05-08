@@ -1,0 +1,85 @@
+/* Topbar - 1:1 port of docs/prototype/assets/app.css .topbar / .crumbs / .ask. */
+
+.topbar {
+  height: 60px;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--cream-50);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.crumbs {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.crumbs .sep {
+  color: var(--cream-400);
+}
+.crumbs .here {
+  color: var(--arvya-gold-700);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: #fff;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  width: 280px;
+  text-decoration: none;
+}
+.ask svg {
+  width: 14px;
+  height: 14px;
+}
+.ask kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--cream-200);
+  border: 1px solid var(--cream-300);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.icBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: #fff;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.icBtn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
+}

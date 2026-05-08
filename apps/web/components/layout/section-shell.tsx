@@ -1,9 +1,12 @@
-import Link from "next/link";
-import { BrainNav } from "@/components/brain/brain-nav";
-import { selectedBrainOrDefault } from "@/lib/brain/store";
+// Thin pass-through. The brain layout (apps/web/app/brains/[brainId]/
+// layout.tsx) now provides the sidebar + topbar shell, so legacy pages
+// that still import SectionShell just need their inner content to render
+// without re-mounting another shell.
+//
+// Renders: eyebrow, h1 title, sub-paragraph description, then children -
+// no main element, no nav, no Back home button.
 
 export async function SectionShell({
-  brainId,
   title,
   description,
   children,
@@ -13,24 +16,52 @@ export async function SectionShell({
   description: string;
   children?: React.ReactNode;
 }) {
-  const { selectedBrain } = await selectedBrainOrDefault(brainId);
-
   return (
-    <main className="min-h-screen bg-[#f6f2ea] px-6 py-8 text-stone-950">
-      <div className="mx-auto max-w-7xl">
-        <Link href="/" className="button-secondary">
-          Back home
-        </Link>
-        <div className="mt-6 grid gap-6 lg:grid-cols-[260px_1fr]">
-          <BrainNav brain={selectedBrain} />
-          <section className="card">
-            <p className="eyebrow text-amber-700">Brain Workspace</p>
-            <h1 className="mt-2 text-3xl font-semibold">{title}</h1>
-            <p className="mt-2 max-w-3xl leading-7 text-stone-600">{description}</p>
-            <div className="mt-6">{children}</div>
-          </section>
-        </div>
-      </div>
-    </main>
+    <div>
+      <header
+        style={{
+          paddingBottom: 22,
+          marginBottom: 28,
+          borderBottom: "1px solid var(--border-subtle)",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: "var(--arvya-gold-700)",
+          }}
+        >
+          Brain workspace
+        </span>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontWeight: 500,
+            fontSize: 36,
+            letterSpacing: "-0.015em",
+            lineHeight: 1.05,
+            margin: "8px 0 6px",
+            color: "var(--text-primary)",
+          }}
+        >
+          {title}
+        </h1>
+        <p
+          style={{
+            fontSize: 14,
+            color: "var(--text-secondary)",
+            lineHeight: 1.55,
+            maxWidth: "62ch",
+            margin: 0,
+          }}
+        >
+          {description}
+        </p>
+      </header>
+      <div>{children}</div>
+    </div>
   );
 }

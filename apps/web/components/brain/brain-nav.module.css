@@ -1,0 +1,195 @@
+/* Dark-navy sidebar - 1:1 port of docs/prototype/assets/app.css and shell.js
+ * sidebar markup. */
+
+.sidebar {
+  background: var(--arvya-dark-900);
+  color: var(--cream-200);
+  padding: 22px 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 232px;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 22px;
+}
+.brand .mk {
+  width: 26px;
+  height: 26px;
+}
+.brand .wm {
+  height: 15px;
+  display: block;
+  filter: invert(1) brightness(1.02);
+}
+
+.brainSwitcher {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.brainSwitcher:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.brainSwitcher .badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--arvya-gold);
+  color: var(--arvya-dark-900);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 14px;
+}
+.brainSwitcher .nm {
+  color: var(--cream-50);
+  font-size: 13px;
+  font-weight: 500;
+}
+.brainSwitcher .rl {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+.brainSwitcher .chev {
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: auto;
+}
+
+.groupLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 14px 10px 6px;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--cream-300);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+}
+.navLink svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
+  flex-shrink: 0;
+}
+.navLink:hover {
+  color: var(--cream-50);
+  background: rgba(255, 255, 255, 0.04);
+}
+.navLinkActive {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cream-50);
+}
+.navLink .count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+}
+.navLinkActive .count {
+  color: var(--arvya-gold);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.sideFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+}
+.footLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--cream-300);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.footLink svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.footLink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cream-50);
+}
+
+.me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+}
+.me .av {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cream-300);
+  color: var(--arvya-dark-900);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 11px;
+}
+.me .nm {
+  font-size: 12px;
+  color: var(--cream-50);
+  font-weight: 500;
+}
+.me .rl {
+  font-size: 10px;
+  color: var(--cream-300);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}

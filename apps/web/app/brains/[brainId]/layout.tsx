@@ -1,20 +1,17 @@
 import { notFound } from "next/navigation";
 import { BrainNav } from "@/components/brain/brain-nav";
+import { Topbar } from "@/components/brain/topbar";
+import { getAuthUser } from "@/lib/auth/session";
 import {
+  getBrainSnapshot,
   isBrainNotFoundError,
-  selectedBrainOrDefault,
 } from "@/lib/brain/store";
+import shell from "@/components/brain/shell.module.css";
 
-// Brain shell: every /brains/[brainId]/<page> renders inside this layout so
-// it shares one BrainNav sidebar and one resolved brain snapshot. The
-// nested page is the right column.
-//
-// This file was missing from git history (uncommitted local-only work).
-// Without it every page under /brains/[brainId]/ rendered naked - no nav,
-// no shell. Discovered while running pnpm dev to QA the new prototype-
-// matched pages (PRs #5-#17). Phase 5.2 of frontend-rewrite.md replaces
-// BrainNav with the prototype's dark-navy sidebar; this PR ships the
-// minimum-viable shell so pages aren't naked in the meantime.
+// Brain shell - prototype-matched dark-navy sidebar + sticky topbar
+// (Phase 5.2). All /brains/[brainId]/<page> routes render inside this
+// layout. Counts in the sidebar derive from a single getBrainSnapshot
+// call so each page-rewrite stays clean.
 
 type LayoutProps = {
   children: React.ReactNode;
@@ -23,19 +20,35 @@ type LayoutProps = {
 
 export default async function BrainLayout({ children, params }: LayoutProps) {
   const { brainId } = await params;
-  let brain;
+
+  let snapshot;
   try {
-    const snapshot = await selectedBrainOrDefault(brainId);
-    brain = snapshot.selectedBrain;
+    snapshot = await getBrainSnapshot(brainId);
   } catch (error) {
     if (isBrainNotFoundError(error)) notFound();
     throw error;
   }
 
+  const me = await getAuthUser();
+  const meName = me?.email?.split("@")[0] ?? "You";
+  const meRole = "Founder";
+
+  const brain = snapshot.selectedBrain;
+  const counts = {
+    loops: snapshot.openLoops?.length ?? 0,
+    sources: snapshot.sourceItems?.length ?? 0,
+  };
+
   return (
-    <div className="min-h-screen grid grid-cols-[260px_1fr] bg-[var(--cream-100)]">
-      <BrainNav brain={brain} />
-      <main className="min-w-0">{children}</main>
+    <div className={shell.app}>
+      <BrainNav brain={brain} meName={meName} meRole={meRole} counts={counts} />
+      <main className={shell.main}>
+        <Topbar
+          brainId={brain.id}
+          crumbs={[{ label: brain.name }, { label: "Today" }]}
+        />
+        <div className={shell.content}>{children}</div>
+      </main>
     </div>
   );
 }
