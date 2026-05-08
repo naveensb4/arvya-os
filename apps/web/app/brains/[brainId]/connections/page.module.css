@@ -1,0 +1,242 @@
+/* Connectors page - 1:1 port of docs/prototype/Connectors.html <style> block.
+ * Prototype is the visual source of truth; if it changes, mirror here. */
+
+.heroHead {
+  padding: 8px 0 24px;
+  border-bottom: 1px solid var(--cream-200);
+}
+.heroHead h1 {
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-family: var(--font-serif);
+  margin: 8px 0 0;
+  color: var(--text-primary);
+}
+.heroHead p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 8px 0 0;
+  max-width: 64ch;
+  line-height: 1.5;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--arvya-gold-700);
+}
+
+.summary {
+  background: var(--cream-100);
+  border: 1px solid var(--cream-300);
+  border-radius: 12px;
+  padding: 14px 22px;
+  margin: 36px 0 24px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.summary b {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.summary .grow {
+  flex: 1;
+}
+.summary .search {
+  height: 34px;
+  padding: 0 14px;
+  background: #fff;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.groupLab {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 28px 0 12px;
+}
+
+.igGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.ig {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition:
+    border-color 0.14s,
+    transform 0.14s,
+    box-shadow 0.14s;
+  cursor: pointer;
+}
+.ig:hover {
+  transform: translateY(-1px);
+  border-color: var(--cream-400);
+  box-shadow: var(--shadow-xs);
+}
+.ig .lg {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.ig .lg img,
+.ig .lg svg {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.igArvya {
+  background: var(--arvya-dark-900);
+  border-color: var(--arvya-dark-900);
+}
+.igArvya .nm {
+  color: var(--cream-50);
+}
+.igArvya .ac {
+  color: var(--arvya-gold);
+}
+.igArvya .pillLive {
+  color: #0e1726;
+  background: var(--arvya-gold);
+}
+.igArvya .pillLive .dot {
+  background: #0e1726;
+}
+.ig .nmBlock {
+  flex: 1;
+}
+.ig .nm {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.ig .ac {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+
+.pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pill .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.pillLive {
+  color: #2a6f45;
+  background: #ddefe2;
+}
+.pillLive .dot {
+  background: #2ecc7a;
+}
+.pillWarn {
+  color: #a83c3c;
+  background: #f9dcdc;
+}
+.pillWarn .dot {
+  background: #c75050;
+}
+
+.privacy {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 22px 26px;
+  margin-top: 36px;
+}
+.privacy h3 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 17px;
+  margin: 0 0 14px;
+  letter-spacing: -0.005em;
+}
+.privacy .row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--cream-200);
+  align-items: center;
+}
+.privacy .row:first-of-type {
+  border-top: 0;
+  padding-top: 4px;
+}
+.privacy .row .lab {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.privacy .row .lab .desc {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.toggle {
+  width: 36px;
+  height: 20px;
+  background: var(--cream-300);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  border: 0;
+  padding: 0;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.toggleOn {
+  background: var(--arvya-dark-900);
+}
+.toggleOn::after {
+  left: 18px;
+}
