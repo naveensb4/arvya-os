@@ -30,7 +30,7 @@ type ActionPerson = {
   items: ActionItem[];
 };
 
-type Promise = {
+type BriefPromise = {
   what: string;
   to: string;
   who: string;
@@ -59,7 +59,7 @@ type DailyBrief = {
   today_intro: { eyebrow: string; title: string };
   today: ActionPerson[];
   promises_intro: { eyebrow: string; title: string; copy: string };
-  promises: Promise[];
+  promises: BriefPromise[];
   questions_intro: { eyebrow: string; title: string; copy: string };
   questions_inner_title: string;
   questions_inner_intro: string;
