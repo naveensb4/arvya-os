@@ -1,355 +1,351 @@
-"use client";
+import styles from "./page.module.css";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { createOnboardingBrain, getOnboardingState } from "./actions";
+// TODO: this onboarding flow currently renders only Step 3 of 5 (the
+// connector picker) per the prototype handoff. Steps 1, 2, 4, 5 will be
+// added as their own routes/pages or via a single-route stepper. The data
+// shape (steps, connectors, defaults) is intentionally typed so that
+// stepping through them is straightforward when the wider flow lands.
 
-const CONSULTING_SUGGESTED_QUESTIONS = [
-  "What did we promise the client in our last call?",
-  "Which projects have upcoming deadlines this week?",
-  "Summarize the latest emails from our top 3 clients",
-  "What commitments are overdue across all engagements?",
-  "Who are the key contacts we've been communicating with?",
+type StepStatus = "done" | "on" | "pending";
+type Step = {
+  num: number;
+  label: string;
+  desc: string;
+  status: StepStatus;
+};
+
+type Connector = {
+  id: string;
+  name: string;
+  desc: string;
+  on: boolean;
+  beta?: boolean;
+  initial: string;
+  variant:
+    | "gmail"
+    | "cal"
+    | "zoom"
+    | "gh"
+    | "notion"
+    | "slack";
+};
+
+type DefaultRule = {
+  id: string;
+  title: string;
+  body: string;
+  on: boolean;
+  icon: React.ReactNode;
+};
+
+type SamplePrompt = {
+  question: string;
+  body: string;
+  meta: string;
+};
+
+const placeholderSteps: Step[] = [
+  {
+    num: 1,
+    label: "Who you are",
+    desc: "NAVEEN - ARVYA CO.",
+    status: "done",
+  },
+  {
+    num: 2,
+    label: "What this brain is for",
+    desc: "FOUNDER / CEO BRAIN",
+    status: "done",
+  },
+  {
+    num: 3,
+    label: "Connect your sources",
+    desc: "3 OF 6 PICKED",
+    status: "on",
+  },
+  {
+    num: 4,
+    label: "Set boundaries",
+    desc: "PRIVATE LABELS - SCOPES",
+    status: "pending",
+  },
+  {
+    num: 5,
+    label: "First brief",
+    desc: "ARVYA READS - YOU REVIEW",
+    status: "pending",
+  },
 ];
 
-type Step = "create" | "connect" | "progress";
+const placeholderConnectors: Connector[] = [
+  { id: "gmail", name: "Gmail", desc: "last 90 days - 840 emails", on: true, initial: "@", variant: "gmail" },
+  { id: "gcal", name: "Google Calendar", desc: "142 mtgs - 90 days back", on: true, initial: "C", variant: "cal" },
+  { id: "zoom", name: "Zoom transcripts", desc: "87 calls - auto transcribe", on: true, initial: "Z", variant: "zoom" },
+  { id: "github", name: "GitHub", desc: "PR + issue text - never code", on: false, initial: "GH", variant: "gh" },
+  { id: "notion", name: "Notion", desc: "pick top-level pages", on: false, initial: "N", variant: "notion" },
+  { id: "slack", name: "Slack", desc: "3 channels max - DMs off", on: false, beta: true, initial: "#", variant: "slack" },
+];
+
+const placeholderDefaults: DefaultRule[] = [
+  {
+    id: "personal_label",
+    title: "Honor the personal label",
+    body: "Anything labelled personal in Gmail or marked private in Calendar is invisible to the brain. Even you cannot search through Arvya for it.",
+    on: true,
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        aria-hidden
+      >
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    ),
+  },
+  {
+    id: "read_only",
+    title: "Read-only by default",
+    body: "Arvya can compose drafts and surface answers, but never sends, schedules, or edits without your explicit approval. Each connector has its own write toggle.",
+    on: true,
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        aria-hidden
+      >
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    ),
+  },
+  {
+    id: "forget_on_disconnect",
+    title: "Forget on disconnect (30 day grace)",
+    body: "Disconnect a source - Gmail, Slack, anything - and every memory derived from it expires within 30 days. Force purge anytime in Connectors.",
+    on: true,
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        aria-hidden
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+      </svg>
+    ),
+  },
+];
+
+const placeholderSamples: SamplePrompt[] = [
+  {
+    question: "What did Roelof actually want last time?",
+    body: "Searches every email plus transcript with him. Cites the exact sentence, reads context.",
+    meta: "answer in under 2s - 23 sources",
+  },
+  {
+    question: "Who do we owe a reply to this week?",
+    body: "Walks open loops, ranks by behavioral signal plus age, drafts replies.",
+    meta: "answer in under 2s - 14 loops",
+  },
+  {
+    question: "What did I promise the board?",
+    body: "Pulls every commitment from the last 4 board updates. Marks late ones.",
+    meta: "answer in under 2s - 4 docs",
+  },
+  {
+    question: "Have we drifted from strategy?",
+    body: "Compares stated priorities to actual time. Surfaces patterns weekly.",
+    meta: "answer Sunday morning",
+  },
+];
+
+const variantClass = (v: Connector["variant"]) => {
+  if (v === "gmail") return styles.lgGmail;
+  if (v === "cal") return styles.lgCal;
+  if (v === "zoom") return styles.lgZoom;
+  if (v === "gh") return styles.lgGh;
+  if (v === "notion") return styles.lgNotion;
+  return styles.lgSlack;
+};
+
+const stepClass = (s: StepStatus) => {
+  if (s === "done") return `${styles.step} ${styles.stepDone}`;
+  if (s === "on") return `${styles.step} ${styles.stepOn}`;
+  return styles.step;
+};
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const [step, setStep] = useState<Step>("create");
-  const [brainId, setBrainId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getOnboardingState().then((state) => {
-      if (state.step === "auth") {
-        router.push("/signup");
-        return;
-      }
-      setStep(state.step);
-      setBrainId(state.brainId);
-      setLoading(false);
-    });
-  }, [router]);
-
-  if (loading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f6f2ea]">
-        <p className="text-sm text-stone-500">Loading...</p>
-      </main>
-    );
-  }
+  const connectedCount = placeholderConnectors.filter((c) => c.on).length;
 
   return (
-    <main className="min-h-screen bg-[#f6f2ea] px-6 py-8 text-stone-950">
-      <div className="mx-auto max-w-2xl">
-        <p className="eyebrow text-amber-700">Arvya OS</p>
-        <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-          {step === "create" && "Create your Brain"}
-          {step === "connect" && "Connect your sources"}
-          {step === "progress" && "Your Brain is learning"}
-        </h1>
-        <p className="mt-2 text-sm text-stone-600">
-          {step === "create" && "Give your Brain a name. It will learn from everything you connect."}
-          {step === "connect" && "Connect Google Workspace and Slack. Your Brain starts learning immediately."}
-          {step === "progress" && "Sources are being ingested. You can start asking questions."}
+    <div className={styles.stage}>
+      <aside className={styles.rail}>
+        <div className={styles.brand}>
+          <span className={styles.brandMk}>A</span>
+          <span className={styles.brandWord}>ARVYA</span>
+        </div>
+        <h1>Let&apos;s give your brain something to remember.</h1>
+        <p className={styles.lede}>
+          4 minutes. You will point Arvya at a few sources, set a couple of
+          boundaries, and watch it start composing what it knows.
         </p>
 
-        <StepIndicator current={step} />
-
-        {error && (
-          <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+        {placeholderSteps.map((s) => (
+          <div key={s.num} className={stepClass(s.status)}>
+            <span className={styles.stepN}>
+              {s.status === "done" ? "✓" : s.num}
+            </span>
+            <div>
+              <div
+                className={`${styles.stepTtl} ${s.status === "pending" ? styles.stepTtlDim : ""}`}
+              >
+                {s.label}
+              </div>
+              <div className={styles.stepDesc}>{s.desc}</div>
+            </div>
           </div>
-        )}
+        ))}
 
-        {step === "create" && (
-          <CreateStep
-            onCreated={(id) => {
-              setBrainId(id);
-              setStep("connect");
-            }}
-            onError={setError}
-          />
-        )}
-        {step === "connect" && brainId && (
-          <ConnectStep brainId={brainId} onDone={() => setStep("progress")} />
-        )}
-        {step === "progress" && brainId && (
-          <ProgressStep brainId={brainId} />
-        )}
-      </div>
-    </main>
-  );
-}
-
-function StepIndicator({ current }: { current: Step }) {
-  const steps: { key: Step; label: string }[] = [
-    { key: "create", label: "Create Brain" },
-    { key: "connect", label: "Connect Sources" },
-    { key: "progress", label: "Brain Learning" },
-  ];
-  const currentIndex = steps.findIndex((s) => s.key === current);
-
-  return (
-    <div className="mt-6 flex gap-2">
-      {steps.map((s, i) => (
-        <div key={s.key} className="flex-1">
-          <div
-            className={`h-1 rounded-full transition ${
-              i <= currentIndex ? "bg-stone-950" : "bg-stone-200"
-            }`}
-          />
-          <p
-            className={`mt-2 text-xs font-medium ${
-              i <= currentIndex ? "text-stone-950" : "text-stone-400"
-            }`}
-          >
-            {s.label}
-          </p>
+        <div className={styles.railFoot}>
+          SOC 2 TYPE II - IN PROGRESS - NO TRAINING ON YOUR DATA
         </div>
-      ))}
-    </div>
-  );
-}
+      </aside>
 
-function CreateStep({
-  onCreated,
-  onError,
-}: {
-  onCreated: (brainId: string) => void;
-  onError: (err: string) => void;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSubmitting(true);
-    onError("");
-
-    const formData = new FormData(e.currentTarget);
-    try {
-      const result = await createOnboardingBrain(formData);
-      onCreated(result.brainId);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Failed to create Brain");
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="card mt-6 space-y-4">
-      <div>
-        <label htmlFor="brain-name" className="mb-1 block text-sm font-medium text-stone-700">
-          Brain name
-        </label>
-        <input
-          id="brain-name"
-          name="name"
-          className="field"
-          placeholder="Acme Consulting"
-          required
-        />
-      </div>
-      <div>
-        <label htmlFor="brain-kind" className="mb-1 block text-sm font-medium text-stone-700">
-          Template
-        </label>
-        <select id="brain-kind" name="kind" className="field" defaultValue="company">
-          <option value="company">Company Brain (Consulting)</option>
-          <option value="sell_side">Sell-Side Deal Brain</option>
-          <option value="buy_side">Buy-Side / PE Deal Brain</option>
-        </select>
-      </div>
-      <input type="hidden" name="thesis" value="" />
-      <button type="submit" disabled={submitting} className="button w-full">
-        {submitting ? "Creating Brain..." : "Create Brain"}
-      </button>
-    </form>
-  );
-}
-
-function ConnectStep({ brainId, onDone }: { brainId: string; onDone: () => void }) {
-  const [googleConnected, setGoogleConnected] = useState(false);
-  const [slackConnected, setSlackConnected] = useState(false);
-
-  useEffect(() => {
-    async function checkConnections() {
-      try {
-        const res = await fetch(`/api/brains/${brainId}/stats`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.connectorsActive > 0) {
-            setGoogleConnected(true);
-            onDone();
-          }
-        }
-      } catch {
-        // ignore — will retry on user action
-      }
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("connected") === "google") {
-      setGoogleConnected(true);
-    }
-    if (params.get("connected") === "slack") {
-      setSlackConnected(true);
-    }
-
-    checkConnections();
-  }, [brainId, onDone]);
-
-  return (
-    <div className="mt-6 space-y-4">
-      <div className="card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white">
-            <GoogleLogo />
-          </div>
-          <div>
-            <p className="font-semibold">Google Workspace</p>
-            <p className="text-sm text-stone-600">Gmail, Calendar, and Drive in one click</p>
-          </div>
-        </div>
-        {googleConnected ? (
-          <span className="text-sm font-medium text-stone-500">Connected</span>
-        ) : (
-          <a
-            href={`/api/connectors/google/auth/start?brainId=${encodeURIComponent(brainId)}&return=${encodeURIComponent("/onboarding?connected=google")}`}
-            className="button shrink-0"
-          >
-            Connect Google
-          </a>
-        )}
-      </div>
-
-      <div className="card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white">
-            <SlackLogo />
-          </div>
-          <div>
-            <p className="font-semibold">Slack</p>
-            <p className="text-sm text-stone-600">Read channels and answer questions when mentioned</p>
-          </div>
-        </div>
-        {slackConnected ? (
-          <span className="text-sm font-medium text-stone-500">Connected</span>
-        ) : (
-          <a
-            href={`/api/connectors/slack/auth/start?brainId=${encodeURIComponent(brainId)}&return=${encodeURIComponent("/onboarding?connected=slack")}`}
-            className="button shrink-0"
-          >
-            Connect Slack
-          </a>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-stone-500">You can connect more sources later from Settings.</p>
-        <button onClick={onDone} className="button-secondary">
-          {googleConnected || slackConnected ? "Continue" : "Skip for now"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ProgressStep({ brainId }: { brainId: string }) {
-  const router = useRouter();
-  const [stats, setStats] = useState({ sourcesIngested: 0, memoriesExtracted: 0, connectorsActive: 0 });
-
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/brains/${brainId}/stats`);
-      if (res.ok) setStats(await res.json());
-    } catch {
-      // silent retry
-    }
-  }, [brainId]);
-
-  useEffect(() => {
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
-  }, [poll]);
-
-  return (
-    <div className="mt-6 space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <AnimatedCounter label="Sources ingested" value={stats.sourcesIngested} />
-        <AnimatedCounter label="Memories extracted" value={stats.memoriesExtracted} />
-        <AnimatedCounter label="Connectors active" value={stats.connectorsActive} />
-      </div>
-
-      <div className="card">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-          Try asking your Brain
+      <div className={styles.screen}>
+        <div className={styles.eyebrow}>STEP 3 / 5 - The capture layer</div>
+        <h2>Pick the sources Arvya can read.</h2>
+        <p className={styles.lede}>
+          A brain is only as smart as what it sees. Connect anything that
+          holds memory worth keeping - work email, calendar, calls, code,
+          docs. The more you connect, the better your brain composes.{" "}
+          <b>Disconnect any time and it forgets within 30 days.</b>
         </p>
-        <div className="mt-4 space-y-2">
-          {CONSULTING_SUGGESTED_QUESTIONS.map((q) => (
-            <a
-              key={q}
-              href={`/brains/${brainId}/ask?q=${encodeURIComponent(q)}`}
-              className="block rounded-2xl border border-stone-200 px-4 py-3 text-sm transition hover:border-stone-950 hover:bg-stone-50"
+
+        <div className={styles.brainStat}>
+          <div>
+            <div className={styles.brainStatTtl}>Your brain is forming.</div>
+            <div className={styles.brainStatStats}>
+              <span>
+                <b>{connectedCount} sources</b> connected -{" "}
+                <b>1,240 sources</b> queued - est. <b>4 min</b> to first brief
+              </span>
+              <br />
+              <span>
+                <b>0 entities</b> resolved yet - waiting for first ingest
+              </span>
+            </div>
+            <div className={styles.progress}>
+              <div className={styles.progressFill} />
+            </div>
+          </div>
+          <div className={styles.ring}>
+            <span>76%</span>
+          </div>
+        </div>
+
+        <div className={styles.connGrid}>
+          {placeholderConnectors.map((c) => (
+            <div
+              key={c.id}
+              className={`${styles.conn} ${c.on ? styles.connOn : ""}`}
             >
-              {q}
-            </a>
+              <div className={`${styles.connLg} ${variantClass(c.variant)}`}>
+                {c.initial}
+              </div>
+              <div>
+                <div className={styles.connNm}>
+                  {c.name}
+                  {c.beta && <span className={styles.connBeta}>BETA</span>}
+                </div>
+                <div className={styles.connDesc}>{c.desc}</div>
+              </div>
+              <div className={styles.check}>{c.on ? "✓" : ""}</div>
+            </div>
           ))}
         </div>
+
+        <div className={styles.skipRow}>
+          {[
+            "+ Linear",
+            "+ Drive",
+            "+ Stripe",
+            "+ Vanta",
+            "+ Voice memos - iOS",
+            "+ Custom webhook",
+            "+ 12 more",
+          ].map((label) => (
+            <span key={label}>{label}</span>
+          ))}
+        </div>
+
+        <div className={styles.privacyNote}>
+          <span className={styles.privacyNoteIc}>!</span>
+          <div>
+            <b>What Arvya never reads, even if you give scope.</b>
+            <br />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "11.5px", letterSpacing: "0.04em" }}>
+              Source code (GitHub) - email/calendar marked personal - Slack DMs unless you opt in - anything in a Vanta-restricted folder - the body of files in disconnected sources after 30 days.
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.askBox}>
+          <h4>Defaults Arvya will apply</h4>
+          {placeholderDefaults.map((rule) => (
+            <div key={rule.id} className={styles.toggleRule}>
+              <div className={styles.icBox}>{rule.icon}</div>
+              <div>
+                <h5>{rule.title}</h5>
+                <p>{rule.body}</p>
+              </div>
+              <div
+                className={`${styles.toggle} ${rule.on ? styles.toggleOn : ""}`}
+                aria-label={`${rule.title}: on`}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 32 }}>
+          <h4 className={styles.upcomingHead}>
+            Once you connect, you can ask the brain things like
+          </h4>
+          <div className={styles.preCards}>
+            {placeholderSamples.map((s) => (
+              <div key={s.question} className={styles.preCard}>
+                <h5>&ldquo;{s.question}&rdquo;</h5>
+                <p>{s.body}</p>
+                <div className={styles.meta}>{s.meta}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.ctas}>
+          <button type="button" className={`${styles.btn} ${styles.btnGhost}`}>
+            Back
+          </button>
+          <button type="button" className={`${styles.btn} ${styles.btnGold}`}>
+            Continue - {connectedCount} connected
+          </button>
+          <button type="button" className={`${styles.btn} ${styles.btnGhost}`}>
+            Skip - I will connect later
+          </button>
+          <span className={styles.stepLab}>STEP 3 OF 5</span>
+        </div>
       </div>
-
-      <button
-        onClick={() => router.push(`/brains/${brainId}`)}
-        className="button w-full"
-      >
-        Go to Brain Dashboard
-      </button>
     </div>
-  );
-}
-
-function AnimatedCounter({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="card text-center">
-      <p className="text-3xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs uppercase tracking-widest text-stone-500">{label}</p>
-    </div>
-  );
-}
-
-function GoogleLogo() {
-  return (
-    <svg className="h-6 w-6" viewBox="0 0 24 24">
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-        fill="#34A853"
-      />
-      <path
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        fill="#EA4335"
-      />
-    </svg>
-  );
-}
-
-function SlackLogo() {
-  return (
-    <svg className="h-6 w-6" viewBox="0 0 24 24">
-      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="#E01E5A" />
-      <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.527 2.527 0 0 1 2.521 2.521 2.527 2.527 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" fill="#36C5F0" />
-      <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" fill="#2EB67D" />
-      <path d="M15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="#ECB22E" />
-    </svg>
   );
 }
