@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1480">
+<title>Arvya OS — Marlowe Health</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* ===== HEADER ===== */
+  .co-head { display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center; padding-bottom: 22px; border-bottom: 1px solid var(--cream-200); }
+  .co-head .lg { width: 64px; height: 64px; border-radius: 14px; background: var(--cream-200); display: grid; place-items: center; font: 600 26px var(--font-serif); color: var(--text-primary); }
+  .co-head h1 { font-family: var(--font-serif); font-size: 32px; font-weight: 500; letter-spacing: -0.02em; margin: 0; }
+  .co-head .meta { display: flex; gap: 14px; align-items: center; margin-top: 6px; font-size: 13px; color: var(--text-secondary); }
+  .co-head .rel { display: inline-flex; align-items: center; gap: 6px; font: 10.5px var(--font-mono); padding: 3px 9px; border-radius: 999px; letter-spacing: .06em; background: #DDEFE2; color: #2A6F45; }
+  .co-head .rel .pip { width: 5px; height: 5px; border-radius: 50%; background: #2EA968; }
+  .co-head .actions { display: flex; gap: 8px; }
+  .co-head button {
+    height: 34px; padding: 0 14px; border-radius: 8px;
+    background: #fff; border: 1px solid var(--border-default);
+    font: 12px var(--font-sans); cursor: pointer; color: var(--text-primary);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .co-head button:hover { background: var(--cream-100); }
+  .co-head button.primary { background: var(--arvya-dark-900); color: var(--cream-50); border-color: var(--arvya-dark-900); }
+  .co-head button.primary:hover { background: #1a2538; }
+  .co-head svg { width: 13px; height: 13px; }
+
+  /* ===== KPI BAR ===== */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--cream-200); border: 1px solid var(--cream-200); border-radius: 12px; overflow: hidden; margin: 22px 0 28px; }
+  .kpis > div { background: #fff; padding: 14px 18px; }
+  .kpis .lab { font: 10px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary); }
+  .kpis .v { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -0.01em; }
+  .kpis .sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+  .kpis .v.warn { color: #C75050; }
+  .kpis .v.good { color: #2A6F45; }
+
+  /* ===== LAYOUT ===== */
+  .grid { display: grid; grid-template-columns: 1fr 340px; gap: 28px; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--cream-200); margin-bottom: 18px; }
+  .tabs span {
+    font: 12px var(--font-sans); padding: 10px 14px;
+    cursor: pointer; color: var(--text-tertiary);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .12s, border-color .12s;
+  }
+  .tabs span.on { color: var(--text-primary); border-color: var(--arvya-gold); font-weight: 500; }
+  .tabs span:hover:not(.on) { color: var(--text-secondary); }
+  .tabs .count { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-left: 4px; }
+
+  /* ===== TIMELINE ===== */
+  .tl { position: relative; padding-left: 16px; }
+  .tl::before { content: ''; position: absolute; left: 5px; top: 12px; bottom: 8px; width: 1px; background: var(--cream-300); }
+  .tl-item { position: relative; padding: 0 0 22px 18px; }
+  .tl-item::before { content: ''; position: absolute; left: -12px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: #fff; border: 1.5px solid var(--cream-400); }
+  .tl-item.gold::before { border-color: var(--arvya-gold); background: var(--arvya-gold); }
+  .tl-item.warn::before { border-color: #C75050; background: #C75050; }
+  .tl-item.ok::before { border-color: #2EA968; background: #2EA968; }
+  .tl-meta { display: flex; align-items: center; gap: 8px; font: 10.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .04em; margin-bottom: 5px; }
+  .tl-meta .src { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; background: var(--cream-100); border-radius: 999px; color: var(--text-secondary); }
+  .tl-card {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 10px;
+    padding: 14px 16px; transition: border-color .12s, box-shadow .12s;
+    cursor: pointer;
+  }
+  .tl-card:hover { border-color: var(--cream-400); box-shadow: var(--shadow-xs); }
+  .tl-card .ttl { font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 4px; letter-spacing: -0.005em; }
+  .tl-card .body { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+  .tl-card .body b { color: var(--text-primary); font-weight: 500; }
+  .tl-card .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tl-card .ipill {
+    font: 10.5px var(--font-mono); letter-spacing: .04em;
+    padding: 2px 8px; background: var(--cream-100);
+    border-radius: 999px; color: var(--text-secondary);
+  }
+  .tl-card .ipill.gold { color: var(--arvya-gold-700); background: var(--arvya-gold-bg); }
+  .tl-card .ipill.warn { color: #A83C3C; background: #F9DCDC; }
+  .tl-card .ipill.ok { color: #2A6F45; background: #DDEFE2; }
+  .tl-card .quote {
+    font-family: var(--font-serif); font-style: italic;
+    font-size: 13.5px; color: var(--text-primary);
+    border-left: 2px solid var(--arvya-gold); padding: 4px 0 4px 12px;
+    margin: 8px 0 4px;
+  }
+
+  /* ===== ACTION ITEMS ===== */
+  .ai-list { display: flex; flex-direction: column; gap: 10px; }
+  .ai-item {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 10px;
+    padding: 12px 14px;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+  }
+  .ai-item .chk {
+    width: 18px; height: 18px; border-radius: 5px;
+    border: 1.5px solid var(--cream-400); cursor: pointer;
+    display: grid; place-items: center;
+    transition: border-color .12s, background .12s;
+  }
+  .ai-item .chk:hover { border-color: var(--arvya-gold); }
+  .ai-item.done .chk { background: var(--arvya-gold); border-color: var(--arvya-gold); }
+  .ai-item.done .chk::after { content: '✓'; color: #0E1726; font-size: 11px; font-weight: 700; }
+  .ai-item.done .ttl { text-decoration: line-through; color: var(--text-tertiary); }
+  .ai-item .ttl { font-size: 13.5px; color: var(--text-primary); font-weight: 500; }
+  .ai-item .sub { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+  .ai-item .due { font: 10.5px var(--font-mono); padding: 3px 8px; border-radius: 999px; background: var(--cream-100); color: var(--text-secondary); letter-spacing: .04em; }
+  .ai-item .due.warn { background: #F9DCDC; color: #A83C3C; }
+
+  /* ===== TRANSCRIPT VIEWER ===== */
+  .tx {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .tx-head { display: flex; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--cream-200); margin-bottom: 14px; }
+  .tx-head h3 { font-family: var(--font-serif); font-size: 16px; font-weight: 500; margin: 0; }
+  .tx-head .meta { font: 10.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .04em; }
+  .tx-head .grow { flex: 1; }
+  .tx-head a { font: 11px var(--font-mono); color: var(--arvya-gold-700); text-decoration: none; letter-spacing: .04em; }
+
+  .tx-line { display: grid; grid-template-columns: 60px 1fr; gap: 10px; padding: 6px 0; font-size: 13px; line-height: 1.5; }
+  .tx-line .who { font: 10.5px var(--font-mono); color: var(--text-tertiary); padding-top: 2px; letter-spacing: .04em; }
+  .tx-line.you .who { color: var(--arvya-gold-700); }
+  .tx-line .what { color: var(--text-primary); }
+  .tx-line.flag .what { background: var(--arvya-gold-bg); padding: 4px 8px; border-radius: 6px; }
+
+  /* ===== RIGHT RAIL ===== */
+  .panel {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .panel h3 { font-family: var(--font-serif); font-size: 14.5px; font-weight: 500; margin: 0 0 12px; letter-spacing: -0.005em; display: flex; align-items: baseline; gap: 8px; }
+  .panel h3 .c { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); font-weight: 400; }
+
+  .field { display: grid; grid-template-columns: 90px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--cream-200); font-size: 12.5px; }
+  .field:first-of-type { border-top: 0; }
+  .field .k { color: var(--text-tertiary); font: 10.5px var(--font-mono); letter-spacing: .04em; padding-top: 2px; }
+  .field .v { color: var(--text-primary); }
+
+  .contact-row {
+    display: grid; grid-template-columns: 32px 1fr auto; gap: 10px;
+    align-items: center; padding: 10px 0; border-top: 1px solid var(--cream-200);
+    cursor: pointer;
+  }
+  .contact-row:first-of-type { border-top: 0; padding-top: 4px; }
+  .contact-row .av { width: 32px; height: 32px; border-radius: 50%; background: var(--cream-200); display: grid; place-items: center; font: 11px var(--font-mono); color: var(--text-secondary); }
+  .contact-row .nm { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .contact-row .role { font: 10.5px var(--font-mono); color: var(--text-tertiary); margin-top: 1px; letter-spacing: .04em; }
+  .contact-row:hover .nm { color: var(--arvya-gold-700); }
+  .contact-row .heat { width: 6px; height: 6px; border-radius: 50%; background: var(--cream-400); }
+  .contact-row .heat.hot { background: #C75050; }
+  .contact-row .heat.warm { background: var(--arvya-gold); }
+  .contact-row .heat.ok { background: #2EA968; }
+
+  .ledger-row { display: grid; grid-template-columns: 1fr auto; padding: 6px 0; font-size: 12px; border-top: 1px solid var(--cream-200); }
+  .ledger-row:first-of-type { border-top: 0; padding-top: 4px; }
+  .ledger-row .k { color: var(--text-secondary); }
+  .ledger-row .v { color: var(--text-primary); font-weight: 500; }
+  .ledger-row .v.warn { color: #C75050; }
+  .ledger-row .v.ok { color: #2A6F45; }
+
+  /* hide non-active tab content */
+  .tab-pane { display: none; }
+  .tab-pane.on { display: block; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Company · Marlowe">
+
+  <!-- ============= HEADER ============= -->
+  <header class="co-head">
+    <div class="lg" style="background: linear-gradient(135deg, #2A6FDB, #1F4FA8); color: #fff;">M</div>
+    <div>
+      <h1>Marlowe Health</h1>
+      <div class="meta">
+        <span class="rel"><span class="pip"></span>Customer · paid</span>
+        <span>marlowe.health · 240 employees · NYC</span>
+        <span style="color:var(--arvya-gold-700);">↗ Healthcare AI infrastructure</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Catch me up
+      </button>
+      <button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Schedule
+      </button>
+      <button class="primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/></svg>
+        Reply to Eli
+      </button>
+    </div>
+  </header>
+
+  <!-- ============= KPIs ============= -->
+  <div class="kpis">
+    <div><div class="lab">— ARR</div><div class="v">$84k</div><div class="sub">— renewed Apr</div></div>
+    <div><div class="lab">— Health</div><div class="v good">82</div><div class="sub">— up 8 this month</div></div>
+    <div><div class="lab">— Last touch</div><div class="v">8d</div><div class="sub">— Eli (PM) · email</div></div>
+    <div><div class="lab">— Open commits</div><div class="v warn">1</div><div class="sub">— data residency</div></div>
+    <div><div class="lab">— Confidence</div><div class="v">0.84</div><div class="sub">— call notes 18d old</div></div>
+  </div>
+
+  <!-- ============= GRID ============= -->
+  <div class="grid">
+
+    <!-- LEFT — tabs + content -->
+    <div>
+      <div class="tabs">
+        <span class="on" data-tab="timeline">Timeline <span class="count">42</span></span>
+        <span data-tab="actions">Action items <span class="count">3</span></span>
+        <span data-tab="transcripts">Transcripts <span class="count">7</span></span>
+        <span data-tab="docs">Docs <span class="count">12</span></span>
+        <span data-tab="threads">Email threads <span class="count">22</span></span>
+      </div>
+
+      <!-- ===== TIMELINE ===== -->
+      <div class="tab-pane on" data-pane="timeline">
+        <div class="tl">
+
+          <div class="tl-item gold">
+            <div class="tl-meta"><span>Today · 06:14</span><span class="src">⌕ Brain inference</span></div>
+            <div class="tl-card">
+              <div class="ttl">Eli's reply length is dropping — decision close.</div>
+              <div class="body">Reply length on the diligence thread <b>dropped 40% over last 3 messages</b> (avg 480w → 287w). For Eli, this pattern usually precedes a decision within 5–10 days. He still hasn't responded to your data residency answer.</div>
+              <div class="pills"><span class="ipill gold">Behavioral signal</span><span class="ipill">Confidence 0.81</span></div>
+            </div>
+          </div>
+
+          <div class="tl-item warn">
+            <div class="tl-meta"><span>Tue · 8d ago</span><span class="src">⌕ Email · Eli Chen</span></div>
+            <div class="tl-card">
+              <div class="ttl">Eli sent diligence notes — asked about data residency.</div>
+              <div class="body">Long-form email (480w) walking through their security review. Key ask: <b>"Where does customer data live, and what's your sub-processor list?"</b> You replied with the generic FAQ. He hasn't responded.</div>
+              <div class="quote">"We're past the point of evaluating capabilities — the gating question is data residency. Our compliance team needs a definitive answer before we can expand."</div>
+              <div class="pills"><span class="ipill warn">Reply 1.5 days late</span><span class="ipill">→ generated FAQ entry</span></div>
+            </div>
+          </div>
+
+          <div class="tl-item ok">
+            <div class="tl-meta"><span>Fri · 11d ago</span><span class="src">⌕ Linear · PR #482</span></div>
+            <div class="tl-card">
+              <div class="ttl">Bug fix shipped — they don't know yet.</div>
+              <div class="body">PR #482 fixed the export issue Marlowe reported on Oct 14. Engineering shipped Friday but no one told them. <b>Brain drafted a 1-liner</b> ready to send.</div>
+              <div class="pills"><span class="ipill ok">Loop ready to close</span></div>
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-meta"><span>Wed · 13d ago</span><span class="src">⌕ Meet · 47min</span></div>
+            <div class="tl-card">
+              <div class="ttl">Weekly check-in (Eli, Priya, Maya).</div>
+              <div class="body">Pilot extending well. <b>Two new internal teams</b> requested access. Eli flagged he wants to discuss expansion in 4–6 weeks.</div>
+              <div class="pills"><span class="ipill gold">Expansion signal</span><span class="ipill">3 commitments captured</span></div>
+            </div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-meta"><span>Apr 12 · 30d ago</span><span class="src">⌕ DocuSign</span></div>
+            <div class="tl-card">
+              <div class="ttl">Pilot agreement signed.</div>
+              <div class="body">3-month pilot, 50 seats, $7k/mo. Auto-converts to annual unless cancelled by Jul 12.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== ACTION ITEMS ===== -->
+      <div class="tab-pane" data-pane="actions">
+        <div class="ai-list">
+          <div class="ai-item">
+            <span class="chk"></span>
+            <div>
+              <div class="ttl">Send Eli the data residency answer</div>
+              <div class="sub">— promised in his Tue email · brain has draft ready</div>
+            </div>
+            <span class="due warn">3 days late</span>
+          </div>
+          <div class="ai-item">
+            <span class="chk"></span>
+            <div>
+              <div class="ttl">Tell them PR #482 shipped</div>
+              <div class="sub">— bug they reported Oct 14 · 1-liner drafted</div>
+            </div>
+            <span class="due">Today</span>
+          </div>
+          <div class="ai-item">
+            <span class="chk"></span>
+            <div>
+              <div class="ttl">Schedule expansion conversation</div>
+              <div class="sub">— Eli flagged on Wed call · target 4–6 weeks</div>
+            </div>
+            <span class="due">Jun 10</span>
+          </div>
+          <div class="ai-item done">
+            <span class="chk"></span>
+            <div>
+              <div class="ttl">Renewal paperwork</div>
+              <div class="sub">— signed Apr 12, $84k ARR</div>
+            </div>
+            <span class="due">Done</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TRANSCRIPTS ===== -->
+      <div class="tab-pane" data-pane="transcripts">
+        <div class="tx">
+          <div class="tx-head">
+            <h3>Weekly check-in — Marlowe × Arvya</h3>
+            <span class="meta">Wed, May 14 · 47 min · Google Meet · Arvya notetaker</span>
+            <span class="grow"></span>
+            <a>↓ Full transcript</a>
+            <a style="margin-left:14px;">⌕ Audio</a>
+          </div>
+
+          <div class="tx-line"><span class="who">Eli</span><span class="what">Quick update from our side — pilot rollout has gone well. We've added two more internal teams that want access by end of quarter.</span></div>
+          <div class="tx-line you"><span class="who">Naveen</span><span class="what">That's great. What does that look like in seat terms?</span></div>
+          <div class="tx-line"><span class="who">Eli</span><span class="what">Probably another 30 to 40 seats, depending on how clinical ops scopes it. We can talk numbers in a few weeks once they've defined the pilot for their team.</span></div>
+          <div class="tx-line flag"><span class="who">Eli</span><span class="what"><b>Eli (flagged):</b> "I want to put a longer expansion conversation on the calendar — call it 4 to 6 weeks out, after this next sprint."</span></div>
+          <div class="tx-line you"><span class="who">Naveen</span><span class="what">Done — I'll send a Calendly. One thing on my side: we did ship the export fix you reported in October. PR went out Friday.</span></div>
+          <div class="tx-line"><span class="who">Priya</span><span class="what">Oh good — Maya was asking about that yesterday actually.</span></div>
+          <div class="tx-line"><span class="who">…</span><span class="what" style="color:var(--text-tertiary);">[42 more lines · 3 commitments captured · 2 decisions logged]</span></div>
+        </div>
+      </div>
+
+      <!-- ===== DOCS ===== -->
+      <div class="tab-pane" data-pane="docs">
+        <div class="panel" style="margin: 0;">
+          <h3>Shared documents <span class="c">— 12 indexed</span></h3>
+          <div class="field"><span class="k">— Pilot MSA</span><span class="v">marlowe-pilot-v3.pdf · signed Apr 12</span></div>
+          <div class="field"><span class="k">— Security</span><span class="v">marlowe-soc2-questionnaire.xlsx · 47 questions answered</span></div>
+          <div class="field"><span class="k">— Spec</span><span class="v">graph-spec-marlowe.notion · referenced 3× in calls</span></div>
+          <div class="field"><span class="k">— Onboarding</span><span class="v">marlowe-runbook.md · last edited 6d ago</span></div>
+          <div class="field"><span class="k">— Diligence</span><span class="v">data-residency-faq-draft.md · draft</span></div>
+        </div>
+      </div>
+
+      <!-- ===== THREADS ===== -->
+      <div class="tab-pane" data-pane="threads">
+        <div class="panel" style="margin: 0;">
+          <h3>Email threads <span class="c">— 22 with Marlowe</span></h3>
+          <div class="field"><span class="k">— Active</span><span class="v">"Diligence — data residency" · Eli · awaiting your reply 8d</span></div>
+          <div class="field"><span class="k">— Active</span><span class="v">"Q3 expansion planning" · Eli · scheduled for Jun 10</span></div>
+          <div class="field"><span class="k">— Closed</span><span class="v">"Pilot kickoff" · 14 messages · resolved Apr 14</span></div>
+          <div class="field"><span class="k">— Closed</span><span class="v">"Onboarding QBR" · 8 messages · resolved Apr 28</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT — context rail -->
+    <aside>
+      <!-- Contacts -->
+      <div class="panel">
+        <h3>Contacts <span class="c">— 5 at Marlowe</span></h3>
+        <div class="contact-row">
+          <span class="av">EC</span>
+          <div>
+            <div class="nm">Eli Chen</div>
+            <div class="role">— Product Lead · primary contact</div>
+          </div>
+          <span class="heat hot" title="Hot — awaiting your reply"></span>
+        </div>
+        <div class="contact-row">
+          <span class="av">PR</span>
+          <div>
+            <div class="nm">Priya Rao</div>
+            <div class="role">— Eng Manager · technical contact</div>
+          </div>
+          <span class="heat warm"></span>
+        </div>
+        <div class="contact-row">
+          <span class="av">MN</span>
+          <div>
+            <div class="nm">Maya Nair</div>
+            <div class="role">— Clinical Ops · power user</div>
+          </div>
+          <span class="heat ok"></span>
+        </div>
+        <div class="contact-row">
+          <span class="av">DV</span>
+          <div>
+            <div class="nm">Dev Varma</div>
+            <div class="role">— CTO · economic buyer</div>
+          </div>
+          <span class="heat"></span>
+        </div>
+        <div class="contact-row">
+          <span class="av">SK</span>
+          <div>
+            <div class="nm">Sara Kapur</div>
+            <div class="role">— Procurement · legal</div>
+          </div>
+          <span class="heat"></span>
+        </div>
+      </div>
+
+      <!-- Ledger -->
+      <div class="panel">
+        <h3>Ledger</h3>
+        <div class="ledger-row"><span class="k">Pilot signed</span><span class="v">Apr 12</span></div>
+        <div class="ledger-row"><span class="k">Renewal</span><span class="v">Jul 12 · auto</span></div>
+        <div class="ledger-row"><span class="k">ARR</span><span class="v">$84k</span></div>
+        <div class="ledger-row"><span class="k">Open promises</span><span class="v warn">1 late</span></div>
+        <div class="ledger-row"><span class="k">Reply window</span><span class="v warn">+1.5d over</span></div>
+        <div class="ledger-row"><span class="k">Health</span><span class="v ok">82 / 100</span></div>
+        <div class="ledger-row"><span class="k">Expansion signal</span><span class="v ok">Strong</span></div>
+      </div>
+
+      <!-- Sources -->
+      <div class="panel">
+        <h3>Sources <span class="c">— pulling from</span></h3>
+        <div class="ledger-row"><span class="k">⌕ Gmail</span><span class="v">22 threads</span></div>
+        <div class="ledger-row"><span class="k">⌕ Calendar</span><span class="v">14 meetings</span></div>
+        <div class="ledger-row"><span class="k">⌕ Notetaker</span><span class="v">7 transcripts</span></div>
+        <div class="ledger-row"><span class="k">⌕ HubSpot</span><span class="v">5 contacts</span></div>
+        <div class="ledger-row"><span class="k">⌕ Notion</span><span class="v">12 docs</span></div>
+        <div class="ledger-row"><span class="k">⌕ Linear</span><span class="v">3 tickets</span></div>
+      </div>
+    </aside>
+  </div>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'companies', crumbs: ['Arvya Co.', 'Companies', 'Marlowe Health'] });
+
+  // tabs
+  document.querySelectorAll('.tabs span').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tabs span').forEach(x => x.classList.remove('on'));
+      document.querySelectorAll('.tab-pane').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+      document.querySelector(`[data-pane="${t.dataset.tab}"]`).classList.add('on');
+    });
+  });
+
+  // toggle action items
+  document.querySelectorAll('.ai-item .chk').forEach(c => {
+    c.addEventListener('click', () => c.closest('.ai-item').classList.toggle('done'));
+  });
+</script>
+</body>
+</html>

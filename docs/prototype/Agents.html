@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Agent runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+  .ag-card {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .ag-card .nm { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-primary); font-weight: 500; }
+  .ag-card .lab { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin-top: 6px; }
+  .ag-card .v { font-family: var(--font-serif); font-size: 26px; font-weight: 500; margin-top: 4px; line-height: 1; }
+  .ag-card .delta { font-family: var(--font-mono); font-size: 10px; color: var(--arvya-status-active); margin-top: 4px; }
+  .ag-card .delta.neg { color: #A83C3C; }
+  .ag-card .delta.flat { color: var(--text-tertiary); }
+
+  .ag-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); }
+  .ag-tabs button {
+    border: 0; background: transparent;
+    padding: 10px 16px; cursor: pointer;
+    font-size: 13px; color: var(--text-tertiary);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .ag-tabs button.on { color: var(--text-primary); border-bottom-color: var(--arvya-gold); font-weight: 500; }
+  .ag-tabs button .ct { font-family: var(--font-mono); font-size: 10px; opacity: .7; margin-left: 6px; }
+
+  .run-table {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .run-row {
+    display: grid; grid-template-columns: 22px 220px 1fr 90px 90px 90px;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--cream-200);
+    font-size: 13px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .run-row:hover { background: var(--cream-50); }
+  .run-row.h { background: var(--cream-50); cursor: default; font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); }
+  .run-row .st {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .run-row .st.ok { background: #2EA968; }
+  .run-row .st.run { background: var(--arvya-gold); animation: pulse 1.4s ease-in-out infinite; }
+  .run-row .st.fail { background: #C75050; }
+  .run-row .st.queued { background: var(--cream-400); }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(.7); } }
+
+  .run-row .nm { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); font-weight: 500; }
+  .run-row .nm .arg { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-left: 6px; font-weight: 400; }
+  .run-row .summary { color: var(--text-secondary); font-size: 12.5px; line-height: 1.4; }
+  .run-row .meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+  .run-row .meta.ms { text-align: right; }
+
+  .timeline-section { margin-top: 36px; }
+  .ts-h { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary); padding: 14px 0 10px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 14px; }
+
+  /* Live trace expanded */
+  .trace-detail {
+    background: var(--arvya-dark-900);
+    color: var(--cream-200);
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 28px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  .trace-detail .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 14px; margin-bottom: 14px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+  .trace-detail .head .ttl { font-family: var(--font-serif); font-size: 17px; font-weight: 500; color: var(--cream-50); }
+  .trace-detail .head .when { font-size: 10px; letter-spacing: .08em; color: rgba(255,255,255,.5); }
+  .trace-detail .step { padding: 4px 0; }
+  .trace-detail .step .t { color: rgba(255,255,255,.4); margin-right: 10px; }
+  .trace-detail .step .ev { color: var(--arvya-gold); }
+  .trace-detail .step .det { color: var(--cream-200); }
+  .trace-detail .step.io .det { color: rgba(255,255,255,.7); }
+  .trace-detail .step.write .ev { color: #75D6A4; }
+  .trace-detail .meta-row {
+    margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,.08);
+    display: flex; gap: 18px;
+    font-size: 10px; letter-spacing: .08em; color: rgba(255,255,255,.5); text-transform: uppercase;
+  }
+  .trace-detail .meta-row b { color: var(--cream-50); font-weight: 500; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Agent runs">
+
+  <div class="page-head">
+    <div>
+      <span class="eyebrow gold">— Audit log</span>
+      <h1>Agent runs.</h1>
+      <p class="sub">Every action the brain has taken — every memory extracted, entity resolved, edge proposed, draft generated. Filterable, replayable, attributable.</p>
+    </div>
+    <div class="right">
+      <div style="display:flex; gap: 8px;">
+        <button class="btn ghost">Export log</button>
+        <button class="btn primary">+ Custom agent</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="ag-grid">
+    <div class="ag-card"><div class="nm">extract_memory</div><div class="lab">— RUNS · 24h</div><div class="v">3,612</div><div class="delta">+ 412 v. yest</div></div>
+    <div class="ag-card"><div class="nm">resolve_entity</div><div class="lab">— RUNS · 24h</div><div class="v">847</div><div class="delta flat">— flat</div></div>
+    <div class="ag-card"><div class="nm">compile_truth</div><div class="lab">— RUNS · 24h</div><div class="v">128</div><div class="delta">+ 14</div></div>
+    <div class="ag-card"><div class="nm">propose_edge</div><div class="lab">— RUNS · 24h</div><div class="v">412</div><div class="delta">+ 38</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="ag-tabs">
+    <button class="on">All <span class="ct">5,124</span></button>
+    <button>Running <span class="ct">3</span></button>
+    <button>Failed <span class="ct">7</span></button>
+    <button>Manual <span class="ct">22</span></button>
+    <button>Scheduled <span class="ct">4</span></button>
+    <button>Dream cycle <span class="ct">6</span></button>
+  </div>
+
+  <!-- Active trace — expanded -->
+  <div class="trace-detail">
+    <div class="head">
+      <div class="ttl">— compile_truth · entity:roelof_botha</div>
+      <div class="when">— STARTED 12s ago · running</div>
+    </div>
+    <div class="step"><span class="t">+0.000</span><span class="ev">START</span> <span class="det">trigger=event source=email_arrived id=msg-9182 from=roelof@sequoia.com</span></div>
+    <div class="step io"><span class="t">+0.012</span><span class="ev">FETCH</span> <span class="det">entity_pages(roelof_botha, sequoia_capital, soc2_readiness, model_lock_in)</span></div>
+    <div class="step io"><span class="t">+0.048</span><span class="ev">FETCH</span> <span class="det">recent_sources(person=roelof_botha, n=20) → 17 emails, 4 mtgs, 1 voice memo</span></div>
+    <div class="step"><span class="t">+0.142</span><span class="ev">EXTRACT</span> <span class="det">memory candidates: 14 → keep 11 (3 dup) → embed</span></div>
+    <div class="step"><span class="t">+0.380</span><span class="ev">SCORE</span> <span class="det">behavioral_model(roelof_botha) reply_length=47w decision_score=0.84</span></div>
+    <div class="step"><span class="t">+0.612</span><span class="ev">PROPOSE</span> <span class="det">edges: 4 (asked-about×3, promised×1) confidence=[0.94,0.91,0.89,0.62]</span></div>
+    <div class="step write"><span class="t">+0.840</span><span class="ev">WRITE</span> <span class="det">entity_page roelof_botha r2.41 → r2.42 (+ 11 memories, + 4 edges)</span></div>
+    <div class="step write"><span class="t">+0.892</span><span class="ev">WRITE</span> <span class="det">open_loop opened: id=sequoia-tsq-3q owner=NA due=Fri</span></div>
+    <div class="step io"><span class="t">+1.140</span><span class="ev">QUEUE</span> <span class="det">downstream: refresh_company(sequoia_capital), draft_reply(roelof_botha)</span></div>
+    <div class="step"><span class="t">+1.142</span><span class="ev">DONE</span> <span class="det">↳ ok · 11 memories · 4 edges · 1 loop · 2 jobs queued</span></div>
+    <div class="meta-row">
+      <span>— DURATION <b>1.14s</b></span>
+      <span>— COST <b>$0.0042</b></span>
+      <span>— TOKENS in/out <b>3,840 / 412</b></span>
+      <span>— MODEL <b>haiku-4.5</b></span>
+      <span>— OUTPUT <b>11 memories · 4 edges · 1 loop</b></span>
+    </div>
+  </div>
+
+  <div class="ts-h">— Live · last 60 minutes</div>
+
+  <div class="run-table">
+    <div class="run-row h">
+      <span></span><span>Agent</span><span>Summary</span><span>Cost</span><span>Latency</span><span class="ms">When</span>
+    </div>
+
+    <div class="run-row">
+      <span class="st run"></span>
+      <div class="nm">compile_truth<span class="arg">(roelof_botha)</span></div>
+      <div class="summary">Recompiling Roelof page after new email · 11 memories · 4 edges · opens 1 loop.</div>
+      <div class="meta">$0.0042</div>
+      <div class="meta">1.14s</div>
+      <div class="meta ms">running</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st run"></span>
+      <div class="nm">propose_edge<span class="arg">(roelof→pat_grady)</span></div>
+      <div class="summary">"will set up Pat next week" → conditional edge, 0.62 confidence — needs review.</div>
+      <div class="meta">$0.0011</div>
+      <div class="meta">—</div>
+      <div class="meta ms">running</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">extract_memory<span class="arg">(msg-9182)</span></div>
+      <div class="summary">3 promises · 2 questions · 1 behavioral note from Roelof email.</div>
+      <div class="meta">$0.0008</div>
+      <div class="meta">142ms</div>
+      <div class="meta ms">12s ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">resolve_entity<span class="arg">("Pat")</span></div>
+      <div class="summary">Resolved to Pat Grady · Sequoia · using context: prior thread + intro chain.</div>
+      <div class="meta">$0.0003</div>
+      <div class="meta">22ms</div>
+      <div class="meta ms">12s ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">draft_reply<span class="arg">(roelof_botha)</span></div>
+      <div class="summary">Drafted 3-paragraph reply · uses behavioral pattern (terse, numbered, named deadline).</div>
+      <div class="meta">$0.0091</div>
+      <div class="meta">2.4s</div>
+      <div class="meta ms">42s ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">extract_memory<span class="arg">(zoom-marlowe-may-6)</span></div>
+      <div class="summary">14 memories from Marlowe call · added to Lila Cho + Marlowe pages.</div>
+      <div class="meta">$0.041</div>
+      <div class="meta">8.2s</div>
+      <div class="meta ms">3m ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">close_loop<span class="arg">(notion-vendor-q)</span></div>
+      <div class="summary">Detected Drive doc shared with sales@notion.com · closed loop with proof.</div>
+      <div class="meta">$0.0002</div>
+      <div class="meta">22ms</div>
+      <div class="meta ms">8m ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st fail"></span>
+      <div class="nm">parse_pdf<span class="arg">(insight-rfp.pdf)</span></div>
+      <div class="summary">— FAILED · scanned PDF, OCR confidence 0.31. Routed to manual review.</div>
+      <div class="meta">$0.0014</div>
+      <div class="meta">3.4s</div>
+      <div class="meta ms">11m ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">dream_cycle<span class="arg">(weekly · 06:00)</span></div>
+      <div class="summary">— Found 3 patterns · "consulting drift" · "stalled hiring" · "FAQ data-residency". <a class="cite" href="Drift.html">⌕ open</a></div>
+      <div class="meta">$0.84</div>
+      <div class="meta">4m 12s</div>
+      <div class="meta ms">1h ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">compile_truth<span class="arg">(marlowe)</span></div>
+      <div class="summary">Marlowe page recompiled · added bug-status section, retention cohort.</div>
+      <div class="meta">$0.0067</div>
+      <div class="meta">1.6s</div>
+      <div class="meta ms">1h ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st ok"></span>
+      <div class="nm">extract_memory<span class="arg">(voice-memo-na-9-14)</span></div>
+      <div class="summary">— 4 memories from voice memo · 1 unresolved (ownership question).</div>
+      <div class="meta">$0.012</div>
+      <div class="meta">4.2s</div>
+      <div class="meta ms">22h ago</div>
+    </div>
+
+    <div class="run-row">
+      <span class="st queued"></span>
+      <div class="nm">refresh_company<span class="arg">(sequoia_capital)</span></div>
+      <div class="summary">— queued · waits for compile_truth(roelof_botha)</div>
+      <div class="meta">—</div>
+      <div class="meta">—</div>
+      <div class="meta ms">queued</div>
+    </div>
+  </div>
+
+  <!-- Schedule -->
+  <div class="timeline-section">
+    <div class="ts-h">— Scheduled · this week</div>
+    <div class="run-table">
+      <div class="run-row h">
+        <span></span><span>Agent</span><span>Schedule</span><span>Last run</span><span>Avg cost</span><span class="ms">Next</span>
+      </div>
+      <div class="run-row">
+        <span class="st queued"></span>
+        <div class="nm">dream_cycle</div>
+        <div class="summary">Compares stated priorities vs actual activity, surfaces drift patterns.</div>
+        <div class="meta">Sun · 06:00 IST</div>
+        <div class="meta">$0.84</div>
+        <div class="meta ms">Sun 06:00</div>
+      </div>
+      <div class="run-row">
+        <span class="st queued"></span>
+        <div class="nm">morning_brief</div>
+        <div class="summary">Composes founder daily brief · 4 sections · sent to email + Slack DM.</div>
+        <div class="meta">Daily · 07:30</div>
+        <div class="meta">$0.18</div>
+        <div class="meta ms">Tomorrow 07:30</div>
+      </div>
+      <div class="run-row">
+        <span class="st queued"></span>
+        <div class="nm">stale_loops_sweep</div>
+        <div class="summary">Re-checks open loops &gt; 3d quiet for new evidence; nudges or escalates.</div>
+        <div class="meta">Daily · 09:00</div>
+        <div class="meta">$0.04</div>
+        <div class="meta ms">Tomorrow 09:00</div>
+      </div>
+      <div class="run-row">
+        <span class="st queued"></span>
+        <div class="nm">behavioral_recompute</div>
+        <div class="summary">Recomputes behavioral models for all "hot" people (last 14d touch).</div>
+        <div class="meta">Mon · 04:00</div>
+        <div class="meta">$2.20</div>
+        <div class="meta ms">Mon 04:00</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'agents', crumbs: ['Arvya Co.', 'Agent runs'] });
+</script>
+</body>
+</html>

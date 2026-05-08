@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>Arvya OS — Company Brain · screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<style>
+  body { background: var(--cream-100); margin: 0; padding: 64px 56px 96px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  .hero {
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 32px;
+    margin-bottom: 40px;
+    display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px; align-items: end;
+  }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--arvya-gold-700);
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--font-serif); font-weight: 500;
+    font-size: 56px; line-height: 1; letter-spacing: -0.022em;
+    margin: 0 0 18px;
+  }
+  h1 b { color: var(--arvya-gold-700); font-weight: 500; }
+  .lede {
+    font-family: var(--font-serif); font-size: 17px; line-height: 1.65;
+    color: var(--text-secondary);
+    max-width: 56ch;
+  }
+  .meta {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: .08em; color: var(--text-tertiary);
+    line-height: 1.8; text-align: right;
+  }
+  .meta b { color: var(--text-primary); font-weight: 500; }
+
+  /* Section heads */
+  .sec-h {
+    display: flex; align-items: baseline; gap: 14px;
+    margin: 56px 0 22px;
+  }
+  .sec-h .no {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: .14em; color: var(--arvya-gold-700);
+  }
+  .sec-h h2 {
+    font-family: var(--font-serif); font-weight: 500;
+    font-size: 26px; letter-spacing: -0.012em; margin: 0;
+  }
+  .sec-h .rule { flex: 1; height: 1px; background: var(--border-subtle); }
+
+  /* Card grid */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 22px 24px;
+    text-decoration: none; color: inherit;
+    display: flex; flex-direction: column;
+    transition: border-color .12s, transform .12s, box-shadow .12s;
+  }
+  .card:hover { border-color: var(--arvya-gold); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .card .top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 12px;
+  }
+  .card .num {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em;
+    color: var(--text-tertiary);
+  }
+  .card .pill {
+    font-family: var(--font-mono); font-size: 9.5px; padding: 2px 8px;
+    border-radius: 999px; background: var(--cream-200); color: var(--arvya-dark-700);
+    letter-spacing: .04em;
+  }
+  .card .pill.hero { background: var(--arvya-gold-bg); color: var(--arvya-gold-700); }
+  .card .pill.flow { background: #DDEAF8; color: #2A4A78; }
+  .card .pill.system { background: #DDEFE2; color: #247048; }
+  .card h3 {
+    font-family: var(--font-serif); font-weight: 500; font-size: 21px;
+    letter-spacing: -0.008em; margin: 0 0 8px;
+  }
+  .card p {
+    font-size: 13.5px; line-height: 1.55; color: var(--text-secondary);
+    margin: 0 0 14px;
+    flex: 1;
+  }
+  .card .foot {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--cream-200);
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-tertiary); letter-spacing: .04em;
+  }
+  .card .foot .open { color: var(--arvya-gold-700); font-weight: 500; }
+
+  .quote {
+    background: var(--arvya-dark-900); color: var(--cream-100);
+    border-radius: 16px;
+    padding: 36px 44px;
+    margin: 56px 0 12px;
+    font-family: var(--font-serif); font-size: 22px; line-height: 1.5; letter-spacing: -0.005em;
+    font-weight: 400;
+    position: relative;
+  }
+  .quote b { color: var(--arvya-gold); font-weight: 500; }
+  .quote .src {
+    margin-top: 18px;
+    display: block;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em;
+    color: rgba(255,255,255,.5); text-transform: uppercase;
+  }
+
+  .footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-tertiary); letter-spacing: .08em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div>
+      <div class="eyebrow">— Arvya OS · Company Brain · v0.4</div>
+      <h1>The brain that<br>your company<br><b>actually has.</b></h1>
+      <p class="lede">A redesign of Arvya OS, reframed end-to-end around the Company Brain vision: <b>capture everything</b>, <b>compile truth from raw signal</b>, <b>close the loop on every promise</b>, and <b>surface what matters</b> — with citations, behavioral context, and a memory that doesn't fade.</p>
+    </div>
+    <div class="meta">
+      — 11 SCREENS<br>
+      — 1 ONBOARDING FLOW<br>
+      — DESIGN SYSTEM <b>locked</b><br><br>
+      — DEEP NAVY · SAFFRON · CREAM<br>
+      — ROBOTO SLAB / INSTRUMENT SANS / JETBRAINS MONO<br><br>
+      — STARTING POINT · <b>Dashboard</b>
+    </div>
+  </header>
+
+  <!-- Quote -->
+  <div class="quote">
+    "It's not a chatbot, not a CRM, not a notes app. It's the <b>company brain</b> — captures everything, compiles canonical truth from raw signal, and closes the loop on every commitment. <b>You ask it what you'd ask a chief of staff who's been in every meeting.</b>"
+    <span class="src">— ARVYA OS · VISION DOC</span>
+  </div>
+
+  <!-- Section: Daily surfaces -->
+  <div class="sec-h"><span class="no">— 01</span><h2>Daily surfaces</h2><span class="rule"></span></div>
+  <div class="grid">
+    <a class="card" href="Dashboard.html">
+      <div class="top"><span class="num">— 01.A</span><span class="pill hero">Landing</span></div>
+      <h3>Dashboard</h3>
+      <p>The first screen Naveen opens. What the brain ingested overnight, today's priorities ranked by behavioral signal, drift alerts, live agent stream, and 5 cross-initiative patterns.</p>
+      <div class="foot"><span>— compiled-truth landing</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Brief.html">
+      <div class="top"><span class="num">— 01.B</span><span class="pill hero">Daily</span></div>
+      <h3>Daily Brief</h3>
+      <p>The 90-second morning report. Editorial-grade prose layout: today's narrative, decisions to make, behavioral notes, what the brain is watching for. Sent at 07:30.</p>
+      <div class="foot"><span>— founder briefing</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Ask.html">
+      <div class="top"><span class="num">— 01.C</span><span class="pill hero">Core loop</span></div>
+      <h3>Ask Brain</h3>
+      <p>The "chief of staff" interface. Natural-language Q&amp;A backed by every source, with inline citations, follow-up suggestions, and one-click drafting from any answer.</p>
+      <div class="foot"><span>— source-backed Q&amp;A</span><span class="open">open →</span></div>
+    </a>
+  </div>
+
+  <!-- Section: Closed-loop -->
+  <div class="sec-h"><span class="no">— 02</span><h2>The closed loop</h2><span class="rule"></span></div>
+  <div class="grid">
+    <a class="card" href="OpenLoops.html">
+      <div class="top"><span class="num">— 02.A</span><span class="pill flow">Tracker</span></div>
+      <h3>Open Loops</h3>
+      <p>Every promise, question, commitment — auto-extracted from email, calls, docs. Owner, age, last evidence, suggested nudge. Closes automatically when the brain sees proof.</p>
+      <div class="foot"><span>— promise → proof</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Drift.html">
+      <div class="top"><span class="num">— 02.B</span><span class="pill flow">Weekly</span></div>
+      <h3>Drift Review</h3>
+      <p>Stated priorities vs actual activity, side by side. Brain flags 3 patterns/week — the conversations worth having before they become quarterly regrets.</p>
+      <div class="foot"><span>— alignment 0.41</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Sources.html">
+      <div class="top"><span class="num">— 02.C</span><span class="pill flow">Capture</span></div>
+      <h3>Sources</h3>
+      <p>Live ingestion stream — every email, transcript, doc, voice memo as the brain reads it. Confidence pills, what got extracted, and the resolved entities.</p>
+      <div class="foot"><span>— what arvya saw today</span><span class="open">open →</span></div>
+    </a>
+  </div>
+
+  <!-- Section: Compiled truth -->
+  <div class="sec-h"><span class="no">— 03</span><h2>Compiled truth</h2><span class="rule"></span></div>
+  <div class="grid">
+    <a class="card" href="People.html">
+      <div class="top"><span class="num">— 03.A</span><span class="pill">Entity</span></div>
+      <h3>People</h3>
+      <p>Roelof Botha's profile: narrative summary, behavioral model (reply length, send-window, decision signals), interaction timeline, and graph connections. The brain remembers him better than you do.</p>
+      <div class="foot"><span>— 342 people</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Companies.html">
+      <div class="top"><span class="num">— 03.B</span><span class="pill">Entity</span></div>
+      <h3>Companies</h3>
+      <p>Customers, investors, prospects, peers — 88 companies with hot-card cover treatment, ARR, touch volume, open loops, and the people inside them.</p>
+      <div class="foot"><span>— 88 companies</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Graph.html">
+      <div class="top"><span class="num">— 03.C</span><span class="pill">Explorer</span></div>
+      <h3>Knowledge Graph</h3>
+      <p>432 nodes, 1,847 edges, 43 relationship types. Click any entity to see what links to it. Saved chains let you trace how a single signal — one person, one question — reaches across the company.</p>
+      <div class="foot"><span>— 1,847 edges</span><span class="open">open →</span></div>
+    </a>
+  </div>
+
+  <!-- Section: System -->
+  <div class="sec-h"><span class="no">— 04</span><h2>Underneath</h2><span class="rule"></span></div>
+  <div class="grid">
+    <a class="card" href="Agents.html">
+      <div class="top"><span class="num">— 04.A</span><span class="pill system">Audit</span></div>
+      <h3>Agent Runs</h3>
+      <p>Every action the brain takes — extract_memory, resolve_entity, compile_truth, propose_edge — with live trace, latency, cost, and full input/output for any run. Trust through transparency.</p>
+      <div class="foot"><span>— 5,124 runs · 24h</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Connectors.html">
+      <div class="top"><span class="num">— 04.B</span><span class="pill system">Health</span></div>
+      <h3>Connectors</h3>
+      <p>12 sources connected, 18 available. Per-source scope, sync latency, last-fetch, and the privacy boundaries Arvya respects ("forget on disconnect", "personal label = invisible").</p>
+      <div class="foot"><span>— 12 active · 142/day</span><span class="open">open →</span></div>
+    </a>
+
+    <a class="card" href="Onboarding.html">
+      <div class="top"><span class="num">— 04.C</span><span class="pill system">Flow</span></div>
+      <h3>Onboarding · Step 3</h3>
+      <p>The 4-minute Fyxer-style setup: pick connectors, set boundaries, watch your brain form. Step 3 of 5 — "give your brain something to remember."</p>
+      <div class="foot"><span>— 5 steps · ~4 min</span><span class="open">open →</span></div>
+    </a>
+  </div>
+
+  <div class="footer">
+    <span>— ARVYA OS · COMPANY BRAIN</span>
+    <span>— v0.4 · 11 surfaces · 1 flow</span>
+  </div>
+
+</div>
+</body>
+</html>
