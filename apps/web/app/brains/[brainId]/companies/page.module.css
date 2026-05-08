@@ -1,0 +1,405 @@
+/* Companies CRM list - 1:1 port of docs/prototype/Companies.html
+ * <style> block. Prototype is the visual source of truth. */
+
+.pageHead {
+  margin-bottom: 16px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.pageHead h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 36px;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  margin: 8px 0 6px;
+  color: var(--text-primary);
+}
+.pageHead p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  max-width: 64ch;
+  margin: 0;
+}
+
+.coBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+.seg {
+  display: inline-flex;
+  background: var(--cream-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 2px;
+}
+.seg span {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.segOn {
+  background: #fff;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+.coSearch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: #fff;
+  min-width: 240px;
+}
+.coSearch input {
+  border: 0;
+  outline: 0;
+  flex: 1;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  background: transparent;
+}
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.filterOn {
+  background: var(--arvya-gold-bg);
+  color: var(--arvya-gold-700);
+  border-color: var(--arvya-gold-border);
+}
+.filter b {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ct {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+.ct b {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.iconBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: #fff;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.tableWrap {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.crm {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.crm thead th {
+  background: var(--cream-100);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.aiCol {
+  background: var(--arvya-gold-bg) !important;
+  color: var(--arvya-gold-700) !important;
+  border-bottom: 1px solid var(--arvya-gold-border) !important;
+}
+.aiBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  background: var(--arvya-gold);
+  color: var(--arvya-dark-900);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 5px;
+  letter-spacing: 0.08em;
+}
+.addCol {
+  background: var(--cream-100);
+  width: 44px;
+  text-align: center;
+  border-left: 1px dashed var(--cream-300);
+  cursor: pointer;
+  color: var(--arvya-gold-700);
+}
+.crm tbody tr {
+  transition: background 0.12s;
+}
+.crm tbody tr:hover {
+  background: var(--cream-50);
+}
+.crm tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--cream-200);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+.crm tbody tr:last-child td {
+  border-bottom: 0;
+}
+.crm tbody td.aiCell {
+  background: rgba(216, 154, 63, 0.04);
+}
+.crm tbody tr:hover td.aiCell {
+  background: rgba(216, 154, 63, 0.08);
+}
+
+.coName {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+.coNameLg {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.coNameNm {
+  font-weight: 500;
+  line-height: 1.2;
+}
+.coNameNm .sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+.rel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.relInvestor {
+  background: var(--arvya-gold-bg);
+  color: var(--arvya-gold-700);
+  border-color: var(--arvya-gold-border);
+}
+.relCustomer {
+  background: #ddefe2;
+  color: #247048;
+  border-color: #bcdfc6;
+}
+.relProspect {
+  background: #e5eaf6;
+  color: #2e4a8f;
+  border-color: #c7d3ea;
+}
+.relPartner {
+  background: var(--cream-200);
+  color: var(--arvya-dark-800);
+  border-color: var(--cream-300);
+}
+.relCompetitor {
+  background: #f9dcdc;
+  color: #a83c3c;
+  border-color: #efb8b8;
+}
+.rel .pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.heat .bars {
+  display: inline-flex;
+  gap: 1.5px;
+  align-items: end;
+  height: 10px;
+}
+.heat .bars i {
+  display: inline-block;
+  width: 3px;
+  background: var(--cream-300);
+  border-radius: 1px;
+}
+.heat .bars i:nth-child(1) {
+  height: 3px;
+}
+.heat .bars i:nth-child(2) {
+  height: 5px;
+}
+.heat .bars i:nth-child(3) {
+  height: 7px;
+}
+.heat .bars i:nth-child(4) {
+  height: 10px;
+}
+.heatHot .bars i {
+  background: var(--arvya-gold);
+}
+.heatWarm .bars i:nth-child(-n + 3) {
+  background: var(--arvya-gold);
+}
+.heatCool .bars i:nth-child(-n + 2) {
+  background: var(--arvya-gold);
+}
+.heatCold .bars i:nth-child(1) {
+  background: var(--cream-400);
+}
+.heatCold {
+  color: var(--text-tertiary);
+}
+
+.ppl {
+  display: inline-flex;
+}
+.ppl .av {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--cream-300);
+  color: var(--arvya-dark-900);
+  font-size: 9px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid #fff;
+  margin-left: -6px;
+  font-family: var(--font-sans);
+}
+.ppl .av:first-child {
+  margin-left: 0;
+}
+.ppl .more {
+  background: var(--cream-200);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.loops {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.loops b {
+  color: var(--text-primary);
+}
+.loopsLate b {
+  color: #a83c3c;
+}
+.loopsZero {
+  color: var(--text-tertiary);
+}
+
+.aiVal {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.aiMeta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--arvya-gold-700);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.ago {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+.ago b {
+  color: var(--text-primary);
+}
+
+.footHint {
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
