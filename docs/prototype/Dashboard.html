@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Today</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .dash-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
+  @media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }
+
+  /* ============ CLEAN HEADER (no dark card) ============ */
+  .page-hd { padding: 8px 0 22px; margin-bottom: 22px; border-bottom: 1px solid var(--cream-200); }
+  .page-hd .eyebrow { color: var(--arvya-gold-700); }
+  .page-hd h1 {
+    font-family: var(--font-serif); font-weight: 500;
+    font-size: 30px; letter-spacing: -0.015em; line-height: 1.15;
+    margin: 6px 0 4px; color: var(--text-primary);
+  }
+  .page-hd .lede { font-size: 14px; color: var(--text-secondary); max-width: 64ch; line-height: 1.55; margin: 0; }
+
+  .page-hd .stats { display: flex; gap: 36px; margin-top: 18px; }
+  .page-hd .stats .it { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); letter-spacing: .1em; text-transform: uppercase; }
+  .page-hd .stats .it b { display: block; font-family: var(--font-serif); font-size: 22px; font-weight: 500; color: var(--text-primary); margin-top: 4px; letter-spacing: -0.01em; text-transform: none; }
+  .page-hd .stats .it b small { font-family: var(--font-mono); font-size: 10px; color: var(--arvya-status-active); letter-spacing: .04em; margin-left: 6px; font-weight: 400; }
+
+  /* Inline ask bar — light, clean, redirects to Ask page */
+  .ask {
+    margin-top: 22px;
+    background: #fff;
+    border: 1px solid var(--border-default);
+    border-radius: 14px;
+    padding: 12px 14px 10px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .ask:focus-within { border-color: var(--arvya-gold); box-shadow: 0 4px 16px rgba(216,154,63,.14); }
+  .ask textarea {
+    width: 100%; border: 0; outline: 0; resize: none;
+    font: 14px/1.5 var(--font-sans); color: var(--text-primary);
+    background: transparent;
+    min-height: 24px; max-height: 120px;
+  }
+  .ask textarea::placeholder { color: var(--text-tertiary); }
+  .ask .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .ask .skill {
+    height: 26px; padding: 0 10px; border-radius: 999px;
+    background: var(--cream-100); color: var(--text-secondary);
+    font: 11px var(--font-mono); letter-spacing: .04em;
+    border: 1px solid var(--cream-200);
+    cursor: pointer;
+  }
+  .ask .skill:hover { border-color: var(--arvya-gold); color: var(--arvya-gold-700); }
+  .ask .skill.on { background: var(--arvya-dark-900); color: var(--cream-50); border-color: var(--arvya-dark-900); }
+  .ask .grow { flex: 1; }
+  .ask .send {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--arvya-dark-900); color: var(--cream-50);
+    border: 0; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .ask .send:hover { background: var(--arvya-gold); color: var(--arvya-dark-900); }
+
+  .quickrail { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .quickrail a {
+    font-size: 12px; padding: 6px 12px; border-radius: 999px;
+    background: #fff; border: 1px solid var(--border-subtle);
+    color: var(--text-secondary); text-decoration: none; cursor: pointer;
+    transition: all .14s;
+  }
+  .quickrail a:hover { transform: translateY(-1px); border-color: var(--arvya-gold); color: var(--arvya-gold-700); box-shadow: var(--shadow-xs); }
+
+  /* keyframes used elsewhere */
+  @keyframes brainpulse { 0%,100% { opacity: .3; transform: scale(.85);} 50% { opacity: 1; transform: scale(1.15);} }
+
+  /* ============ MEETINGS ============ */
+  .meet-card { background: #fff; border: 1px solid var(--border-subtle); border-radius: 14px; }
+  .meet-head { padding: 16px 20px 8px; display: flex; align-items: baseline; gap: 8px; }
+  .meet-head h3 { font-family: var(--font-serif); font-weight: 500; font-size: 17px; margin: 0; }
+  .meet-head .meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-tertiary); margin-left: auto; }
+  .meet-day-lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-tertiary); padding: 12px 20px 6px; border-top: 1px solid var(--cream-200); }
+  .meet-day-lab:first-child, .meet-card .meet-head + .meet-day-lab { border-top: 0; padding-top: 0; }
+
+  .meet-row {
+    display: grid;
+    grid-template-columns: 56px 4px 1fr auto;
+    align-items: center; gap: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-top: 1px solid var(--cream-200);
+    transition: transform .14s, background .14s;
+  }
+  .meet-row:hover { background: var(--cream-50); transform: translateX(2px); }
+  .meet-row.now { background: linear-gradient(90deg, #FBF6E8 0%, #fff 60%); }
+  .meet-row.now:hover { background: linear-gradient(90deg, #F8EFD4 0%, var(--cream-50) 60%); }
+  .meet-day-lab + .meet-row { border-top: 0; }
+
+  .date-block {
+    display: flex; flex-direction: column; align-items: center;
+    border: 1px solid var(--border-default); border-radius: 7px;
+    padding: 4px 0 5px; width: 44px;
+    background: #fff;
+  }
+  .date-block .dow { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-tertiary); letter-spacing: .08em; text-transform: uppercase; line-height: 1; }
+  .date-block .day { font-family: var(--font-serif); font-size: 16px; font-weight: 500; color: var(--text-primary); margin-top: 3px; line-height: 1; }
+  .date-block.bare { visibility: hidden; }
+
+  .rail { width: 3px; height: 28px; border-radius: 2px; background: var(--cream-300); justify-self: center; }
+  .meet-row.now .rail { background: var(--arvya-gold); }
+
+  .meet-body { min-width: 0; }
+  .meet-title { font-size: 13.5px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meet-title .live { color: var(--arvya-gold-700); font-size: 12px; margin-left: 6px; font-family: var(--font-mono); letter-spacing: .04em; }
+  .meet-time { font-size: 11.5px; color: var(--text-tertiary); margin-top: 1px; font-family: var(--font-mono); }
+
+  .meet-right { display: flex; align-items: center; gap: 10px; }
+  .av-stack { display: inline-flex; }
+  .av-stack .av { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; border: 2px solid #fff; margin-left: -6px; flex-shrink: 0; font-family: var(--font-sans); }
+  .av-stack .av:first-child { margin-left: 0; }
+  .av-c1 { background: #29B36B; } .av-c2 { background: #E64C4C; } .av-c3 { background: #4E91F0; }
+  .av-c4 { background: #D89A3F; } .av-c5 { background: #B85FD9; } .av-c6 { background: #5C5CE6; }
+  .av-c7 { background: #2DBBB0; } .av-c8 { background: #F08531; }
+
+  .meet-actions { display: none; gap: 4px; }
+  .meet-row:hover .meet-actions { display: inline-flex; }
+  .ab { height: 26px; padding: 0 9px; border: 1px solid var(--border-default); border-radius: 6px; background: #fff; font: 11.5px var(--font-sans); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .ab:hover { background: var(--cream-100); }
+  .ab.join { background: var(--arvya-dark-900); color: var(--cream-50); border-color: var(--arvya-dark-900); }
+  .ab svg { width: 11px; height: 11px; }
+
+  /* ============ ACTION ITEMS ============ */
+  .actions-list .row {
+    display: grid; grid-template-columns: 22px 1fr auto; gap: 12px;
+    padding: 12px 20px; border-bottom: 1px solid var(--cream-200);
+    align-items: start;
+  }
+  .actions-list .row:last-child { border: 0; }
+  .actions-list .row:hover { background: var(--cream-50); }
+  .actions-list .ck {
+    width: 16px; height: 16px; border: 1.5px solid var(--cream-400);
+    border-radius: 4px; background: #fff;
+    margin-top: 2px; cursor: pointer;
+    display: grid; place-items: center;
+    transition: background .12s, border-color .12s;
+  }
+  .actions-list .ck:hover { border-color: var(--arvya-gold); }
+  .actions-list .ck.done { background: var(--arvya-dark-900); border-color: var(--arvya-dark-900); }
+  .actions-list .ck.done::after {
+    content:''; width: 8px; height: 4px;
+    border-left: 2px solid var(--cream-50); border-bottom: 2px solid var(--cream-50);
+    transform: rotate(-45deg) translateY(-1px);
+  }
+  .actions-list .row.done .t { text-decoration: line-through; color: var(--text-tertiary); }
+  .actions-list .t { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); font-weight: 500; }
+  .actions-list .meta { font: 10.5px var(--font-mono); letter-spacing: .04em; color: var(--text-tertiary); margin-top: 4px; }
+  .actions-list .meta .who { color: var(--arvya-gold-700); }
+  .actions-list .age { font: 11px var(--font-mono); color: var(--text-tertiary); padding-top: 2px; }
+  .actions-list .age.old { color: #A83C3C; }
+
+  /* ============ CARDS WITH HOVER LIFT ============ */
+  .chart-card { background: #fff; border: 1px solid var(--border-subtle); border-radius: 14px; padding: 18px 20px; transition: transform .14s, box-shadow .14s, border-color .14s; }
+  .chart-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); border-color: var(--cream-400); }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .chart-head h4 { font-family: var(--font-serif); font-weight: 500; font-size: 15px; margin: 0; }
+  .chart-head .stat { font-family: var(--font-serif); font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
+  .chart-head .stat small { font-family: var(--font-mono); font-size: 10px; color: var(--arvya-status-active); letter-spacing: .04em; margin-left: 6px; font-weight: 400; }
+  .chart-head .meta { font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--text-tertiary); }
+
+  .spark-wrap { position: relative; height: 64px; }
+  .spark-wrap svg { width: 100%; height: 100%; display: block; }
+
+  .legend { display: flex; gap: 16px; margin-top: 12px; font: 11px var(--font-mono); color: var(--text-tertiary); letter-spacing: .04em; }
+  .legend .it { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 8px; height: 8px; border-radius: 2px; }
+
+  .bars { display: grid; grid-template-columns: 70px 1fr 40px; gap: 10px; align-items: center; padding: 4px 0; font-size: 12px; }
+  .bars + .bars { margin-top: 2px; }
+  .bars .lab { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); letter-spacing: .02em; }
+  .bars .tr { height: 6px; border-radius: 999px; background: var(--cream-200); overflow: hidden; }
+  .bars .tr .fl { height: 100%; background: var(--arvya-dark-800); border-radius: 999px; transition: width .8s cubic-bezier(.2,.7,.2,1); }
+  .bars .tr .fl.gold { background: var(--arvya-gold); }
+  .bars .tr .fl.green { background: #2ECC7A; }
+  .bars .tr .fl.red { background: #C75050; }
+  .bars .v { font: 11px var(--font-mono); color: var(--text-primary); text-align: right; }
+
+  .donut-wrap { display: flex; align-items: center; gap: 16px; margin-top: 4px; }
+  .donut { position: relative; width: 96px; height: 96px; flex-shrink: 0; }
+  .donut svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .donut .ctr {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    text-align: center;
+  }
+  .donut .ctr b { font-family: var(--font-serif); font-size: 20px; font-weight: 500; }
+  .donut .ctr small { font: 9.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .1em; text-transform: uppercase; display: block; }
+  .donut-legend { flex: 1; display: flex; flex-direction: column; gap: 4px; font: 11.5px var(--font-mono); color: var(--text-secondary); }
+  .donut-legend .it { display: grid; grid-template-columns: 8px 1fr auto; gap: 8px; align-items: center; }
+  .donut-legend .sw { width: 8px; height: 8px; border-radius: 2px; }
+  .donut-legend .v { color: var(--text-primary); }
+
+  .live-pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #2ECC7A;
+    display: inline-block; margin-right: 6px;
+    animation: brainpulse 2s ease-out infinite;
+    vertical-align: 2px;
+  }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Dashboard">
+
+  <!-- ——— Clean header ——— -->
+  <header class="page-hd">
+    <div class="eyebrow">— <span id="dateLabel">Tuesday · 7 May · 8:42</span> · <span class="live-pulse-dot"></span>brain online</div>
+    <h1>Good morning, Naveen.</h1>
+    <p class="lede">142 new artifacts overnight — 3 calls, 28 emails, 11 docs, a Linear sprint review. Three things are drifting and one promise needs an owner.</p>
+
+    <div class="stats">
+      <div class="it">Sources today<b>142<small>+38%</small></b></div>
+      <div class="it">Memory objects<b>1,284</b></div>
+      <div class="it">Action items<b>14</b></div>
+      <div class="it">Brain confidence<b>0.89</b></div>
+    </div>
+
+    <div class="ask" id="ask">
+      <textarea id="askInput" placeholder="Ask the brain anything — &quot;what did we promise customers this week?&quot;" rows="1"></textarea>
+      <div class="row">
+        <span class="skill on" data-skill="memory">⌕ Memory</span>
+        <span class="skill" data-skill="loops">⏵ Action items</span>
+        <span class="skill" data-skill="people">⚇ People</span>
+        <span class="skill" data-skill="graph">⊹ Graph</span>
+        <span class="grow"></span>
+        <button class="send" id="askSend" title="Open in Ask Brain"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+      </div>
+    </div>
+
+    <div class="quickrail">
+      <a data-q="What did we promise customers this week?">What did we promise customers this week?</a>
+      <a data-q="Which investors need follow-up?">Which investors need follow-up?</a>
+      <a data-q="What is drifting from the roadmap?">What is drifting from the roadmap?</a>
+      <a data-q="Catch me up on Marlowe">Catch me up on Marlowe</a>
+    </div>
+  </header>
+
+  <!-- ——— Pulse strip — what the brain is doing right now ——— -->
+  <div class="pulse-strip" style="display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid var(--border-subtle); border-radius: 12px; background: #fff; overflow: hidden; margin-bottom: 24px;">
+    <div style="padding: 14px 18px; border-right: 1px solid var(--border-subtle); display:flex; flex-direction: column; gap: 4px;">
+      <span style="font: 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary);">— Ingesting</span>
+      <span style="font-family: var(--font-serif); font-size: 24px; font-weight: 500; color: var(--arvya-gold-700); display:inline-flex; align-items:baseline; gap:8px;">7<i style="display:inline-block; width:6px; height:6px; border-radius:50%; background: var(--arvya-gold); animation: brainpulse 1.4s ease-in-out infinite;"></i></span>
+      <span style="font: 10px var(--font-mono); color: var(--arvya-status-active);">3 emails · 2 calls · 2 docs</span>
+    </div>
+    <div style="padding: 14px 18px; border-right: 1px solid var(--border-subtle); display:flex; flex-direction: column; gap: 4px;">
+      <span style="font: 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary);">— Compiled today</span>
+      <span style="font-family: var(--font-serif); font-size: 24px; font-weight: 500;">38</span>
+      <span style="font: 10px var(--font-mono); color: var(--arvya-status-active);">entity pages updated</span>
+    </div>
+    <div style="padding: 14px 18px; border-right: 1px solid var(--border-subtle); display:flex; flex-direction: column; gap: 4px;">
+      <span style="font: 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary);">— Promises tracked</span>
+      <span style="font-family: var(--font-serif); font-size: 24px; font-weight: 500;">22</span>
+      <span style="font: 10px var(--font-mono); color: #A83C3C;">3 overdue</span>
+    </div>
+    <div style="padding: 14px 18px; display:flex; flex-direction: column; gap: 4px;">
+      <span style="font: 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary);">— Last dream cycle</span>
+      <span style="font-family: var(--font-serif); font-size: 24px; font-weight: 500;">4h ago</span>
+      <span style="font: 10px var(--font-mono); color: var(--arvya-status-active);">+ 12 new edges</span>
+    </div>
+  </div>
+
+  <!-- ——— Main grid ——— -->
+  <div class="dash-grid">
+
+    <!-- LEFT -->
+    <div>
+
+      <!-- Meetings (Octolane-style) -->
+      <div class="meet-card" style="margin-bottom: 24px;">
+        <div class="meet-head">
+          <h3>Today's meetings</h3>
+          <span class="meta">— 4 · 2 with auto-join</span>
+        </div>
+
+        <div class="meet-row now">
+          <div class="date-block"><span class="dow">Tue</span><span class="day">7</span></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">BlackRock — graph spec walkthrough <span class="live">▶ Now · 14:00 – 14:45</span></div>
+            <div class="meet-time">Jon Smith · graph-spec.md attached</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button><button class="ab join">Join →</button></div>
+            <div class="av-stack"><span class="av av-c2">JS</span><span class="av av-c4">NV</span><span class="av av-c1">PB</span></div>
+          </div>
+        </div>
+
+        <div class="meet-row">
+          <div class="date-block bare"></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">Sequoia — term-sheet questions</div>
+            <div class="meet-time">15:30 – 16:00 · Roelof + 1</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button><button class="ab join">Join</button></div>
+            <div class="av-stack"><span class="av av-c2">RB</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+
+        <div class="meet-row">
+          <div class="date-block bare"></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">Standup · sprint #18</div>
+            <div class="meet-time">17:00 – 17:15 · 4 attendees</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button></div>
+            <div class="av-stack"><span class="av av-c1">PB</span><span class="av av-c5">RT</span><span class="av av-c8">MK</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+
+        <div class="meet-row">
+          <div class="date-block bare"></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">Caffeinated &lt;&gt; Arvya — pilot kickoff</div>
+            <div class="meet-time">18:00 – 18:45 · Maya Chen</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button><button class="ab join">Join</button></div>
+            <div class="av-stack"><span class="av av-c5">MC</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+
+        <div class="meet-day-lab">Tomorrow · Wed 8 May</div>
+
+        <div class="meet-row">
+          <div class="date-block"><span class="dow">Wed</span><span class="day">8</span></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">Marlowe weekly · risk &amp; comps</div>
+            <div class="meet-time">10:00 – 10:30</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button></div>
+            <div class="av-stack"><span class="av av-c6">EM</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+
+        <div class="meet-row">
+          <div class="date-block bare"></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">Founders Fund — partner meeting</div>
+            <div class="meet-time">14:00 – 15:00 · 6 attendees</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button></div>
+            <div class="av-stack"><span class="av av-c3">DK</span><span class="av av-c2">SG</span><span class="av av-c8">JL</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+
+        <div class="meet-row">
+          <div class="date-block bare"></div>
+          <span class="rail"></span>
+          <div class="meet-body">
+            <div class="meet-title">USV intro — Andy Weissman</div>
+            <div class="meet-time">16:30 – 17:00</div>
+          </div>
+          <div class="meet-right">
+            <div class="meet-actions"><button class="ab">Prep</button></div>
+            <div class="av-stack"><span class="av av-c7">AW</span><span class="av av-c4">NV</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drift card -->
+      <div class="card" style="background: linear-gradient(180deg, var(--cream-50) 0%, #fff 100%); border-color: var(--arvya-gold-border); padding: 20px 22px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <span class="eyebrow gold">— Drift detected · 3 signals</span>
+          <a href="Drift.html" class="eyebrow gold" style="text-decoration: underline; text-underline-offset: 3px;">Open drift review →</a>
+        </div>
+        <div style="display: grid; grid-template-columns: 18px 1fr auto; gap: 12px; padding: 10px 0; align-items: start; font-size: 13px;">
+          <span style="font-family: var(--font-serif); font-weight: 500; color: var(--arvya-gold-700); padding-top: 1px;">⌖</span>
+          <div style="color: var(--text-secondary); line-height: 1.5;"><b style="color: var(--text-primary); font-weight: 500;">Sales narrative drift.</b> Investor deck says "Brain for consulting" — but 4 of 6 last customer calls were VC firms, and 2 cited "Deal Brain" as why they signed.<div style="margin-top:6px; display: flex; gap: 5px;"><a class="cite" href="Sources.html">⌕ call · Sequoia · 3d</a><a class="cite" href="Sources.html">⌕ call · USV · 5d</a></div></div>
+          <span style="font: 10px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; text-decoration: underline; text-decoration-color: var(--arvya-gold); text-underline-offset: 3px; cursor: pointer;">Review →</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 18px 1fr auto; gap: 12px; padding: 10px 0; align-items: start; font-size: 13px; border-top: 1px solid var(--cream-200);">
+          <span style="font-family: var(--font-serif); font-weight: 500; color: var(--arvya-gold-700); padding-top: 1px;">⌖</span>
+          <div style="color: var(--text-secondary); line-height: 1.5;"><b style="color: var(--text-primary); font-weight: 500;">Promise has no owner.</b> Monday's BlackRock call: "we'll send a graph spec by Thursday." Not on Linear, not in drafts, PB hasn't seen it.<div style="margin-top:6px; display: flex; gap: 5px;"><a class="cite" href="Sources.html">⌕ call · BlackRock · Mon</a></div></div>
+          <span style="font: 10px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; text-decoration: underline; text-decoration-color: var(--arvya-gold); text-underline-offset: 3px; cursor: pointer;">Assign →</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 18px 1fr auto; gap: 12px; padding: 10px 0; align-items: start; font-size: 13px; border-top: 1px solid var(--cream-200);">
+          <span style="font-family: var(--font-serif); font-weight: 500; color: var(--arvya-gold-700); padding-top: 1px;">⌖</span>
+          <div style="color: var(--text-secondary); line-height: 1.5;"><b style="color: var(--text-primary); font-weight: 500;">Same objection, third time.</b> "Where does the data live?" — Clearco, Founders Fund, Caffeinated. Not in the FAQ.<div style="margin-top:6px; display: flex; gap: 5px;"><a class="cite" href="Sources.html">⌕ 3 sources</a></div></div>
+          <span style="font: 10px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; text-decoration: underline; text-decoration-color: var(--arvya-gold); text-underline-offset: 3px; cursor: pointer;">Draft FAQ →</span>
+        </div>
+      </div>
+
+      <!-- Action items -->
+      <div class="card actions-list" style="margin-bottom: 24px;">
+        <div class="card-head">
+          <h3>Action items</h3>
+          <span class="meta">— 5 of 14 · brain-ranked</span>
+        </div>
+
+        <div class="row" data-row>
+          <span class="ck" data-ck></span>
+          <div>
+            <div class="t">Send the BlackRock graph spec.</div>
+            <div class="meta">Promised Mon · brain has v0 ready · <a class="cite" href="Sources.html">⌕ call · BlackRock</a> <a class="cite" href="Sources.html">⌕ draft · spec.md</a></div>
+            <div class="meta" style="margin-top: 4px;"><span class="who">YOU</span> · investor</div>
+          </div>
+          <span class="age old">3d</span>
+        </div>
+
+        <div class="row" data-row>
+          <span class="ck" data-ck></span>
+          <div>
+            <div class="t">Reply to Sequoia's term-sheet questions.</div>
+            <div class="meta">SOC 2 timing, model lock-in, customer relationship · brain has Roelof's behavioral model</div>
+            <div class="meta" style="margin-top: 4px;"><span class="who">YOU</span> · investor</div>
+          </div>
+          <span class="age">2h</span>
+        </div>
+
+        <div class="row" data-row>
+          <span class="ck" data-ck></span>
+          <div>
+            <div class="t">Decide: Slack connector vs. Drive ingestion.</div>
+            <div class="meta">Both promised this week · Slack unblocks 2 pilots, Drive unblocks PB · trade-off written up</div>
+            <div class="meta" style="margin-top: 4px;"><span class="who">YOU + PB</span> · roadmap</div>
+          </div>
+          <span class="age">1d</span>
+        </div>
+
+        <div class="row" data-row>
+          <span class="ck" data-ck></span>
+          <div>
+            <div class="t">Intro Maya (Caffeinated) → Joel (Verdant).</div>
+            <div class="meta">Maya asked Sun · Joel asked Sat · brain drafted double-opt-in</div>
+            <div class="meta" style="margin-top: 4px;"><span class="who">YOU</span> · network</div>
+          </div>
+          <span class="age">1d</span>
+        </div>
+
+        <div class="row" data-row>
+          <span class="ck" data-ck></span>
+          <div>
+            <div class="t">Tell Marlowe their bug shipped.</div>
+            <div class="meta">PR #482 merged Fri · they reported in Oct · 1-liner ready</div>
+            <div class="meta" style="margin-top: 4px;"><span class="who">PB</span> · customer</div>
+          </div>
+          <span class="age old">4d</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+
+      <!-- Sources ingested · sparkline -->
+      <div class="chart-card">
+        <div class="chart-head">
+          <h4>Sources ingested</h4>
+          <span class="meta">— Last 14 days</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px;">
+          <span class="stat" style="font-family: var(--font-serif); font-size: 22px; font-weight: 500; letter-spacing: -0.01em;" id="sparkVal">142</span>
+          <small style="font: 10px var(--font-mono); color: var(--arvya-status-active); letter-spacing: .04em;">+38% vs last week</small>
+        </div>
+        <div class="spark-wrap">
+          <svg id="sparkSvg" viewBox="0 0 280 64" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="legend">
+          <span class="it"><span class="sw" style="background: var(--arvya-dark-800);"></span>Today</span>
+          <span class="it"><span class="sw" style="background: var(--cream-300);"></span>14-day avg</span>
+        </div>
+      </div>
+
+      <!-- Brain confidence donut -->
+      <div class="chart-card">
+        <div class="chart-head">
+          <h4>Compile confidence</h4>
+          <span class="meta">— By domain</span>
+        </div>
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg id="donutSvg" viewBox="0 0 36 36"></svg>
+            <div class="ctr"><div><b id="donutVal">0.89</b><small>brain</small></div></div>
+          </div>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+
+      <!-- Promises by status · animated bars -->
+      <div class="chart-card">
+        <div class="chart-head">
+          <h4>Promises by status</h4>
+          <span class="meta">— 22 tracked</span>
+        </div>
+        <div id="barsHost" style="margin-top: 6px;"></div>
+      </div>
+
+      <!-- Live agent stream -->
+      <div class="card">
+        <div class="card-head">
+          <h3>Brain — live</h3>
+          <span class="meta" style="display: flex; align-items: center; gap: 6px;"><span style="width:6px;height:6px;border-radius:50%;background:#2ECC7A;display:inline-block;"></span>watching</span>
+        </div>
+        <div id="liveStream" style="font-family: var(--font-mono); font-size: 12px;"></div>
+        <div style="padding: 10px 20px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+          <span style="font: 10.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .06em;">— <span id="runsCount">142</span> runs today · 0 failed</span>
+          <a href="Agents.html" style="font: 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--arvya-gold-700); text-decoration: none;">All runs →</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'dashboard', crumbs: ['Arvya Co.', 'Today'] });
+
+  /* ============ DYNAMIC: SPARKLINE ============ */
+  (function spark(){
+    const svg = document.getElementById('sparkSvg');
+    const W = 280, H = 64;
+    const data = [62,71,58,82,75,90,103,88,112,98,124,131,118,142];
+    const max = Math.max(...data) * 1.15;
+    const min = Math.min(...data) * 0.7;
+    const stepX = W / (data.length - 1);
+    const pts = data.map((v, i) => [i*stepX, H - ((v-min)/(max-min))*H]);
+    const path = pts.map((p, i) => (i===0?'M':'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const fillPath = path + ` L ${W},${H} L 0,${H} Z`;
+
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#D89A3F" stop-opacity=".24"/>
+          <stop offset="100%" stop-color="#D89A3F" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${fillPath}" fill="url(#sparkFill)"/>
+      <path d="${path}" fill="none" stroke="#0E1726" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.map((p,i) => i===pts.length-1
+        ? `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="#D89A3F" stroke="#fff" stroke-width="1.5"/>`
+        : '').join('')}
+    `;
+
+    // Animate the latest value
+    const valEl = document.getElementById('sparkVal');
+    let n = 0, target = 142;
+    const tick = () => {
+      n = Math.min(target, n + Math.ceil((target - n) / 6) + 1);
+      valEl.textContent = n;
+      if (n < target) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })();
+
+  /* ============ DYNAMIC: DONUT ============ */
+  (function donut(){
+    const segments = [
+      { lab: 'People', val: 0.94, color: '#0E1726' },
+      { lab: 'Companies', val: 0.91, color: '#D89A3F' },
+      { lab: 'Promises', val: 0.86, color: '#2ECC7A' },
+      { lab: 'Topics', val: 0.81, color: '#5C5CE6' },
+    ];
+    const svg = document.getElementById('donutSvg');
+    const r = 15.9155, c = 2 * Math.PI * r;
+    let acc = 0;
+    const total = segments.reduce((s,x)=>s+x.val,0);
+    svg.innerHTML = segments.map(s => {
+      const len = (s.val/total) * c;
+      const dasharray = `${len} ${c-len}`;
+      const dashoffset = -acc;
+      acc += len;
+      return `<circle cx="18" cy="18" r="${r}" fill="none" stroke="${s.color}" stroke-width="3.4" stroke-dasharray="${dasharray}" stroke-dashoffset="${dashoffset}"/>`;
+    }).join('') + `<circle cx="18" cy="18" r="${r}" fill="none" stroke="#F5F1EB" stroke-width="3.4" opacity=".4"/>`;
+    // re-render with white track first
+    svg.innerHTML = `<circle cx="18" cy="18" r="${r}" fill="none" stroke="#F5F1EB" stroke-width="3.4"/>` +
+      segments.map((s, i) => {
+        const len = (s.val/total) * c;
+        let acc2 = 0; for (let j=0;j<i;j++) acc2 += (segments[j].val/total)*c;
+        return `<circle cx="18" cy="18" r="${r}" fill="none" stroke="${s.color}" stroke-width="3.4" stroke-dasharray="${len} ${c-len}" stroke-dashoffset="${-acc2}" style="transition: stroke-dasharray 1.2s cubic-bezier(.2,.7,.2,1);"/>`;
+      }).join('');
+
+    document.getElementById('donutLegend').innerHTML = segments.map(s => `
+      <div class="it"><span class="sw" style="background:${s.color}"></span><span>${s.lab}</span><span class="v">${s.val.toFixed(2)}</span></div>
+    `).join('');
+  })();
+
+  /* ============ DYNAMIC: BARS ============ */
+  (function bars(){
+    const data = [
+      { lab: 'On track', val: 14, total: 22, kind: 'green' },
+      { lab: 'Drifting', val: 5,  total: 22, kind: 'gold' },
+      { lab: 'Overdue',  val: 3,  total: 22, kind: 'red' },
+    ];
+    const host = document.getElementById('barsHost');
+    host.innerHTML = data.map(d => `
+      <div class="bars">
+        <span class="lab">${d.lab}</span>
+        <span class="tr"><span class="fl ${d.kind}" style="width: 0%"></span></span>
+        <span class="v">${d.val}</span>
+      </div>
+    `).join('');
+    // animate in
+    requestAnimationFrame(() => {
+      host.querySelectorAll('.fl').forEach((el, i) => {
+        el.style.width = ((data[i].val/data[i].total)*100).toFixed(1) + '%';
+      });
+    });
+  })();
+
+  /* ============ LIVE STREAM ============ */
+  (function liveStream(){
+    const host = document.getElementById('liveStream');
+    const events = [
+      { name: 'extract_memory', arg: 'email · Sequoia thread', state: 'run' },
+      { name: 'resolve_entity', arg: '"J. Smith" → Jon Smith (BlackRock)', state: 'ok', t: '0.4s' },
+      { name: 'compile_truth', arg: 'person/sarah-chen', state: 'ok', t: '2.1s' },
+      { name: 'detect_commitment', arg: '"send by Thu" → Jon', state: 'ok', t: '0.8s' },
+      { name: 'embed_segment', arg: 'call/marlowe-q4 · 47 turns', state: 'ok', t: '3.4s' },
+      { name: 'propose_edge', arg: 'BlackRock → Google · introduced_to', state: 'ok', t: '1.1s' },
+    ];
+    const render = () => {
+      host.innerHTML = events.map(ev => `
+        <div class="row" style="padding: 10px 20px; border-bottom: 1px solid var(--cream-200); display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center;">
+          <span style="width:14px; height:14px; border-radius: 3px; background: ${ev.state==='run'?'var(--arvya-gold-bg)':'#DDEFE2'}; display: grid; place-items: center;">
+            ${ev.state==='run'
+              ? '<i style="width:5px;height:5px;border-radius:50%;background:var(--arvya-gold);animation:brainpulse 1.2s ease-in-out infinite;"></i>'
+              : '<i style="width:6px;height:3px;border-left:1.5px solid #247048;border-bottom:1.5px solid #247048;transform:rotate(-45deg) translateY(-1px);"></i>'}
+          </span>
+          <span style="color: var(--text-primary); font-weight: 500; font-size: 11px;">${ev.name}<small style="color: var(--text-tertiary); font-weight: 400; margin-left: 4px;">${ev.arg}</small></span>
+          <span style="font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: ${ev.state==='run'?'var(--arvya-gold-700)':'var(--text-tertiary)'};">${ev.state==='run'?'running':ev.t}</span>
+        </div>
+      `).join('');
+    };
+    render();
+
+    // Periodically promote the running event and inject new ones
+    const newOps = [
+      'index_doc', 'reembed', 'detect_drift', 'merge_entity', 'verify_source', 'rank_memory'
+    ];
+    const newArgs = [
+      'doc · spec.md · v0.3', 'segment · marlowe-q4', 'narrative · investor-deck', 'Maya Chen · 2 candidates',
+      'gh · pr/482', 'memory/sarah-chen-q4'
+    ];
+    setInterval(() => {
+      // mark running as done
+      const r = events.find(e => e.state === 'run');
+      if (r) { r.state = 'ok'; r.t = (0.4 + Math.random()*3).toFixed(1) + 's'; }
+      // add new running at top
+      events.unshift({
+        name: newOps[Math.floor(Math.random()*newOps.length)],
+        arg: newArgs[Math.floor(Math.random()*newArgs.length)],
+        state: 'run'
+      });
+      while (events.length > 6) events.pop();
+      render();
+      const rc = document.getElementById('runsCount');
+      rc.textContent = (parseInt(rc.textContent.replace(/,/g,'')) + 1).toLocaleString();
+    }, 3500);
+  })();
+
+  /* ============ ACTION ITEMS — checkable ============ */
+  document.querySelectorAll('[data-row]').forEach(row => {
+    const ck = row.querySelector('[data-ck]');
+    ck.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ck.classList.toggle('done');
+      row.classList.toggle('done');
+    });
+  });
+
+  /* ============ MEETING ROW INTERACTION ============ */
+  document.querySelectorAll('.meet-row').forEach(r => {
+    r.addEventListener('click', e => {
+      if (e.target.closest('.ab')) return;
+      r.classList.toggle('expanded');
+    });
+  });
+
+  /* ============ ROUTE QUERIES TO ASK BRAIN ============ */
+  (function route(){
+    const input = document.getElementById('askInput');
+    const send = document.getElementById('askSend');
+
+    // Auto-grow textarea
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(120, input.scrollHeight) + 'px';
+    });
+
+    // Skill chips
+    document.querySelectorAll('.ask .skill').forEach(s => {
+      s.addEventListener('click', () => s.classList.toggle('on'));
+    });
+
+    function go() {
+      const q = input.value.trim();
+      const url = q ? `Ask.html?q=${encodeURIComponent(q)}` : 'Ask.html';
+      window.location.href = url;
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); }
+    });
+    send.addEventListener('click', go);
+
+    // Quick rail — direct route
+    document.querySelectorAll('.quickrail a').forEach(a => {
+      a.addEventListener('click', () => {
+        window.location.href = `Ask.html?q=${encodeURIComponent(a.dataset.q)}`;
+      });
+    });
+  })();
+</script>
+
+    // Submit on Enter (no shift) or button
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    });
+</script>
+</body>
+</html>

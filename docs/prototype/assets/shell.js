@@ -1,0 +1,115 @@
+// Arvya OS — shared sidebar/topbar partials injected on every page
+// Usage: <script src="assets/shell.js"></script> with data-active attr on body
+
+window.ArvyaShell = (function() {
+  function renderSidebar(active) {
+    return `
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="assets/arvya-icon-light.png" alt="Arvya" class="mk">
+          <img src="assets/arvya-wordmark-dark.png" alt="ARVYA" class="wm">
+        </div>
+
+        <div class="brain-switcher" title="Switch workspace">
+          <span class="badge">A</span>
+          <div>
+            <div class="nm">Arvya Co.</div>
+            <div class="rl">— Company brain</div>
+          </div>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+
+        <nav>
+          ${navLink('Dashboard.html', 'dashboard', icon('grid'), 'Today', '')}
+          ${navLink('Brief.html', 'brief', icon('sun'), 'Daily brief', '2 new')}
+          ${navLink('Ask.html', 'ask', icon('message'), 'Ask brain', '')}
+          ${navLink('OpenLoops.html', 'loops', icon('loop'), 'Action items', '14')}
+
+          <div class="group-label">— Memory</div>
+          ${navLink('Sources.html', 'sources', icon('inbox'), 'Sources', '1,284')}
+          ${navLink('People.html', 'people', icon('users'), 'People', '342')}
+          ${navLink('Companies.html', 'companies', icon('building'), 'Companies', '88')}
+          ${navLink('Graph.html', 'graph', icon('graph'), 'Knowledge graph', '')}
+
+          <div class="group-label">— Operations</div>
+          ${navLink('Drift.html', 'drift', icon('compass'), 'Drift review', '3')}
+          ${navLink('Agents.html', 'agents', icon('bot'), 'Agent runs', '')}
+          ${navLink('Connectors.html', 'connectors', icon('plug'), 'Connectors', '6')}
+        </nav>
+
+        <div class="spacer"></div>
+        <div class="side-foot">
+          <a href="Settings.html" class="foot-link${active==='settings'?' active':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" width="15" height="15"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></a>
+          <a href="#" class="foot-link" onclick="return confirm('Sign out of Arvya?')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" width="15" height="15"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Log out</span></a>
+        </div>
+        <div class="me">
+          <span class="av">NA</span>
+          <div><div class="nm">Naveen A.</div><div class="rl">— Founder</div></div>
+        </div>
+      </aside>
+    `;
+
+    function navLink(href, key, ic, label, count) {
+      const cls = active === key ? 'active' : '';
+      return `<a href="${href}" class="${cls}">${ic}<span>${label}</span>${count ? `<span class="count">${count}</span>` : ''}</a>`;
+    }
+  }
+
+  function icon(name) {
+    const icons = {
+      grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+      sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+      message: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      loop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+      inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+      users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+      building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="6" x2="9" y2="6"/><line x1="15" y1="6" x2="15" y2="6"/><line x1="9" y1="10" x2="9" y2="10"/><line x1="15" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="9" y2="14"/><line x1="15" y1="14" x2="15" y2="14"/><line x1="10" y1="22" x2="10" y2="18"/><line x1="14" y1="22" x2="14" y2="18"/></svg>',
+      graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="8.1" y1="8.1" x2="15.9" y2="15.9"/><line x1="15.9" y1="8.1" x2="8.1" y2="15.9"/></svg>',
+      compass: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
+      bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>',
+      plug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v5"/></svg>',
+      search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    };
+    return icons[name] || '';
+  }
+
+  function renderTopbar(crumbs, opts) {
+    opts = opts || {};
+    const cr = crumbs.map((c, i) => {
+      const last = i === crumbs.length - 1;
+      return last
+        ? `<span class="here">${c}</span>`
+        : `<span>${c}</span><span class="sep">/</span>`;
+    }).join(' ');
+    return `
+      <header class="topbar">
+        <div class="crumbs">${cr}</div>
+        <div class="actions">
+          <a href="Ask.html" class="ask" style="text-decoration:none;">
+            ${icon('search')}
+            <span>Ask the brain anything</span>
+            <kbd>⌘K</kbd>
+          </a>
+          <button class="ic-btn" title="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+          ${opts.primary || ''}
+        </div>
+      </header>
+    `;
+  }
+
+  function mount(opts) {
+    const root = document.querySelector('[data-shell]');
+    if (!root) return;
+    root.innerHTML = `
+      <div class="app">
+        ${renderSidebar(opts.active)}
+        <main class="main">
+          ${renderTopbar(opts.crumbs || ['Arvya Co.'], opts)}
+          <div class="content">${root.innerHTML}</div>
+        </main>
+      </div>
+    `;
+  }
+
+  return { mount, icon };
+})();

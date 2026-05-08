@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Sources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .src-layout { display: grid; grid-template-columns: 220px 1fr 360px; gap: 22px; }
+
+  .src-filters {
+    border-right: 1px solid var(--border-subtle);
+    padding-right: 22px;
+  }
+  .src-filters h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin: 18px 0 8px; }
+  .src-filters h4:first-child { margin-top: 0; }
+  .src-filters a {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    text-decoration: none; color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .src-filters a:hover { background: var(--cream-100); }
+  .src-filters a.on { background: var(--arvya-dark-900); color: var(--cream-50); }
+  .src-filters a .ct { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); }
+  .src-filters a.on .ct { color: var(--arvya-gold); }
+  .src-filters a .ic { width: 14px; height: 14px; opacity: .7; }
+
+  .src-list { min-width: 0; }
+  .src-list .head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 4px;
+  }
+  .src-list .head .ct { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; color: var(--text-tertiary); }
+
+  .item {
+    display: grid; grid-template-columns: 22px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--cream-200);
+    cursor: pointer;
+  }
+  .item:hover { background: var(--cream-50); }
+  .item.sel { background: var(--cream-100); }
+  .item .src-ic {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--cream-200);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600; color: var(--arvya-dark-700);
+  }
+  .item .src-ic.gmail { background: #FFE7E1; color: #C0573B; }
+  .item .src-ic.cal { background: #E1F0E6; color: #2A6F45; }
+  .item .src-ic.zoom { background: #DDEAF8; color: #2A4A78; }
+  .item .src-ic.gh { background: #2A2A2A; color: #fff; }
+  .item .src-ic.notion { background: #F4F0E6; color: #555; }
+  .item .src-ic.slack { background: #F4DBE8; color: #6B2D49; }
+  .item .src-ic.linear { background: #E0E0F4; color: #43438A; }
+  .item .src-ic.drive { background: #E1F0E6; color: #2A6F45; }
+  .item .meta-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .item .from { font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
+  .item .when { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-left: auto; letter-spacing: .04em; }
+  .item .ttl { font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px; line-height: 1.4; }
+  .item .ttl b { font-weight: 500; }
+  .item .ex { font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+  .item .badges { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .src-detail {
+    background: var(--cream-50);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 22px 24px;
+    height: fit-content;
+    position: sticky; top: 80px;
+  }
+  .sd-meta {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em;
+    color: var(--text-tertiary); text-transform: uppercase;
+  }
+  .sd-h {
+    font-family: var(--font-serif); font-weight: 500; font-size: 19px;
+    letter-spacing: -0.005em; line-height: 1.3;
+    margin: 0 0 12px;
+  }
+  .sd-from { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 14px; }
+  .sd-from b { color: var(--text-primary); font-weight: 500; }
+  .sd-body {
+    font-family: var(--font-serif);
+    font-size: 14px; line-height: 1.6; color: var(--text-primary);
+    background: #fff; border: 1px solid var(--border-subtle);
+    border-radius: 10px; padding: 16px 18px;
+    max-height: 300px; overflow: auto;
+  }
+  .sd-body p { margin: 0 0 12px; }
+  .sd-body p:last-child { margin: 0; }
+
+  .sd-h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--arvya-gold-700); margin: 18px 0 10px; }
+  .sd-extracted { display: flex; flex-direction: column; gap: 8px; }
+  .sd-extracted .ex {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.5;
+  }
+  .sd-extracted .ex .lab { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--arvya-gold-700); display: block; margin-bottom: 4px; }
+  .sd-extracted .ex .src { display: flex; gap: 4px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Sources">
+
+  <div class="page-head">
+    <div>
+      <span class="eyebrow gold">— Capture layer</span>
+      <h1>Sources.</h1>
+      <p class="sub">Every artifact the brain has ingested, in chronological order. Hover any item to see what was extracted, where it landed in the graph, and which entity pages it changed.</p>
+    </div>
+    <div class="right">
+      <div style="display: flex; gap: 8px;">
+        <button class="btn ghost">+ Drop file</button>
+        <button class="btn primary">+ Connect source</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpis" style="margin-bottom: 28px;">
+    <div class="kpi"><div class="label">— Total artifacts</div><div class="val">1,284</div><div class="delta">+142 overnight</div></div>
+    <div class="kpi"><div class="label">— Last 24h</div><div class="val">142</div><div class="delta">12 connectors</div></div>
+    <div class="kpi"><div class="label">— Memories extracted</div><div class="val">3,612</div><div class="delta">+412 overnight</div></div>
+    <div class="kpi"><div class="label">— Failed parses</div><div class="val" style="color:#A83C3C;">3</div><div class="delta neg">2 PDFs · 1 audio</div></div>
+  </div>
+
+  <!-- Layout -->
+  <div class="src-layout">
+
+    <!-- Filters -->
+    <div class="src-filters">
+      <h4>— By type</h4>
+      <a class="on">📥 All sources <span class="ct">1,284</span></a>
+      <a><span>✉</span> Email <span class="ct">847</span></a>
+      <a><span>📅</span> Meetings <span class="ct">142</span></a>
+      <a><span>💬</span> Slack <span class="ct">98</span></a>
+      <a><span>📝</span> Docs <span class="ct">86</span></a>
+      <a><span>⚙</span> Code <span class="ct">61</span></a>
+      <a><span>🎙</span> Voice memo <span class="ct">28</span></a>
+      <a><span>📎</span> PDFs <span class="ct">22</span></a>
+
+      <h4>— By status</h4>
+      <a>⏳ Pending review <span class="ct">12</span></a>
+      <a>✓ Indexed <span class="ct">1,269</span></a>
+      <a>⚠ Failed <span class="ct">3</span></a>
+
+      <h4>— Saved views</h4>
+      <a>★ Investor mentions</a>
+      <a>★ Unanswered questions</a>
+      <a>★ Sequoia thread</a>
+      <a>★ My voice memos</a>
+    </div>
+
+    <!-- List -->
+    <div class="src-list">
+      <div class="head">
+        <span class="ct">— Today · Tue 7 May · 38 items</span>
+        <span class="ct">— sorted: ingested ↓</span>
+      </div>
+
+      <div class="item sel">
+        <span class="src-ic gmail">@</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Roelof · Sequoia Capital</span>
+            <span class="when">06:04 · 1h ago</span>
+          </div>
+          <div class="ttl"><b>re: Arvya OS deck — three things before partnership</b></div>
+          <div class="ex">"Three things before we go to partnership: when does SOC 2 land, how locked in are you to Anthropic, and who owns the customer relationship if a brain template ships per-vertical."</div>
+          <div class="badges">
+            <span class="pill gold"><span class="dot"></span>3 memories</span>
+            <span class="cite">⌕ entity · Roelof</span>
+            <span class="cite">⌕ loop · sequoia-tsq</span>
+            <span class="cite">⌕ 4 graph edges</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic gmail">@</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Jon · BlackRock</span>
+            <span class="when">07:14</span>
+          </div>
+          <div class="ttl">graph spec — second mention</div>
+          <div class="ex">"Following up on the graph spec — keen to see how you're thinking about the canonical edge types."</div>
+          <div class="badges">
+            <span class="pill warn"><span class="dot"></span>opens loop</span>
+            <span class="cite">⌕ Jon · BlackRock</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic gh">GH</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">github · arvya-os</span>
+            <span class="when">06:50</span>
+          </div>
+          <div class="ttl">PR #482 merged · Slack connector beta — 8/12 acceptance criteria green</div>
+          <div class="ex">Merged by Sumit. CI green. Next milestone: ingest_message_threads.</div>
+          <div class="badges">
+            <span class="pill ok"><span class="dot"></span>closes loop</span>
+            <span class="cite">⌕ Sumit</span>
+            <span class="cite">⌕ Slack pilot</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic zoom">Z</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Zoom · Marlowe ↔ PB</span>
+            <span class="when">Yesterday · 16:30</span>
+          </div>
+          <div class="ttl">Marlowe QBR prep — full transcript (47 min)</div>
+          <div class="ex">PB and Lila Cho discussed Q3 expansion; Marlowe wants pricing for ≥ 50 seats and asked again whether bug #482 had shipped.</div>
+          <div class="badges">
+            <span class="pill"><span class="dot"></span>14 memories</span>
+            <span class="cite">⌕ Lila Cho</span>
+            <span class="cite">⌕ Marlowe</span>
+            <span class="cite">⌕ pricing topic</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic notion">N</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Notion · /strategy/board-update-may.md</span>
+            <span class="when">Yesterday · 22:14</span>
+          </div>
+          <div class="ttl">Naveen wrote a 1,200-word draft of the May board update</div>
+          <div class="ex">"This month: we shipped Slack ingestion; closed 2 customer pilots; lost 1 (StackHub, citing latency on long contexts)…"</div>
+          <div class="badges">
+            <span class="pill"><span class="dot"></span>22 memories</span>
+            <span class="cite">⌕ StackHub churn</span>
+            <span class="cite">⌕ board</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic slack">#</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Slack · #eng — Sumit</span>
+            <span class="when">Yesterday · 19:50</span>
+          </div>
+          <div class="ttl">"Anyone seeing weird behaviour from the OAuth refresh in prod since the deploy?"</div>
+          <div class="ex">3-message thread; Sumit, Anjali, Ravi. Resolved without action.</div>
+          <div class="badges">
+            <span class="pill"><span class="dot"></span>1 memory</span>
+            <span class="cite">⌕ Sumit</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic linear">L</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Linear · ENG-412 closed</span>
+            <span class="when">Yesterday · 17:22</span>
+          </div>
+          <div class="ttl">"Investigate Marlowe latency on long contexts"</div>
+          <div class="ex">Closed as fixed by PR #475. Linked to bug report from Lila Cho on May 2.</div>
+          <div class="badges">
+            <span class="pill ok"><span class="dot"></span>closes loop</span>
+            <span class="cite">⌕ chain</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic cal">📅</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Calendar · Insight Partners ↔ NA</span>
+            <span class="when">Today · 14:00</span>
+          </div>
+          <div class="ttl">Upcoming · 45 min · Lonne, Sarah, NA</div>
+          <div class="ex">Brain prepared a brief — relationship history, last 3 conversations, behavioral notes, asks. Ready 18 min before.</div>
+          <div class="badges">
+            <span class="pill gold"><span class="dot"></span>brief ready</span>
+            <span class="cite">⌕ open</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic drive">D</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Drive · Vendor questionnaire — Notion v2</span>
+            <span class="when">Yesterday · 14:22</span>
+          </div>
+          <div class="ttl">PB shared with sales@notion.com</div>
+          <div class="ex">37 questions answered. Brain auto-filled 22 from the SOC 2 doc + GH security policy.</div>
+          <div class="badges">
+            <span class="pill ok"><span class="dot"></span>closes loop</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <span class="src-ic" style="background:#FFEFD5;color:#A86B11;">🎙</span>
+        <div>
+          <div class="meta-row">
+            <span class="from">Voice memo · NA · iPhone</span>
+            <span class="when">Yesterday · 09:14</span>
+          </div>
+          <div class="ttl">3 min — "Walk to coffee, thinking about the customer relationship question"</div>
+          <div class="ex">"…I keep coming back to: we own the platform, the partner owns the vertical execution. But who owns the renewal? Need to write this down."</div>
+          <div class="badges">
+            <span class="pill"><span class="dot"></span>4 memories</span>
+            <span class="cite">⌕ unresolved</span>
+            <span class="cite">⌕ &quot;ownership&quot;</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center; padding: 24px 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); letter-spacing: .08em;">
+        — load 28 more from today ↓
+      </div>
+    </div>
+
+    <!-- Detail -->
+    <div class="src-detail">
+      <div class="sd-meta">
+        <span>— EMAIL · GMAIL</span>
+        <span style="margin-left:auto;">conf 0.98</span>
+      </div>
+      <h3 class="sd-h">re: Arvya OS deck — three things before partnership</h3>
+      <div class="sd-from">
+        <b>Roelof Botha</b> &lt;roelof@sequoia.com&gt;<br>
+        — to: Naveen, PB · Tue · 06:04
+      </div>
+
+      <div class="sd-body">
+        <p>Naveen, PB —</p>
+        <p>Read the deck on the flight back. Strong storyline, especially the "compiled truth" framing.</p>
+        <p>Three things before we go to partnership:</p>
+        <p>1. when does SOC 2 land<br>2. how locked in are you to Anthropic<br>3. who owns the customer relationship if a brain template ships per-vertical</p>
+        <p>If we can land on these by EOW I'll set up Mike + Pat next week.</p>
+        <p>R</p>
+      </div>
+
+      <h4 class="sd-h4">— What the brain extracted</h4>
+      <div class="sd-extracted">
+        <div class="ex">
+          <span class="lab">— Promise · ours</span>
+          <b>"Land on three things by EOW"</b> · loop opened: sequoia-tsq · owner: NA · due: Fri.
+        </div>
+        <div class="ex">
+          <span class="lab">— Open question</span>
+          Customer-relationship ownership in vertical templates · status: <b>no recorded position</b> · suggested action: write a 1-pager.
+        </div>
+        <div class="ex">
+          <span class="lab">— Behavioral signal</span>
+          Roelof in decision-mode (terse, numbered list, deadline). Delta vs his last 14 emails: 0.84 confidence.
+        </div>
+        <div class="ex">
+          <span class="lab">— Graph edges added</span>
+          Roelof —[asked-about]→ SOC 2 · Roelof —[asked-about]→ model-lock-in · Roelof —[offered]→ partner-mtg.
+        </div>
+      </div>
+
+      <h4 class="sd-h4">— Touched these entity pages</h4>
+      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;">
+        <a class="cite">⌕ entity · Roelof Botha</a>
+        <a class="cite">⌕ entity · Sequoia Capital</a>
+        <a class="cite">⌕ topic · SOC 2 readiness</a>
+        <a class="cite">⌕ topic · model-lock-in</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'sources', crumbs: ['Arvya Co.', 'Sources'] });
+</script>
+</body>
+</html>

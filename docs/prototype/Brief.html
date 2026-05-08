@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Daily brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .brief-wrap { max-width: 880px; margin: 0 auto; }
+  .brief-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border-subtle);
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-tertiary);
+    margin-bottom: 28px;
+  }
+  .brief-meta .right { display: flex; gap: 18px; }
+  .brief-meta .right span b { color: var(--text-primary); font-weight: 500; }
+
+  .brief-h1 {
+    font-family: var(--font-serif); font-weight: 400;
+    font-size: 44px; letter-spacing: -0.02em; line-height: 1.05;
+    margin: 0 0 12px;
+    color: var(--text-primary);
+  }
+  .brief-lede {
+    font-family: var(--font-serif); font-style: italic;
+    font-size: 19px; line-height: 1.5; color: var(--text-secondary);
+    max-width: 56ch; margin: 0 0 36px;
+  }
+  .brief-lede b { font-style: normal; color: var(--text-primary); font-weight: 500; }
+
+  .brief-toc {
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    margin-bottom: 48px;
+  }
+  .brief-toc a {
+    padding: 14px 16px; border-right: 1px solid var(--border-subtle);
+    text-decoration: none; color: var(--text-primary);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .brief-toc a:last-child { border-right: 0; }
+  .brief-toc a:hover { background: var(--cream-100); }
+  .brief-toc .no { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; color: var(--text-tertiary); }
+  .brief-toc .nm { font-family: var(--font-serif); font-size: 16px; font-weight: 500; letter-spacing: -0.005em; }
+
+  section.brief-sec { margin: 0 0 56px; scroll-margin-top: 80px; }
+  .brief-sec-head {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 22px;
+  }
+  .brief-sec-head .no {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
+    color: var(--arvya-gold-700); text-transform: uppercase;
+  }
+  .brief-sec-head h2 {
+    font-family: var(--font-serif); font-weight: 500; font-size: 26px;
+    letter-spacing: -0.012em; margin: 0;
+  }
+  .brief-sec-head .rule { flex: 1; height: 1px; background: var(--border-subtle); }
+
+  .brief-card {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 14px;
+  }
+  .brief-card.accent { border-left: 3px solid var(--arvya-gold); padding-left: 23px; }
+  .brief-card .head { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 8px; }
+  .brief-card h3 {
+    font-family: var(--font-serif); font-weight: 500; font-size: 18px;
+    letter-spacing: -0.005em; margin: 0; line-height: 1.3;
+  }
+  .brief-card .body {
+    font-size: 14px; line-height: 1.6; color: var(--text-primary);
+    margin: 0;
+  }
+  .brief-card .body p { margin: 0 0 10px; }
+  .brief-card .body p:last-child { margin: 0; }
+  .brief-card .src-row {
+    margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap;
+    padding-top: 12px; border-top: 1px solid var(--cream-200);
+  }
+
+  .quote-block {
+    background: var(--cream-100);
+    border-left: 3px solid var(--arvya-gold);
+    padding: 14px 18px;
+    margin: 12px 0;
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--text-primary);
+  }
+  .quote-block .who {
+    display: block; margin-top: 8px;
+    font-family: var(--font-mono); font-style: normal; font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .actions-grid .person {
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px; padding: 20px 22px;
+    background: #fff;
+  }
+  .actions-grid .person h4 {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--font-serif); font-weight: 500; font-size: 17px;
+    margin: 0 0 14px;
+  }
+  .actions-grid .person h4 .av {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--arvya-dark-900); color: var(--cream-50);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; font-family: var(--font-sans);
+  }
+  .actions-grid .person h4 .av.gold { background: var(--arvya-gold); color: var(--arvya-dark-900); }
+  .actions-grid .person ol {
+    margin: 0; padding-left: 0; list-style: none;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .actions-grid .person li {
+    display: grid; grid-template-columns: 18px 1fr; gap: 10px;
+    font-size: 13.5px; line-height: 1.5; color: var(--text-primary);
+  }
+  .actions-grid .person li .n {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary);
+    padding-top: 3px; letter-spacing: .04em;
+  }
+  .actions-grid .person li b { font-weight: 500; }
+  .actions-grid .person li .src { display: inline-flex; gap: 5px; margin-top: 4px; }
+
+  .questions {
+    background: var(--arvya-dark-900);
+    color: var(--cream-50);
+    border-radius: 14px;
+    padding: 26px 30px;
+  }
+  .questions h2 { font-family: var(--font-serif); font-weight: 500; font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .questions p.intro { font-size: 13px; color: rgba(255,255,255,.6); margin: 0 0 18px; }
+  .questions ol { margin: 0; padding-left: 0; counter-reset: q; list-style: none; display: flex; flex-direction: column; gap: 14px; }
+  .questions li {
+    counter-increment: q;
+    display: grid; grid-template-columns: 26px 1fr; gap: 12px;
+    font-size: 14px; line-height: 1.5;
+    padding: 14px 0; border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .questions li:first-child { border-top: 0; padding-top: 4px; }
+  .questions li::before {
+    content: '— ' counter(q, decimal-leading-zero);
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+    color: var(--arvya-gold);
+  }
+  .questions li .ctx {
+    font-size: 12px; color: rgba(255,255,255,.55); margin-top: 4px;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .questions li .ctx .cite-d {
+    font-family: var(--font-mono); font-size: 10px; padding: 1px 6px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+    border-radius: 4px; color: var(--arvya-gold);
+  }
+
+  .promise-table {
+    width: 100%; border-collapse: collapse;
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 14px;
+    overflow: hidden;
+  }
+  .promise-table th, .promise-table td {
+    padding: 12px 16px; text-align: left; vertical-align: top;
+    font-size: 13px; border-bottom: 1px solid var(--cream-200);
+  }
+  .promise-table th {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-tertiary);
+    background: var(--cream-50);
+    font-weight: 500;
+  }
+  .promise-table tr:last-child td { border: 0; }
+  .promise-table .what { font-weight: 500; }
+  .promise-table .who { font-family: var(--font-mono); font-size: 11px; }
+  .promise-table .due { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+  .promise-table .due.late { color: #A83C3C; font-weight: 500; }
+  .promise-table tr:hover { background: var(--cream-50); cursor: pointer; }
+
+  .pulse-list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .pulse-list li {
+    display: grid; grid-template-columns: 80px 1fr; gap: 18px;
+    padding: 14px 0; border-top: 1px solid var(--cream-200);
+    font-size: 13.5px; line-height: 1.55;
+  }
+  .pulse-list li:first-child { border-top: 0; padding-top: 4px; }
+  .pulse-list .ts { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+  .pulse-list .what b { font-weight: 500; }
+
+  .footer-sign {
+    margin-top: 64px; padding-top: 24px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex; justify-content: space-between;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-tertiary);
+  }
+  .footer-sign .ic-row { display: flex; gap: 8px; }
+  .footer-sign .ic-row a {
+    padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 999px;
+    color: var(--text-primary); text-decoration: none; font-size: 10px;
+  }
+  .footer-sign .ic-row a:hover { border-color: var(--arvya-gold); color: var(--arvya-gold-700); }
+
+  .delivery-note {
+    background: var(--arvya-gold-bg);
+    border: 1px solid var(--arvya-gold-border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 28px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12.5px; color: var(--arvya-gold-700);
+  }
+  .delivery-note svg { flex-shrink: 0; width: 16px; height: 16px; stroke: var(--arvya-gold-700); }
+  .delivery-note b { color: var(--arvya-dark-900); font-weight: 500; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Daily Brief">
+
+  <div class="brief-wrap">
+
+    <!-- Delivery note -->
+    <div class="delivery-note">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>This brief was delivered to <b>Naveen</b> and <b>PB</b> at 7:30 by email + Slack DM. Reading time: <b>4 min</b>. Signal-to-noise score: <b>0.87</b>. <a href="#" style="color: var(--arvya-gold-700); text-decoration: underline;">Settings</a></span>
+    </div>
+
+    <!-- Masthead -->
+    <div class="brief-meta">
+      <span>— The Founder Brief · No. 142</span>
+      <div class="right">
+        <span>Tue · 7 May · <b>2026</b></span>
+        <span>Compiled <b>07:28</b></span>
+        <span>Signal <b>0.87</b></span>
+      </div>
+    </div>
+
+    <h1 class="brief-h1">A quiet morning, three loud signals.</h1>
+    <p class="brief-lede">
+      Overnight: 142 artifacts, 28 entity pages recompiled, 12 new graph edges, 0 failed runs.
+      <b>The brain wants you to know three things</b> — Sequoia is moving faster than the term sheet implies,
+      Marlowe's bug shipped Friday and they still haven't been told, and the "consulting brain" pitch is no
+      longer matching who actually buys.
+    </p>
+
+    <!-- TOC -->
+    <nav class="brief-toc">
+      <a href="#overnight"><span class="no">— 01</span><span class="nm">Overnight</span></a>
+      <a href="#priorities"><span class="no">— 02</span><span class="nm">Today</span></a>
+      <a href="#promises"><span class="no">— 03</span><span class="nm">Promises</span></a>
+      <a href="#questions"><span class="no">— 04</span><span class="nm">Questions for you</span></a>
+    </nav>
+
+    <!-- ——— 01 · Overnight ——— -->
+    <section class="brief-sec" id="overnight">
+      <div class="brief-sec-head">
+        <span class="no">— 01 · Overnight</span>
+        <h2>What happened while you slept.</h2>
+        <span class="rule"></span>
+      </div>
+
+      <div class="brief-card accent">
+        <div class="head">
+          <h3>Sequoia replied to the deck.</h3>
+          <span class="pill gold"><span class="dot"></span>Move fast</span>
+        </div>
+        <p class="body">
+          Roelof responded at <b>06:04 BST</b> with three specific objections — SOC 2 timing, model lock-in, and ownership of the customer relationship. The brain matched the tone (terse, bulleted, no preamble) against his behavioral model and concluded he is signaling <b>"answer these and we move to partnership"</b>, not <b>"we're stalling"</b>.
+        </p>
+        <div class="quote-block">
+          "Three things before we go to partnership: when does SOC 2 land, how locked in are you to Anthropic, and who owns the customer relationship if a brain template ships per-vertical."
+          <span class="who">— Roelof, 06:04 · email · re: Arvya OS deck</span>
+        </div>
+        <p class="body">
+          PB has <b>full draft answers ready</b> in Gmail Drafts. Brain confidence on each: <span class="cite">SOC 2 · 0.94</span> <span class="cite">model · 0.81</span> <span class="cite">ownership · 0.62 — needs Naveen</span>.
+        </p>
+        <div class="src-row">
+          <a class="cite" href="Sources.html">⌕ email · roelof@sequoia · 06:04</a>
+          <a class="cite" href="People.html">⌕ behavioral model · Roelof</a>
+          <a class="cite" href="OpenLoops.html">⌕ loop · sequoia-tsq</a>
+        </div>
+      </div>
+
+      <div class="brief-card">
+        <div class="head">
+          <h3>BlackRock asked again about the graph spec.</h3>
+          <span class="pill warn"><span class="dot"></span>3d late</span>
+        </div>
+        <p class="body">
+          Jon emailed at 07:14 — second mention of the graph spec we promised on Monday. He is not visibly annoyed. Tone analysis vs. his last 14 emails shows <b>no escalation language</b>. But this is now a 3-day-old open promise to a paying customer.
+        </p>
+        <p class="body">
+          Brain has drafted <b>v0 of the spec</b> using the canonical 43 edge types and the dream-cycle pseudocode from `apps/web/lib/brain/dream-cycle.ts`. Estimated review time: 18 minutes.
+        </p>
+        <div class="src-row">
+          <a class="cite" href="Sources.html">⌕ email · jon@blackrock · 07:14</a>
+          <a class="cite" href="Sources.html">⌕ call · BlackRock · Mon</a>
+          <a class="cite" href="Sources.html">⌕ draft · graph-spec.md</a>
+        </div>
+      </div>
+
+      <div class="brief-card">
+        <div class="head">
+          <h3>The "consulting brain" pitch is no longer matching reality.</h3>
+          <span class="pill"><span class="dot"></span>Drift signal</span>
+        </div>
+        <p class="body">
+          Pattern detected by the dream cycle. Of the last 6 meaningful customer conversations, <b>4 were VC firms</b>, and <b>2 cited "Deal Brain" by name</b> as the reason they took the call. The pitch deck currently leads with consulting.
+        </p>
+        <p class="body">
+          This is not yet a recommendation to repivot — but it <b>is</b> a recommendation to update the deck before today's 14:00 with Insight Partners.
+        </p>
+        <div class="src-row">
+          <a class="cite" href="Sources.html">⌕ 6 calls</a>
+          <a class="cite" href="Drift.html">⌕ drift report · narrative</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ——— 02 · Priorities ——— -->
+    <section class="brief-sec" id="priorities">
+      <div class="brief-sec-head">
+        <span class="no">— 02 · Today</span>
+        <h2>What should happen.</h2>
+        <span class="rule"></span>
+      </div>
+
+      <div class="actions-grid">
+
+        <div class="person">
+          <h4><span class="av gold">N</span>For Naveen.</h4>
+          <ol>
+            <li><span class="n">01</span><div><b>Send graph spec to BlackRock by 11:00.</b> Draft v0 ready. Jon explicitly mentioned it twice. Loop opened Monday.<div class="src"><a class="cite" href="Sources.html">⌕ draft</a><a class="cite" href="Sources.html">⌕ Mon call</a></div></div></li>
+            <li><span class="n">02</span><div><b>Decide: Slack or Drive next.</b> Both promised, both blocked on you. PB is waiting. Brief is at <a class="cite" href="Sources.html">⌕ trade-off doc</a>.</div></li>
+            <li><span class="n">03</span><div><b>Add ownership clause to Sequoia reply.</b> 0.62 confidence answer — your judgment, not the brain's.<div class="src"><a class="cite" href="Sources.html">⌕ Roelof email</a></div></div></li>
+            <li><span class="n">04</span><div><b>Walk into Insight Partners (14:00) prepped.</b> Brain assembled prep doc — Maya has talked to two Insight LPs, attendees include Lonne (cares about retention), brief is <a class="cite" href="Ask.html">⌕ here</a>.</div></li>
+          </ol>
+        </div>
+
+        <div class="person">
+          <h4><span class="av">P</span>For PB.</h4>
+          <ol>
+            <li><span class="n">01</span><div><b>Tell Marlowe their bug shipped.</b> 4-day-old gap. PR #482 closed Friday. One-liner is drafted.<div class="src"><a class="cite" href="Sources.html">⌕ GH #482</a><a class="cite" href="Sources.html">⌕ Marlowe ticket</a></div></div></li>
+            <li><span class="n">02</span><div><b>Send Sequoia reply once Naveen edits it.</b> Three answers, one question outstanding. Send by 12:00 — Roelof reads email at lunch.</div></li>
+            <li><span class="n">03</span><div><b>Schedule Q3 advisor sync.</b> 12 days stale. Two advisors haven't heard from us since the seed close.<div class="src"><a class="cite" href="OpenLoops.html">⌕ loop</a></div></div></li>
+            <li><span class="n">04</span><div><b>Add the "where does the data live" answer to the FAQ.</b> Three customers asked the same question this week. Brain drafted the entry.<div class="src"><a class="cite" href="Sources.html">⌕ pattern</a></div></div></li>
+          </ol>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ——— 03 · Promises ——— -->
+    <section class="brief-sec" id="promises">
+      <div class="brief-sec-head">
+        <span class="no">— 03 · Promises</span>
+        <h2>What we owe people.</h2>
+        <span class="rule"></span>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 16px; max-width: 60ch; line-height: 1.55;">
+        Every promise the brain has heard you make in the last 30 days, with current status.
+        Three are overdue. None have been silently dropped.
+      </p>
+
+      <table class="promise-table">
+        <thead>
+          <tr>
+            <th>Promise</th>
+            <th>To</th>
+            <th>Owner</th>
+            <th>Due</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="what">Send graph spec v0</td>
+            <td>BlackRock · Jon</td>
+            <td class="who">NA</td>
+            <td class="due late">Mon · 3d late</td>
+            <td><span class="pill warn"><span class="dot"></span>Drafted</span></td>
+          </tr>
+          <tr>
+            <td class="what">Reply to term-sheet questions</td>
+            <td>Sequoia · Roelof</td>
+            <td class="who">NA · PB</td>
+            <td class="due">Today · 12:00</td>
+            <td><span class="pill gold"><span class="dot"></span>Drafted</span></td>
+          </tr>
+          <tr>
+            <td class="what">Tell Marlowe bug #482 shipped</td>
+            <td>Marlowe · support</td>
+            <td class="who">PB</td>
+            <td class="due late">Fri · 4d late</td>
+            <td><span class="pill"><span class="dot"></span>1-liner ready</span></td>
+          </tr>
+          <tr>
+            <td class="what">Q3 advisor sync</td>
+            <td>Three advisors</td>
+            <td class="who">PB</td>
+            <td class="due late">Apr 25 · 12d late</td>
+            <td><span class="pill warn"><span class="dot"></span>Unscheduled</span></td>
+          </tr>
+          <tr>
+            <td class="what">Intro Maya → Joel</td>
+            <td>Caffeinated, Verdant</td>
+            <td class="who">NA</td>
+            <td class="due">Today</td>
+            <td><span class="pill"><span class="dot"></span>Double-opt drafted</span></td>
+          </tr>
+          <tr>
+            <td class="what">Slack connector beta</td>
+            <td>2 customer pilots</td>
+            <td class="who">PB · eng</td>
+            <td class="due">Fri</td>
+            <td><span class="pill ok"><span class="dot"></span>On track</span></td>
+          </tr>
+          <tr>
+            <td class="what">Investor update — April</td>
+            <td>22 angels</td>
+            <td class="who">NA</td>
+            <td class="due">May 10</td>
+            <td><span class="pill"><span class="dot"></span>Outline drafted</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ——— 04 · Questions ——— -->
+    <section class="brief-sec" id="questions">
+      <div class="brief-sec-head">
+        <span class="no">— 04 · Questions for you</span>
+        <h2>Things only you can decide.</h2>
+        <span class="rule"></span>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 18px; max-width: 60ch; line-height: 1.55;">
+        The brain has source-backed evidence on each, but these are judgment calls.
+        Your answer feeds back into memory.
+      </p>
+
+      <div class="questions">
+        <h2>Resolve before Friday.</h2>
+        <p class="intro">— Open strategic questions, ranked by impact × age</p>
+
+        <ol>
+          <li>
+            <div>
+              <b>Slack connector or Drive ingestion first?</b>
+              <div class="ctx">
+                Slack unblocks two customer pilots. Drive unblocks PB's daily-brief work.
+                <span class="cite-d">⌕ standup · Mon</span>
+                <span class="cite-d">⌕ #341</span>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Are we still pitching to consulting firms first?</b>
+              <div class="ctx">
+                4 of 6 recent calls were VC. Pitch deck still leads with consulting.
+                <span class="cite-d">⌕ 6 calls</span>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Who owns the customer relationship in vertical templates?</b>
+              <div class="ctx">
+                Roelof asked. PB has a draft answer. You haven't agreed it.
+                <span class="cite-d">⌕ Sequoia email</span>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Should we accept the BlackRock referral to Google?</b>
+              <div class="ctx">
+                Jon offered it Monday. We haven't said yes or no. Provisional graph edge created.
+                <span class="cite-d">⌕ chain · Jon→Google</span>
+              </div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <div class="footer-sign">
+      <span>— Compiled by Arvya · 142 sources · 38 entity pages</span>
+      <div class="ic-row">
+        <a href="#">Print</a>
+        <a href="#">Email a copy</a>
+        <a href="#">Tune signal</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'brief', crumbs: ['Arvya Co.', 'Daily brief', 'Tue · 7 May'] });
+</script>
+</body>
+</html>
