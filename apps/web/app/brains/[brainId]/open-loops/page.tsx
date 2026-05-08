@@ -252,9 +252,9 @@ function Column({
                 </span>
                 <span className={styles.whoPill}>{recipientLabel(loop)}</span>
               </div>
-              <div className={styles.what}>{loop.title ?? loop.summary ?? "Untitled loop"}</div>
-              {loop.summary && loop.title && loop.summary !== loop.title ? (
-                <div className={styles.ctx}>{loop.summary}</div>
+              <div className={styles.what}>{loop.title || "Untitled loop"}</div>
+              {loop.description && loop.description !== loop.title ? (
+                <div className={styles.ctx}>{loop.description}</div>
               ) : null}
               <div className={styles.src}>
                 <b>{loop.owner ?? "Unassigned"}</b>
