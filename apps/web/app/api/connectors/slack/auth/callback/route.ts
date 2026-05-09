@@ -1,19 +1,65 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { selectedBrainOrDefault } from "@/lib/brain/store";
-import { exchangeSlackCode, listSlackChannels, postSlackMessage } from "@/lib/connectors/slack";
+import {
+  exchangeSlackCode,
+  listSlackChannels,
+  openSlackDm,
+  postSlackMessage,
+} from "@/lib/connectors/slack";
 import { getRepository } from "@/lib/db/repository";
 
-async function sendWelcomeMessage(botToken: string, brainName: string) {
+function welcomeText(brainName: string): string {
+  // Capability list - what the bot can actually do today. Keep this in
+  // sync with handleSlackMention so we don't promise things we can't do.
+  return [
+    `:tada: *${brainName}* is now connected to this Slack workspace.`,
+    "",
+    "*What I can do for you, right here in Slack:*",
+    "• Answer questions from your real sources — emails, calls, transcripts, docs, Slack messages. Every answer cites the source it came from.",
+    "• Find people and companies — _who is Sumit Roy_, _what does Marlowe care about_, _which investors did we talk to last month_.",
+    "• Track open promises — _what did we promise customers this week_, _what's overdue_.",
+    "• Surface drift — _where did we say we'd be vs where we are_.",
+    "• Catch you up — _catch me up on the BlackRock thread_, _what happened in Friday's standup_.",
+    "• *Prep you for meetings* — every morning at 7am I'll DM you a confidence-scored, source-cited brief for each meeting on your calendar. You can also say `prep me for <meeting>` anytime.",
+    "",
+    "*How to use me:*",
+    "• *DM me directly* — just type a question in this chat",
+    "• *Mention me in any channel* — `@Arvya-Brain what did we decide about pricing?`",
+    "• *Prep on demand* — `@Arvya-Brain prep me for Sequoia` or use `/meeting-prep <title>`",
+    "",
+    "*Things I'm learning from right now:*",
+    "Connected channels' history, your Gmail (if connected), Google Drive transcripts (if connected), your meeting notes from Arvya Notetaker, and any docs you've ingested manually.",
+    "",
+    "_Confidence-scored. Source-cited. If I don't know, I'll tell you and ask for the source instead of making something up._",
+  ].join("\n");
+}
+
+async function sendWelcomeMessage(
+  botToken: string,
+  brainName: string,
+  installerUserId: string | undefined,
+) {
+  const text = welcomeText(brainName);
+  // 1. Try DM the installer first - cleanest experience, no spam.
+  if (installerUserId) {
+    try {
+      const dmChannelId = await openSlackDm(botToken, installerUserId);
+      if (dmChannelId) {
+        await postSlackMessage(botToken, dmChannelId, text);
+        return;
+      }
+    } catch (err) {
+      console.error("[slack-welcome] DM failed, trying #general:", err);
+    }
+  }
+  // 2. Fall back to #general if DM fails or no installer id.
   try {
     const channels = await listSlackChannels(botToken);
     const general = channels.find((c) => c.name === "general");
-    if (!general) return;
-    await postSlackMessage(
-      botToken,
-      general.id,
-      `*${brainName}* is now connected to this workspace.\n\nMention me in any channel to ask a question. I'll answer from everything the brain has learned — emails, calls, docs, and messages.\n\nExample: @Arvya what did we promise the client?`,
-    );
+    if (general) {
+      await postSlackMessage(botToken, general.id, text);
+    }
   } catch (err) {
     console.error("[slack-welcome] Failed to send welcome message:", err);
   }
@@ -84,7 +130,11 @@ export async function GET(request: Request) {
     });
   }
 
-  sendWelcomeMessage(slackConfig.botToken, selectedBrain.name).catch(() => {});
+  sendWelcomeMessage(
+    slackConfig.botToken,
+    selectedBrain.name,
+    slackConfig.installerUserId,
+  ).catch(() => {});
 
   revalidatePath(`/brains/${selectedBrainId}`);
   revalidatePath(`/brains/${selectedBrainId}/connections`);

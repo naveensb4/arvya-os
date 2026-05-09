@@ -1,209 +1,242 @@
-import Link from "next/link";
+import type { MemoryObject, OpenLoop, SourceItem } from "@arvya/core";
+import { getBrainSnapshot } from "@/lib/brain/store";
 import styles from "./page.module.css";
+import { PeopleTable } from "./people-table-client";
 
-// TODO: wire to GET /api/brains/[brainId]/people (Phase 3.6) and
-// /api/brains/[brainId]/ai-columns?entityType=person (Phase 3.5). Until
-// those endpoints land, the page renders the prototype's 12-row showcase.
+// People - real data from memory_objects of type "person". Owes / heat /
+// last touch are derived from the brain snapshot. AI columns that we
+// don't have real data for are dropped rather than faked.
 
 type Relation = "investor" | "customer" | "partner" | "team" | "press" | "recruit";
 type Heat = "hot" | "warm" | "ok";
-type OweVariant = "warn" | "ok" | "you";
 
-type Person = {
+type TimelineEntry = {
+  sourceId: string;
+  sourceTitle: string;
+  sourceType: string;
+  externalUri: string | null;
+  occurredAt: string;
+  snippet: string;
+};
+
+type DrawerLoop = {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  sourceTitle: string | null;
+};
+
+type PersonRow = {
   id: string;
   name: string;
   email: string;
   initials: string;
-  initials_variant?: "gold" | "dark";
   relation: { variant: Relation; label: string };
-  company?: { letter: string; bg: string; color: string; name: string; href?: string } | null;
+  company: { letter: string; name: string } | null;
   role: string;
   last_touch: { text: string; warn?: boolean };
-  owe: { variant: OweVariant; text: string };
+  owe: { variant: "warn" | "ok" | "you"; text: string };
   heat: { variant: Heat; bars: number; label: string };
-  ai_signal: { text: string; conf: number };
+  description: string;
+  evidence: { sourceTitle: string; quote: string } | null;
+  confidence: number | null;
+  // Data for the side-panel drawer. Built up-front on the server so the
+  // client component doesn't have to re-fetch when a row is opened.
+  timeline: TimelineEntry[];
+  loops: DrawerLoop[];
+  aliases: string[];
 };
 
-const placeholderPeople: Person[] = [
-  {
-    id: "roelof",
-    name: "Roelof Botha",
-    email: "roelof@sequoiacap.com",
-    initials: "RB",
-    initials_variant: "dark",
-    relation: { variant: "investor", label: "Investor" },
-    company: { letter: "S", bg: "var(--arvya-gold)", color: "#0E1726", name: "Sequoia Capital" },
-    role: "Partner",
-    last_touch: { text: "Today - 06:04" },
-    owe: { variant: "warn", text: "You - 3h left" },
-    heat: { variant: "hot", bars: 4, label: "Hot" },
-    ai_signal: { text: "Sent 3 questions; reply window closing fast.", conf: 0.94 },
-  },
-  {
-    id: "eli",
-    name: "Eli Chen",
-    email: "eli@marlowe.health",
-    initials: "EC",
-    relation: { variant: "customer", label: "Customer" },
-    company: { letter: "M", bg: "#2A6FDB", color: "#fff", name: "Marlowe Health", href: "marlowe" },
-    role: "Product Lead",
-    last_touch: { text: "8d", warn: true },
-    owe: { variant: "warn", text: "You - 1.5d late" },
-    heat: { variant: "hot", bars: 3, label: "Hot" },
-    ai_signal: { text: "Reply length dropped 40 percent - decision close.", conf: 0.81 },
-  },
-  {
-    id: "jon",
-    name: "Jon Kessler",
-    email: "jon.kessler@blackrock.com",
-    initials: "JK",
-    relation: { variant: "partner", label: "Prospect" },
-    company: { letter: "B", bg: "#0a0a0a", color: "#fff", name: "BlackRock" },
-    role: "VP Strategy",
-    last_touch: { text: "Mon - 6d" },
-    owe: { variant: "warn", text: "You - 3d late" },
-    heat: { variant: "hot", bars: 4, label: "Hot" },
-    ai_signal: { text: "Promised graph spec by Thu. Drift = 3 days.", conf: 0.97 },
-  },
-  {
-    id: "maya",
-    name: "Maya Nair",
-    email: "maya@caffeinated.cc",
-    initials: "MN",
-    initials_variant: "gold",
-    relation: { variant: "partner", label: "Partner" },
-    company: { letter: "C", bg: "#6E4F2A", color: "#fff", name: "Caffeinated AI" },
-    role: "Founder",
-    last_touch: { text: "Wed - 4d" },
-    owe: { variant: "warn", text: "You" },
-    heat: { variant: "warm", bars: 3, label: "Warm" },
-    ai_signal: { text: "Slack connector ETA - pilot blocking.", conf: 0.86 },
-  },
-  {
-    id: "andy",
-    name: "Andy Weissman",
-    email: "andy@usv.com",
-    initials: "AW",
-    relation: { variant: "investor", label: "Investor" },
-    company: { letter: "U", bg: "#FF5050", color: "#fff", name: "Union Square Ventures" },
-    role: "Partner",
-    last_touch: { text: "Tue - 5d" },
-    owe: { variant: "you", text: "Soft ask" },
-    heat: { variant: "warm", bars: 2, label: "Warm" },
-    ai_signal: { text: "Offered partner intro - expires day 14.", conf: 0.78 },
-  },
-  {
-    id: "priya",
-    name: "Priya Rao",
-    email: "priya@marlowe.health",
-    initials: "PR",
-    relation: { variant: "customer", label: "Customer" },
-    company: { letter: "M", bg: "#2A6FDB", color: "#fff", name: "Marlowe Health", href: "marlowe" },
-    role: "Eng Manager",
-    last_touch: { text: "Wed - 4d" },
-    owe: { variant: "ok", text: "-" },
-    heat: { variant: "warm", bars: 3, label: "Warm" },
-    ai_signal: { text: "Expansion signal - 2 new teams in 4 to 6w.", conf: 0.83 },
-  },
-  {
-    id: "sarah",
-    name: "Sarah Meier",
-    email: "sarah.meier@insightpartners.com",
-    initials: "SM",
-    relation: { variant: "investor", label: "Investor" },
-    company: { letter: "I", bg: "#1F4FA8", color: "#fff", name: "Insight Partners" },
-    role: "VP",
-    last_touch: { text: "Mon - 6d" },
-    owe: { variant: "ok", text: "She" },
-    heat: { variant: "warm", bars: 2, label: "Warm" },
-    ai_signal: { text: "3/5 references replied. Ahead of expectation.", conf: 0.74 },
-  },
-  {
-    id: "lina",
-    name: "Lina Kapoor",
-    email: "lina.kapoor@gmail.com",
-    initials: "LK",
-    relation: { variant: "recruit", label: "Recruiting" },
-    company: null,
-    role: "Principal Eng",
-    last_touch: { text: "6d" },
-    owe: { variant: "warn", text: "You" },
-    heat: { variant: "warm", bars: 2, label: "Warm" },
-    ai_signal: { text: "Decide by Friday silent. Probably stuck.", conf: 0.69 },
-  },
-  {
-    id: "dev",
-    name: "Dev Varma",
-    email: "dev@marlowe.health",
-    initials: "DV",
-    relation: { variant: "customer", label: "Customer" },
-    company: { letter: "M", bg: "#2A6FDB", color: "#fff", name: "Marlowe Health", href: "marlowe" },
-    role: "CTO",
-    last_touch: { text: "14d" },
-    owe: { variant: "ok", text: "-" },
-    heat: { variant: "ok", bars: 2, label: "OK" },
-    ai_signal: { text: "Economic buyer - quiet but reads weekly recap.", conf: 0.62 },
-  },
-  {
-    id: "rohan",
-    name: "Rohan Tiwari",
-    email: "rohan@theinformation.com",
-    initials: "RT",
-    relation: { variant: "press", label: "Press" },
-    company: { letter: "T", bg: "#000", color: "#fff", name: "The Information" },
-    role: "Reporter",
-    last_touch: { text: "89d" },
-    owe: { variant: "you", text: "-" },
-    heat: { variant: "ok", bars: 1, label: "Cool" },
-    ai_signal: { text: "Quoted 2 competitors recently. Re-engage now.", conf: 0.71 },
-  },
-  {
-    id: "sara",
-    name: "Sara Kapur",
-    email: "legal@marlowe.health",
-    initials: "SK",
-    relation: { variant: "customer", label: "Customer" },
-    company: { letter: "M", bg: "#2A6FDB", color: "#fff", name: "Marlowe Health", href: "marlowe" },
-    role: "Procurement",
-    last_touch: { text: "22d" },
-    owe: { variant: "ok", text: "-" },
-    heat: { variant: "ok", bars: 1, label: "Cool" },
-    ai_signal: { text: "Activates only at renewal. Don't bug.", conf: 0.55 },
-  },
-  {
-    id: "david",
-    name: "David Garcia",
-    email: "dgarcia@gmail.com",
-    initials: "DG",
-    relation: { variant: "team", label: "Advisor" },
-    company: null,
-    role: "Advisor",
-    last_touch: { text: "42d" },
-    owe: { variant: "you", text: "-" },
-    heat: { variant: "ok", bars: 1, label: "Cool" },
-    ai_signal: { text: "Catch up next month said in March. Lapsed.", conf: 0.66 },
-  },
-];
+function initialsFor(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
 
-const tagClass = (v: Relation) => {
+function inferRelation(props?: Record<string, unknown>): {
+  variant: Relation;
+  label: string;
+} {
+  const raw = (props?.relation ?? props?.kind ?? props?.role_type ?? "") as string;
+  const r = String(raw).toLowerCase();
+  if (r.includes("investor")) return { variant: "investor", label: "Investor" };
+  if (r.includes("customer")) return { variant: "customer", label: "Customer" };
+  if (r.includes("partner")) return { variant: "partner", label: "Partner" };
+  if (r.includes("team") || r.includes("internal")) return { variant: "team", label: "Team" };
+  if (r.includes("press") || r.includes("media")) return { variant: "press", label: "Press" };
+  if (r.includes("recruit") || r.includes("candidate")) return { variant: "recruit", label: "Recruit" };
+  return { variant: "partner", label: "Contact" };
+}
+
+function buildPersonRow(
+  person: MemoryObject,
+  openLoops: OpenLoop[],
+  sourceItems: SourceItem[],
+): PersonRow {
+  const props = (person.properties ?? {}) as Record<string, unknown>;
+  const email =
+    (props.email as string | undefined) ??
+    (props.contact_email as string | undefined) ??
+    "";
+  const role =
+    (props.role as string | undefined) ??
+    (props.title as string | undefined) ??
+    "";
+  const companyName =
+    (props.company as string | undefined) ??
+    (props.organization as string | undefined) ??
+    "";
+
+  // Linked sources come from properties.sourceItemIds, which the merge
+  // pipeline updates on every re-extraction. Falling back to the
+  // person's own person.sourceItemId catches first-time mentions.
+  // We deliberately do NOT do substring matching on source content here —
+  // that's how "Hi Sudi" used to match every email containing "hi sudi"
+  // and made literally everyone show up as "Hot".
+  const linkedIds = new Set<string>();
+  if (Array.isArray(props.sourceItemIds)) {
+    for (const id of props.sourceItemIds) {
+      if (typeof id === "string") linkedIds.add(id);
+    }
+  }
+  if (person.sourceItemId) linkedIds.add(person.sourceItemId);
+
+  const relatedSources = sourceItems
+    .filter((s) => linkedIds.has(s.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const lastSource = relatedSources[0];
+  const lastTouchMs = lastSource
+    ? Date.now() - new Date(lastSource.createdAt).getTime()
+    : null;
+
+  const day = 24 * 60 * 60 * 1000;
+  let last_touch: { text: string; warn?: boolean };
+  if (lastTouchMs === null) {
+    last_touch = { text: "no touches" };
+  } else if (lastTouchMs < day) {
+    const h = Math.max(1, Math.floor(lastTouchMs / (60 * 60 * 1000)));
+    last_touch = { text: `${h}h` };
+  } else {
+    const d = Math.floor(lastTouchMs / day);
+    last_touch = { text: `${d}d`, warn: d >= 7 };
+  }
+
+  // Heat: 4 bars if touched today, 3 if this week, 2 if this month, else 1.
+  let bars = 1;
+  let heatVar: Heat = "ok";
+  if (lastTouchMs !== null) {
+    if (lastTouchMs < day) {
+      bars = 4;
+      heatVar = "hot";
+    } else if (lastTouchMs < 7 * day) {
+      bars = 3;
+      heatVar = "hot";
+    } else if (lastTouchMs < 30 * day) {
+      bars = 2;
+      heatVar = "warm";
+    } else {
+      bars = 1;
+      heatVar = "ok";
+    }
+  }
+  const heatLabel = heatVar === "hot" ? "Hot" : heatVar === "warm" ? "Warm" : "Cool";
+
+  // Owe a reply: a loop linked via the same source as this person, or a
+  // loop whose title/description mentions them. Loop titles are short so
+  // substring matching is fine here (unlike the heat calc, which had to
+  // scan full email bodies).
+  const personLower = person.name.toLowerCase();
+  const myOpenLoop = openLoops.find((l) => {
+    if (l.status === "done" || l.status === "closed" || l.status === "dismissed") return false;
+    if (l.sourceItemId && linkedIds.has(l.sourceItemId)) return true;
+    const haystack = `${l.title} ${l.description}`.toLowerCase();
+    return haystack.includes(personLower);
+  });
+  let owe: PersonRow["owe"];
+  if (myOpenLoop) {
+    const overdue =
+      myOpenLoop.dueDate &&
+      new Date(myOpenLoop.dueDate).getTime() < Date.now();
+    owe = overdue
+      ? { variant: "warn", text: "You - overdue" }
+      : { variant: "you", text: "You" };
+  } else {
+    owe = { variant: "ok", text: "-" };
+  }
+
+  const evidenceSource = person.sourceItemId
+    ? sourceItems.find((s) => s.id === person.sourceItemId)
+    : undefined;
+  const evidence = evidenceSource
+    ? { sourceTitle: evidenceSource.title, quote: person.sourceQuote ?? "" }
+    : null;
+
+  // Timeline entries: every linked source, oldest to newest reversed
+  // (most recent first). Snippet is the first ~140 chars of the body
+  // with the person's first-name highlighted client-side.
+  const timeline: TimelineEntry[] = relatedSources.map((source) => ({
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceType: source.type,
+    externalUri: source.externalUri ?? null,
+    occurredAt: source.createdAt,
+    snippet: (source.content ?? "").slice(0, 240).replace(/\s+/g, " ").trim(),
+  }));
+
+  const drawerLoops: DrawerLoop[] = openLoops
+    .filter((l) => {
+      if (l.status === "closed" || l.status === "done" || l.status === "dismissed") return false;
+      if (l.sourceItemId && linkedIds.has(l.sourceItemId)) return true;
+      const haystack = `${l.title} ${l.description}`.toLowerCase();
+      return haystack.includes(personLower);
+    })
+    .slice(0, 12)
+    .map((l) => ({
+      id: l.id,
+      title: l.title,
+      description: l.description,
+      status: l.status,
+      priority: l.priority,
+      dueDate: l.dueDate ?? null,
+      sourceTitle: l.sourceItemId
+        ? sourceItems.find((s) => s.id === l.sourceItemId)?.title ?? null
+        : null,
+    }));
+
+  const aliases = Array.isArray(props.aliases)
+    ? (props.aliases as unknown[]).filter((a): a is string => typeof a === "string")
+    : [];
+
   return {
-    investor: styles.tagInvestor,
-    customer: styles.tagCustomer,
-    partner: styles.tagPartner,
-    team: styles.tagTeam,
-    press: styles.tagPress,
-    recruit: styles.tagRecruit,
-  }[v];
-};
-
-const heatClass = (v: Heat) =>
-  v === "hot" ? styles.heatHot : v === "warm" ? styles.heatWarm : styles.heatOk;
-
-const oweClass = (v: OweVariant) =>
-  `${styles.owePill} ${v === "warn" ? styles.oweWarn : v === "ok" ? styles.oweOk : styles.oweYou}`;
-
-const avClass = (variant?: "gold" | "dark") =>
-  `${styles.av} ${variant === "gold" ? styles.avGold : variant === "dark" ? styles.avDark : ""}`;
+    id: person.id,
+    name: person.name,
+    email,
+    initials: initialsFor(person.name),
+    relation: inferRelation(props),
+    company: companyName
+      ? { letter: companyName.charAt(0).toUpperCase() || "?", name: companyName }
+      : null,
+    role,
+    last_touch,
+    owe,
+    heat: { variant: heatVar, bars, label: heatLabel },
+    description: person.description ?? "",
+    evidence,
+    confidence:
+      typeof person.confidence === "number" ? person.confidence : null,
+    timeline,
+    loops: drawerLoops,
+    aliases,
+  };
+}
 
 type PageProps = {
   params: Promise<{ brainId: string }>;
@@ -211,177 +244,69 @@ type PageProps = {
 
 export default async function PeoplePage({ params }: PageProps) {
   const { brainId } = await params;
-  const total = placeholderPeople.length;
+  const snapshot = await getBrainSnapshot(brainId);
+  const memoryObjects = snapshot.memoryObjects ?? [];
+  const openLoops = snapshot.openLoops ?? [];
+  const sourceItems = snapshot.sourceItems ?? [];
+
+  const people = memoryObjects.filter((m) => m.objectType === "person");
+  const rows = people
+    .map((p) => buildPersonRow(p, openLoops, sourceItems))
+    .sort((a, b) => {
+      const order: Record<Heat, number> = { hot: 0, warm: 1, ok: 2 };
+      const d = order[a.heat.variant] - order[b.heat.variant];
+      if (d !== 0) return d;
+      return a.name.localeCompare(b.name);
+    });
+
+  const total = rows.length;
+  const oweCount = rows.filter((r) => r.owe.variant !== "ok").length;
+  const hotCount = rows.filter((r) => r.heat.variant === "hot").length;
+  const coolCount = rows.filter((r) => r.heat.variant === "ok").length;
+  const investorCount = rows.filter((r) => r.relation.variant === "investor").length;
 
   return (
     <div>
       <header className={styles.pageHead}>
-        <span className={styles.eyebrow}>People - 184 contacts</span>
+        <span className={styles.eyebrow}>People - {total} contacts</span>
         <h1>Contacts.</h1>
       </header>
 
       <div className={styles.strip}>
         <div className={styles.stripOn}>
           <div className={styles.lab}>All</div>
-          <div className={styles.v}>184</div>
-          <div className={styles.sub}>across 47 companies</div>
+          <div className={styles.v}>{total}</div>
+          <div className={styles.sub}>
+            extracted from your sources
+          </div>
         </div>
         <div>
           <div className={styles.lab}>Owe a reply</div>
-          <div className={`${styles.v} ${styles.vWarn}`}>7</div>
-          <div className={styles.sub}>3 past patience window</div>
+          <div className={`${styles.v} ${styles.vWarn}`}>{oweCount}</div>
+          <div className={styles.sub}>
+            {oweCount === 0 ? "all clear" : "open loops linked to person"}
+          </div>
         </div>
         <div>
           <div className={styles.lab}>Hot this week</div>
-          <div className={styles.v}>14</div>
+          <div className={styles.v}>{hotCount}</div>
           <div className={styles.sub}>touched in last 7d</div>
         </div>
         <div>
           <div className={styles.lab}>Cooling</div>
-          <div className={styles.v}>12</div>
+          <div className={styles.v}>{coolCount}</div>
           <div className={styles.sub}>no touch over 30d</div>
         </div>
         <div>
           <div className={styles.lab}>Investors</div>
-          <div className={styles.v}>22</div>
-          <div className={styles.sub}>8 active diligence</div>
+          <div className={styles.v}>{investorCount}</div>
+          <div className={styles.sub}>tagged as investor</div>
         </div>
       </div>
 
-      <div className={styles.ppBar}>
-        <div className={styles.seg}>
-          <span className={styles.segOn}>Table</span>
-          <span>Cards</span>
-          <span>Queue</span>
-        </div>
-        <span className={`${styles.filter} ${styles.filterOn}`}>Relation: All</span>
-        <span className={styles.filter}>Last touch: Anytime</span>
-        <span className={styles.filter}>Owes reply: Any</span>
-        <span className={styles.filter}>+ Add filter</span>
-        <span className={styles.grow} />
-        <div className={styles.ppSearch}>
-          <svg
-            viewBox="0 0 24 24"
-            width="13"
-            height="13"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input placeholder="Find a person" />
-        </div>
-        <button type="button" className={styles.add}>
-          + New contact
-        </button>
-      </div>
+      <PeopleTable rows={rows} />
 
-      <table className={styles.crm}>
-        <thead>
-          <tr>
-            <th style={{ width: 240 }}>Name</th>
-            <th style={{ width: 130 }}>Relation</th>
-            <th style={{ width: 180 }}>Company</th>
-            <th style={{ width: 110 }}>Role</th>
-            <th>Last touch</th>
-            <th>Owes</th>
-            <th>Heat</th>
-            <th className={styles.aiCol} style={{ minWidth: 280 }}>
-              Why now <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>ai</span>
-            </th>
-            <th className={styles.addCol}>+ Add column</th>
-          </tr>
-        </thead>
-        <tbody>
-          {placeholderPeople.map((p) => (
-            <tr key={p.id}>
-              <td>
-                <div className={styles.pn}>
-                  <span className={avClass(p.initials_variant)}>{p.initials}</span>
-                  <span className={styles.nm}>
-                    {p.name}
-                    <span className={styles.sub}>{p.email}</span>
-                  </span>
-                </div>
-              </td>
-              <td>
-                <span className={`${styles.tag} ${tagClass(p.relation.variant)}`}>
-                  <span className={styles.pip} />
-                  {p.relation.label}
-                </span>
-              </td>
-              <td>
-                {p.company ? (
-                  p.company.href ? (
-                    <Link
-                      href={`/brains/${brainId}/companies/${p.company.href}`}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      <CompanyChip company={p.company} />
-                    </Link>
-                  ) : (
-                    <CompanyChip company={p.company} />
-                  )
-                ) : (
-                  <span style={{ color: "var(--text-tertiary)", fontStyle: "italic" }}>
-                    Independent
-                  </span>
-                )}
-              </td>
-              <td>{p.role}</td>
-              <td>
-                <span className={`${styles.last} ${p.last_touch.warn ? styles.lastWarn : ""}`}>
-                  {p.last_touch.text}
-                </span>
-              </td>
-              <td>
-                <span className={oweClass(p.owe.variant)}>{p.owe.text}</span>
-              </td>
-              <td>
-                <span className={`${styles.heat} ${heatClass(p.heat.variant)}`}>
-                  <span className={styles.bars}>
-                    <i className={p.heat.bars >= 1 ? styles.on : ""} />
-                    <i className={p.heat.bars >= 2 ? styles.on : ""} />
-                    <i className={p.heat.bars >= 3 ? styles.on : ""} />
-                    <i className={p.heat.bars >= 4 ? styles.on : ""} />
-                  </span>
-                  {p.heat.label}
-                </span>
-              </td>
-              <td className={styles.aiCell}>
-                <span className={styles.aiSig}>
-                  <span className={styles.spark}>~</span>
-                  {p.ai_signal.text}
-                  <span className={styles.conf}>{p.ai_signal.conf.toFixed(2)}</span>
-                </span>
-              </td>
-              <td />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <p className={styles.hint}>
-        {total} of {total} shown - row click opens person - drag column header
-        to reorder - the brain fills new columns for everyone
-      </p>
+      <span style={{ display: "none" }}>{brainId}</span>
     </div>
-  );
-}
-
-function CompanyChip({ company }: { company: NonNullable<Person["company"]> }) {
-  return (
-    <span className={styles.cm}>
-      <span
-        className={styles.lg}
-        style={{ background: company.bg, color: company.color }}
-      >
-        {company.letter}
-      </span>
-      {company.name}
-    </span>
   );
 }

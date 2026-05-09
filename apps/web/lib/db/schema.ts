@@ -290,6 +290,7 @@ export const canonicalEntities = pgTable(
     properties: jsonb("properties").notNull().default({}),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
     mergedFrom: uuid("merged_from").array().default([]),
+    embedding: vector("embedding", { dimensions: 1536 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -297,6 +298,10 @@ export const canonicalEntities = pgTable(
     index("canonical_entities_brain_id_idx").on(table.brainId),
     index("canonical_entities_workspace_id_idx").on(table.workspaceId),
     index("canonical_entities_entity_type_idx").on(table.entityType),
+    index("canonical_entities_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
   ],
 );
 
@@ -398,6 +403,46 @@ export const openLoops = pgTable(
       "hnsw",
       table.embedding.op("vector_cosine_ops"),
     ),
+  ],
+);
+
+export const loopOutcomeDecisionEnum = pgEnum("loop_outcome_decision", [
+  "closed",
+  "advanced",
+  "contradicts",
+  "no_match",
+  "uncertain",
+]);
+
+// Audit trail for the closed-loop matcher. Every match attempt writes a row
+// so the team can review what the brain auto-closed, override it if wrong,
+// and (in C-week voice learning) train future matches on the corrections.
+export const loopOutcomeLog = pgTable(
+  "loop_outcome_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    loopId: uuid("loop_id")
+      .notNull()
+      .references(() => openLoops.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, {
+      onDelete: "set null",
+    }),
+    decision: loopOutcomeDecisionEnum("decision").notNull(),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    evidenceQuote: text("evidence_quote"),
+    agentRunId: uuid("agent_run_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+    humanOverrode: boolean("human_overrode").notNull().default(false),
+    humanOverrideAt: timestamp("human_override_at", { withTimezone: true }),
+    properties: jsonb("properties").notNull().default({}),
+  },
+  (table) => [
+    index("loop_outcome_log_brain_decided_at_idx").on(table.brainId, table.decidedAt),
+    index("loop_outcome_log_loop_id_idx").on(table.loopId),
+    index("loop_outcome_log_source_item_id_idx").on(table.sourceItemId),
   ],
 );
 
@@ -1030,6 +1075,8 @@ export type CanonicalEntityRow = typeof canonicalEntities.$inferSelect;
 export type NewCanonicalEntityRow = typeof canonicalEntities.$inferInsert;
 export type EntityMentionRow = typeof entityMentions.$inferSelect;
 export type NewEntityMentionRow = typeof entityMentions.$inferInsert;
+export type LoopOutcomeLogRow = typeof loopOutcomeLog.$inferSelect;
+export type NewLoopOutcomeLogRow = typeof loopOutcomeLog.$inferInsert;
 export type NudgeRow = typeof nudges.$inferSelect;
 export type NewNudgeRow = typeof nudges.$inferInsert;
 export type NotificationRow = typeof notifications.$inferSelect;

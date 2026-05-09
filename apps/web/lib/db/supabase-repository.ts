@@ -481,6 +481,18 @@ export class SupabaseRepository implements BrainRepository {
     return toBrain(row);
   }
 
+  async updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null> {
+    if (!isUuid(brainId)) return null;
+    const values: Record<string, unknown> = { updatedAt: new Date() };
+    if (update.metadata !== undefined) values.metadata = update.metadata;
+    const [row] = await this.db
+      .update(brains)
+      .set(values)
+      .where(eq(brains.id, brainId))
+      .returning();
+    return row ? toBrain(row) : null;
+  }
+
   async createSourceItem(input: CreateSourceData): Promise<SourceItem> {
     const [row] = await this.db
       .insert(sourceItems)

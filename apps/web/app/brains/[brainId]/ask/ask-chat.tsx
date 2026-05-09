@@ -109,8 +109,13 @@ export function AskChat({
   const [busy, setBusy] = useState(false);
   const [activeChip, setActiveChip] = useState("all");
   const streamRef = useRef<HTMLDivElement | null>(null);
+  // Guard against React 19 strict-mode double-mount in dev: useEffect with
+  // [] still fires twice, which used to submit the URL ?q= question twice.
+  const initialSubmittedRef = useRef(false);
 
   useEffect(() => {
+    if (initialSubmittedRef.current) return;
+    initialSubmittedRef.current = true;
     if (initialQ) submit(initialQ);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

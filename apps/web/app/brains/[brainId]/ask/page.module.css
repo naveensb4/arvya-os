@@ -10,16 +10,15 @@
   display: flex;
   flex-direction: column;
   height: calc(100vh - 60px);
-  position: relative;
   background: var(--cream-100);
   overflow: hidden;
 }
 
 .stream {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 32px 0 200px;
+  padding: 32px 0 24px;
   scroll-behavior: smooth;
 }
 .inner {
@@ -378,13 +377,9 @@
 }
 
 .composerWrap {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   background: linear-gradient(to bottom, transparent, var(--cream-100) 30%);
-  padding: 32px 24px 24px;
-  pointer-events: none;
+  padding: 24px 24px 20px;
 }
 .composer {
   max-width: 760px;
@@ -394,7 +389,6 @@
   border-radius: 16px;
   padding: 12px 14px 10px;
   box-shadow: 0 8px 28px rgba(21, 26, 35, 0.06);
-  pointer-events: auto;
   transition: border-color 0.15s;
 }
 .composer:focus-within {

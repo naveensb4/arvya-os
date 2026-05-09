@@ -472,6 +472,7 @@ export interface BrainRepository {
   listBrains(): Promise<Brain[]>;
   getBrain(brainId: string): Promise<Brain | null>;
   createBrain(input: CreateBrainData): Promise<Brain>;
+  updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null>;
 
   createSourceItem(input: CreateSourceData): Promise<SourceItem>;
   getSourceItem(sourceItemId: string): Promise<SourceItem | null>;

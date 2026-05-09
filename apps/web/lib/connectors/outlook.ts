@@ -11,6 +11,7 @@ import {
   stripHtml,
   type EmailConnectorSyncResult,
 } from "./email-common";
+import { buildEmailContent, cleanEmailBody, parseAddressList } from "./email-cleaning";
 
 export const OUTLOOK_SCOPE = "offline_access Mail.Read";
 
@@ -256,12 +257,15 @@ function formatOutlookMessage(message: OutlookMessage) {
   const date = message.receivedDateTime ?? message.sentDateTime ?? "";
   const rawBody = message.body?.content ?? message.bodyPreview ?? "";
   const body = message.body?.contentType?.toLowerCase() === "html" ? stripHtml(rawBody) : rawBody;
+  const cleanBody = cleanEmailBody(body);
+  const participants = [...parseAddressList(from), ...parseAddressList(to)];
   return {
     title,
     from,
     to,
     date,
-    content: [`Subject: ${title}`, `From: ${from}`, `To: ${to}`, `Date: ${date}`, "", body].join("\n").trim(),
+    participants,
+    content: buildEmailContent({ from, to, cleanBody }),
   };
 }
 
@@ -366,6 +370,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
             outlook_categories: message.categories ?? [],
             from: formatted.from,
             to: formatted.to,
+            participants: formatted.participants,
             occurred_at: formatted.date,
             outlook_received_at: message.receivedDateTime,
             outlook_sent_at: message.sentDateTime,
@@ -439,6 +444,7 @@ export async function syncOutlookConnector(config: ConnectorConfig, client?: Out
             outlook_categories: message.categories ?? [],
             from: formatted.from,
             to: formatted.to,
+            participants: formatted.participants,
             occurred_at: formatted.date,
             outlook_received_at: message.receivedDateTime,
             outlook_sent_at: message.sentDateTime,

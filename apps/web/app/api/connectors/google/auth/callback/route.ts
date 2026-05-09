@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { selectedBrainOrDefault } from "@/lib/brain/store";
 import { decodeOAuthState } from "@/lib/connectors/email-common";
 import { getRepository } from "@/lib/db/repository";
+import { runNotetakerCalendarSync } from "@/lib/notetaker/runtime";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
@@ -141,8 +142,10 @@ export async function GET(request: Request) {
   }
 
   const existingCalendars = await repository.listNotetakerCalendars({ brainId: selectedBrainId });
-  const hasGoogleCalendar = existingCalendars.some((c) => c.provider === "google_calendar");
-  if (!hasGoogleCalendar) {
+  const existingGoogleCalendar = existingCalendars.find(
+    (c) => c.provider === "google_calendar",
+  );
+  if (!existingGoogleCalendar) {
     await repository.createNotetakerCalendar({
       brainId: selectedBrainId,
       provider: "google_calendar",
@@ -151,7 +154,20 @@ export async function GET(request: Request) {
       autoJoinMode: "all_calls",
       config: { credentials },
     });
+  } else {
+    // Refresh credentials if the user reconnected so the stored access token
+    // matches the just-completed grant.
+    await repository.updateNotetakerCalendar(existingGoogleCalendar.id, {
+      status: "connected",
+      config: { ...existingGoogleCalendar.config, credentials },
+      lastError: null,
+    });
   }
+
+  // Trigger an immediate sync so the dashboard shows real meetings without
+  // waiting for the 10-minute inngest cron tick. Errors are swallowed - the
+  // sync also runs lazily on dashboard load and via the cron.
+  await runNotetakerCalendarSync({ brainId: selectedBrainId }).catch(() => {});
 
   revalidatePath(`/brains/${selectedBrainId}`);
   revalidatePath(`/brains/${selectedBrainId}/connections`);

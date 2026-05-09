@@ -11,6 +11,12 @@ import {
   stripHtml,
   type EmailConnectorSyncResult,
 } from "./email-common";
+import {
+  buildEmailContent,
+  cleanEmailBody,
+  parseAddressList,
+  type EmailParticipant,
+} from "./email-cleaning";
 
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
@@ -241,14 +247,74 @@ function formatGmailMessage(message: GmailMessage) {
   const subject = header(message, "Subject") ?? "(No subject)";
   const from = header(message, "From") ?? "";
   const to = header(message, "To") ?? "";
+  const cc = header(message, "Cc") ?? "";
   const date = header(message, "Date") ?? "";
-  const body = bodyText(message.payload) || message.snippet || "";
+  const rawBody = bodyText(message.payload) || message.snippet || "";
+  const cleanBody = cleanEmailBody(rawBody);
   return {
     title: subject,
-    content: [`Subject: ${subject}`, `From: ${from}`, `To: ${to}`, `Date: ${date}`, "", body].join("\n").trim(),
+    // Body fed to the extractor: cleaned, with a short From/To header so
+    // the LLM still has speaker context. Subject/Date stay in metadata so
+    // the regex never sees "Subject" or "Date" as tokens.
+    content: buildEmailContent({ from, to, cleanBody }),
     from,
     to,
+    cc,
     date,
+    cleanBody,
+  };
+}
+
+// Aggregate messages in a Gmail thread into one composite source. Messages
+// arrive in chronological order (oldest first) so the LLM reads the thread
+// the way a human would. Each message contributes its cleaned body — quoted
+// reply chains are already stripped by cleanEmailBody, so the same content
+// doesn't repeat across messages.
+function formatGmailThread(messages: GmailMessage[]) {
+  const ordered = [...messages].sort((a, b) => {
+    const ai = a.internalDate ? Number(a.internalDate) : 0;
+    const bi = b.internalDate ? Number(b.internalDate) : 0;
+    return ai - bi;
+  });
+
+  const subject = header(ordered[0], "Subject") ?? "(No subject)";
+  const participantMap = new Map<string, EmailParticipant>();
+  const formattedMessages = ordered.map((message) => formatGmailMessage(message));
+
+  for (const formatted of formattedMessages) {
+    for (const participant of [...parseAddressList(formatted.from), ...parseAddressList(formatted.to), ...parseAddressList(formatted.cc)]) {
+      const key = participant.email ?? participant.name ?? participant.raw;
+      if (!key) continue;
+      const existing = participantMap.get(key);
+      if (!existing) {
+        participantMap.set(key, participant);
+      } else if (!existing.email && participant.email) {
+        participantMap.set(key, { ...existing, email: participant.email });
+      } else if (!existing.name && participant.name) {
+        participantMap.set(key, { ...existing, name: participant.name });
+      }
+    }
+  }
+  const participants = [...participantMap.values()];
+
+  const messageBlocks = formattedMessages.map((formatted, index) => {
+    const head = `Message ${index + 1} of ${formattedMessages.length} — ${formatted.from || "unknown sender"} on ${formatted.date || "unknown date"}`;
+    return [head, "", formatted.cleanBody].join("\n").trim();
+  });
+  const content = messageBlocks.filter(Boolean).join("\n\n---\n\n").trim();
+
+  const firstMessage = ordered[0];
+  const lastMessage = ordered[ordered.length - 1];
+  const occurredAt = gmailMessageTimestamp(lastMessage, header(lastMessage, "Date")) ?? gmailMessageTimestamp(firstMessage, header(firstMessage, "Date"));
+
+  return {
+    title: subject,
+    content,
+    participants,
+    messageCount: ordered.length,
+    occurredAt,
+    firstMessage,
+    lastMessage,
   };
 }
 
@@ -314,12 +380,21 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
   const since = gmailWatermark(config);
   let nextWatermark: string | undefined = since;
 
+  // Fetch every message that matched the configured labels, then bucket
+  // by Gmail thread id. We ingest one source per thread (not per message)
+  // so a 5-message reply chain becomes 1 row, not 5 rows full of quoted
+  // copies of each other.
+  const threadBuckets = new Map<
+    string,
+    { label: GmailLabel; messages: GmailMessage[]; firstSeenIndex: number }
+  >();
+  let messageIndex = 0;
   for (const label of labels) {
-    const messages = await gmail.listMessages(label.id, since ? { since } : undefined);
-    result.itemsFound += messages.length;
-    const messagesToSync = messages.slice(0, itemLimit);
-    if (messages.length > messagesToSync.length) {
-      result.itemsSkipped += messages.length - messagesToSync.length;
+    const listed = await gmail.listMessages(label.id, since ? { since } : undefined);
+    result.itemsFound += listed.length;
+    const messagesToSync = listed.slice(0, itemLimit);
+    if (listed.length > messagesToSync.length) {
+      result.itemsSkipped += listed.length - messagesToSync.length;
       result.skippedItems.push({
         externalId: `gmail:${label.id}:safety-cap`,
         title: label.name,
@@ -329,55 +404,14 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
     for (const item of messagesToSync) {
       try {
         const message = await gmail.getMessage(item.id);
-        const formatted = formatGmailMessage(message);
-        const externalId = `gmail:${message.id}`;
-        const messageIso = gmailMessageTimestamp(message, formatted.date);
-        if (messageIso && (!nextWatermark || messageIso > nextWatermark)) {
-          nextWatermark = messageIso;
+        const threadId = message.threadId ?? message.id;
+        const bucket = threadBuckets.get(threadId);
+        if (bucket) {
+          bucket.messages.push(message);
+        } else {
+          threadBuckets.set(threadId, { label, messages: [message], firstSeenIndex: messageIndex });
         }
-        const relevance = emailMatchesAryvaScope({
-          config,
-          title: formatted.title,
-          content: formatted.content,
-          from: formatted.from,
-          to: formatted.to,
-        });
-        if (!relevance.matches) {
-          result.itemsSkipped += 1;
-          result.skippedItems.push({ externalId, title: formatted.title, reason: relevance.reason });
-          continue;
-        }
-        const created = await createEmailSource({
-          config,
-          connectorType: "gmail",
-          externalId,
-          title: formatted.title,
-          content: formatted.content,
-          externalUri: `https://mail.google.com/mail/u/0/#all/${message.id}`,
-          metadata: {
-            gmail_message_id: message.id,
-            gmail_thread_id: message.threadId,
-            gmail_label_id: label.id,
-            gmail_label_name: label.name,
-            gmail_label_ids: message.labelIds ?? [],
-            from: formatted.from,
-            to: formatted.to,
-            occurred_at: formatted.date,
-            gmail_internal_date: message.internalDate,
-            gmail_synced_at: new Date().toISOString(),
-            aryva_relevance: {
-              reason: relevance.reason,
-              matched_terms: relevance.matchedTerms,
-            },
-          },
-        });
-        if (created.duplicate) {
-          result.itemsSkipped += 1;
-          result.skippedItems.push({ externalId, title: formatted.title, reason: "duplicate" });
-          continue;
-        }
-        result.itemsIngested += 1;
-        result.sourceItemIds.push(created.sourceItem.id);
+        messageIndex += 1;
       } catch (error) {
         result.itemsFailed += 1;
         result.failedItems.push({
@@ -386,6 +420,77 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
           error: error instanceof Error ? error.message : "Unknown Gmail sync error",
         });
       }
+    }
+  }
+
+  // Process threads in the order they were discovered.
+  const threadEntries = [...threadBuckets.entries()].sort(
+    (a, b) => a[1].firstSeenIndex - b[1].firstSeenIndex,
+  );
+
+  for (const [threadId, bucket] of threadEntries) {
+    try {
+      const formatted = formatGmailThread(bucket.messages);
+      const externalId = `gmail:thread:${threadId}`;
+      if (formatted.occurredAt && (!nextWatermark || formatted.occurredAt > nextWatermark)) {
+        nextWatermark = formatted.occurredAt;
+      }
+      const fromParticipants = formatted.participants
+        .map((p) => p.email ?? p.name ?? p.raw)
+        .filter(Boolean)
+        .join(", ");
+      const relevance = emailMatchesAryvaScope({
+        config,
+        title: formatted.title,
+        content: formatted.content,
+        from: fromParticipants,
+        to: fromParticipants,
+      });
+      if (!relevance.matches) {
+        result.itemsSkipped += 1;
+        result.skippedItems.push({ externalId, title: formatted.title, reason: relevance.reason });
+        continue;
+      }
+      const lastMessageId = formatted.lastMessage.id;
+      const created = await createEmailSource({
+        config,
+        connectorType: "gmail",
+        externalId,
+        title: formatted.title,
+        content: formatted.content,
+        // Thread URL — opens the whole conversation in Gmail.
+        externalUri: `https://mail.google.com/mail/u/0/#all/${threadId}`,
+        metadata: {
+          gmail_thread_id: threadId,
+          gmail_message_count: formatted.messageCount,
+          gmail_message_ids: bucket.messages.map((m) => m.id),
+          gmail_first_message_id: formatted.firstMessage.id,
+          gmail_last_message_id: lastMessageId,
+          gmail_label_id: bucket.label.id,
+          gmail_label_name: bucket.label.name,
+          participants: formatted.participants,
+          occurred_at: formatted.occurredAt ?? null,
+          gmail_synced_at: new Date().toISOString(),
+          aryva_relevance: {
+            reason: relevance.reason,
+            matched_terms: relevance.matchedTerms,
+          },
+        },
+      });
+      if (created.duplicate) {
+        result.itemsSkipped += 1;
+        result.skippedItems.push({ externalId, title: formatted.title, reason: "duplicate" });
+        continue;
+      }
+      result.itemsIngested += 1;
+      result.sourceItemIds.push(created.sourceItem.id);
+    } catch (error) {
+      result.itemsFailed += 1;
+      result.failedItems.push({
+        externalId: `gmail:thread:${threadId}`,
+        title: threadId,
+        error: error instanceof Error ? error.message : "Unknown Gmail sync error",
+      });
     }
   }
 

@@ -1,198 +1,30 @@
 import Link from "next/link";
+import { getRepository } from "@/lib/db/repository";
+import { generateDailyFounderBrief, getBrainSnapshot } from "@/lib/brain/store";
+import type {
+  AgentRun,
+  StructuredDailyBrief,
+  StructuredDailyBriefAction,
+  StructuredDailyBriefInsight,
+  StructuredDailyBriefOverdueFollowUp,
+  StructuredDailyBriefPriority,
+  StructuredDailyBriefRelationship,
+  StructuredDailyBriefRisk,
+  StructuredDailyBriefDueSoon,
+  StructuredDailyBriefQuestion,
+} from "@arvya/core";
 import styles from "./page.module.css";
 
-// TODO: wire to GET /api/brains/[brainId]/briefs/latest (Phase 3.4 endpoint).
-// Until that endpoint is built, the page renders the prototype's editorial
-// content so designers and stakeholders can review layout and tone without
-// a backing brief generator. The shape of `placeholderBrief` mirrors the
-// DailyBrief type the API will return: swapping in real data is a one-line
-// change in `getLatestBrief()`.
+// Daily Brief - layout from docs/prototype/Brief.html, data from the
+// real `daily_brief` agent run stored in agent_runs.rawOutput.structured.
+//
+// generateDailyFounderBrief writes a row with name="daily_brief" and
+// rawOutput = { headline, openLoopCount, loopsToReviewCount, structured }.
+// We pick the most recent succeeded run, parse the structured payload,
+// and render. If none exists yet, we trigger one (best-effort, time-
+// boxed) and fall back to an empty-state view.
 
-type Cite = { label: string; href?: string };
-
-type BriefCard = {
-  title: string;
-  pill?: { variant: "gold" | "warn" | "ok" | "default"; text: string };
-  paragraphs: Array<string | { quote: string; who: string } | { cites: Cite[] }>;
-  accent?: boolean;
-  sources: Cite[];
-};
-
-type ActionItem = {
-  text: string;
-  cites?: Cite[];
-};
-
-type ActionPerson = {
-  initial: string;
-  name: string;
-  variant?: "gold" | "dark";
-  items: ActionItem[];
-};
-
-type BriefPromise = {
-  what: string;
-  to: string;
-  who: string;
-  due: string;
-  due_late?: boolean;
-  status: { variant: "default" | "gold" | "warn" | "ok"; text: string };
-};
-
-type Question = {
-  text: string;
-  cites: string[];
-};
-
-type DailyBrief = {
-  brief_number: number;
-  delivered_to: string[];
-  delivered_at_label: string;
-  reading_time_min: number;
-  signal: number;
-  date_label: string;
-  compiled_label: string;
-  headline: string;
-  lede: Array<string | { strong: string }>;
-  overnight_intro: { eyebrow: string; title: string };
-  overnight_cards: BriefCard[];
-  today_intro: { eyebrow: string; title: string };
-  today: ActionPerson[];
-  promises_intro: { eyebrow: string; title: string; copy: string };
-  promises: BriefPromise[];
-  questions_intro: { eyebrow: string; title: string; copy: string };
-  questions_inner_title: string;
-  questions_inner_intro: string;
-  questions: Question[];
-};
-
-const placeholderBrief: DailyBrief = {
-  brief_number: 142,
-  delivered_to: ["Naveen", "PB"],
-  delivered_at_label: "7:30 by email plus Slack DM",
-  reading_time_min: 4,
-  signal: 0.87,
-  date_label: "Tue, 7 May 2026",
-  compiled_label: "07:28",
-  headline: "A quiet morning, three loud signals.",
-  lede: [
-    "Overnight: 142 artifacts, 28 entity pages recompiled, 12 new graph edges, 0 failed runs. ",
-    { strong: "The brain wants you to know three things" },
-    " — Sequoia is moving faster than the term sheet implies, Marlowe's bug shipped Friday and they still haven't been told, and the pitch about consulting is no longer matching who actually buys.",
-  ],
-  overnight_intro: { eyebrow: "01 Overnight", title: "What happened while you slept." },
-  overnight_cards: [
-    {
-      title: "Sequoia replied to the deck.",
-      pill: { variant: "gold", text: "Move fast" },
-      accent: true,
-      paragraphs: [
-        "Roelof responded at 06:04 BST with three specific objections: SOC 2 timing, model lock-in, and ownership of the customer relationship. The brain matched the tone (terse, bulleted, no preamble) against his behavioral model and concluded he is signaling 'answer these and we move to partnership', not 'we're stalling'.",
-        {
-          quote: "Three things before we go to partnership: when does SOC 2 land, how locked in are you to Anthropic, and who owns the customer relationship if a brain template ships per-vertical.",
-          who: "Roelof, 06:04 - email - re: Arvya OS deck",
-        },
-        "PB has full draft answers ready in Gmail Drafts. Brain confidence on each:",
-        { cites: [
-          { label: "SOC 2 - 0.94" },
-          { label: "model - 0.81" },
-          { label: "ownership - 0.62 - needs Naveen" },
-        ] },
-      ],
-      sources: [
-        { label: "email - roelof@sequoia - 06:04" },
-        { label: "behavioral model - Roelof" },
-        { label: "loop - sequoia-tsq" },
-      ],
-    },
-    {
-      title: "BlackRock asked again about the graph spec.",
-      pill: { variant: "warn", text: "3d late" },
-      paragraphs: [
-        "Jon emailed at 07:14, second mention of the graph spec we promised on Monday. He is not visibly annoyed. Tone analysis vs his last 14 emails shows no escalation language. But this is now a 3-day-old open promise to a paying customer.",
-        "Brain has drafted v0 of the spec using the canonical 43 edge types and the dream-cycle pseudocode from `apps/web/lib/brain/dream-cycle.ts`. Estimated review time: 18 minutes.",
-      ],
-      sources: [
-        { label: "email - jon@blackrock - 07:14" },
-        { label: "call - BlackRock - Mon" },
-        { label: "draft - graph-spec.md" },
-      ],
-    },
-    {
-      title: "The 'consulting brain' pitch is no longer matching reality.",
-      pill: { variant: "default", text: "Drift signal" },
-      paragraphs: [
-        "Pattern detected by the dream cycle. Of the last 6 meaningful customer conversations, 4 were VC firms, and 2 cited 'Deal Brain' by name as the reason they took the call. The pitch deck currently leads with consulting.",
-        "This is not yet a recommendation to repivot, but it is a recommendation to update the deck before today's 14:00 with Insight Partners.",
-      ],
-      sources: [
-        { label: "6 calls" },
-        { label: "drift report - narrative" },
-      ],
-    },
-  ],
-  today_intro: { eyebrow: "02 Today", title: "What should happen." },
-  today: [
-    {
-      initial: "N",
-      name: "For Naveen.",
-      variant: "gold",
-      items: [
-        { text: "Send graph spec to BlackRock by 11:00. Draft v0 ready. Jon explicitly mentioned it twice. Loop opened Monday.", cites: [{ label: "draft" }, { label: "Mon call" }] },
-        { text: "Decide: Slack or Drive next. Both promised, both blocked on you. PB is waiting. Brief is at trade-off doc." },
-        { text: "Add ownership clause to Sequoia reply. 0.62 confidence answer, your judgment, not the brain's.", cites: [{ label: "Roelof email" }] },
-        { text: "Walk into Insight Partners (14:00) prepped. Brain assembled prep doc, Maya has talked to two Insight LPs, attendees include Lonne (cares about retention), brief is here." },
-      ],
-    },
-    {
-      initial: "P",
-      name: "For PB.",
-      variant: "dark",
-      items: [
-        { text: "Tell Marlowe their bug shipped. 4-day-old gap. PR #482 closed Friday. One-liner is drafted.", cites: [{ label: "GH #482" }, { label: "Marlowe ticket" }] },
-        { text: "Send Sequoia reply once Naveen edits it. Three answers, one question outstanding. Send by 12:00, Roelof reads email at lunch." },
-        { text: "Schedule Q3 advisor sync. 12 days stale. Two advisors haven't heard from us since the seed close.", cites: [{ label: "loop" }] },
-        { text: "Add the 'where does the data live' answer to the FAQ. Three customers asked the same question this week. Brain drafted the entry.", cites: [{ label: "pattern" }] },
-      ],
-    },
-  ],
-  promises_intro: {
-    eyebrow: "03 Promises",
-    title: "What we owe people.",
-    copy: "Every promise the brain has heard you make in the last 30 days, with current status. Three are overdue. None have been silently dropped.",
-  },
-  promises: [
-    { what: "Send graph spec v0", to: "BlackRock - Jon", who: "NA", due: "Mon - 3d late", due_late: true, status: { variant: "warn", text: "Drafted" } },
-    { what: "Reply to term-sheet questions", to: "Sequoia - Roelof", who: "NA - PB", due: "Today - 12:00", due_late: false, status: { variant: "gold", text: "Drafted" } },
-    { what: "Tell Marlowe bug #482 shipped", to: "Marlowe - support", who: "PB", due: "Fri - 4d late", due_late: true, status: { variant: "default", text: "1-liner ready" } },
-    { what: "Q3 advisor sync", to: "Three advisors", who: "PB", due: "Apr 25 - 12d late", due_late: true, status: { variant: "warn", text: "Unscheduled" } },
-    { what: "Intro Maya to Joel", to: "Caffeinated, Verdant", who: "NA", due: "Today", due_late: false, status: { variant: "default", text: "Double-opt drafted" } },
-    { what: "Slack connector beta", to: "2 customer pilots", who: "PB - eng", due: "Fri", due_late: false, status: { variant: "ok", text: "On track" } },
-    { what: "Investor update for April", to: "22 angels", who: "NA", due: "May 10", due_late: false, status: { variant: "default", text: "Outline drafted" } },
-  ],
-  questions_intro: {
-    eyebrow: "04 Questions for you",
-    title: "Things only you can decide.",
-    copy: "The brain has source-backed evidence on each, but these are judgment calls. Your answer feeds back into memory.",
-  },
-  questions_inner_title: "Resolve before Friday.",
-  questions_inner_intro: "Open strategic questions, ranked by impact times age",
-  questions: [
-    { text: "Slack connector or Drive ingestion first?", cites: ["standup - Mon", "#341"] },
-    { text: "Are we still pitching to consulting firms first?", cites: ["6 calls"] },
-    { text: "Who owns the customer relationship in vertical templates?", cites: ["Sequoia email"] },
-    { text: "Should we accept the BlackRock referral to Google?", cites: ["chain - Jon to Google"] },
-  ],
-};
-
-async function getLatestBrief(brainId: string): Promise<DailyBrief> {
-  // TODO: fetch from `/api/brains/${brainId}/briefs/latest` once Phase 3.4
-  // lands. brainId is captured here so the swap is a one-liner. While we
-  // ship the static placeholder, this `void` reference satisfies the
-  // unused-vars lint without dropping the future-facing parameter.
-  void brainId;
-  return placeholderBrief;
-}
+type Cite = { label: string };
 
 function pillClass(variant: "gold" | "warn" | "ok" | "default") {
   if (variant === "gold") return `${styles.pill} ${styles.pillGold}`;
@@ -205,9 +37,135 @@ type PageProps = {
   params: Promise<{ brainId: string }>;
 };
 
+function isDailyBriefRun(run: AgentRun): boolean {
+  return run.name === "daily_brief" && run.status === "succeeded";
+}
+
+function readStructured(run: AgentRun): StructuredDailyBrief | null {
+  const raw = run.rawOutput as { structured?: StructuredDailyBrief } | undefined;
+  return raw?.structured ?? null;
+}
+
+function readHeadline(run: AgentRun): string | null {
+  const raw = run.rawOutput as { headline?: string } | undefined;
+  return raw?.headline ?? null;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateLong(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function severityToPill(s: "high" | "medium" | "low") {
+  if (s === "high") return { variant: "warn" as const, text: "High risk" };
+  if (s === "medium") return { variant: "gold" as const, text: "Watch" };
+  return { variant: "default" as const, text: "Low" };
+}
+
+function relationshipPill(kind: StructuredDailyBriefRelationship["kind"]) {
+  if (kind === "customer") return { variant: "gold" as const, text: "Customer" };
+  if (kind === "investor") return { variant: "warn" as const, text: "Investor" };
+  if (kind === "advisor") return { variant: "ok" as const, text: "Advisor" };
+  return { variant: "default" as const, text: "Prospect" };
+}
+
+async function getOrGenerateLatestBrief(
+  brainId: string,
+): Promise<{ run: AgentRun | null; structured: StructuredDailyBrief | null; headline: string | null }> {
+  const repository = getRepository();
+  const runs = await repository.listAgentRuns(brainId, 50);
+  const latest = runs
+    .filter(isDailyBriefRun)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+
+  if (latest) {
+    return {
+      run: latest,
+      structured: readStructured(latest),
+      headline: readHeadline(latest),
+    };
+  }
+
+  // No brief yet - try to generate one (best effort, ~30s budget). If the
+  // model fails or isn't configured we just render the empty state.
+  try {
+    await Promise.race([
+      generateDailyFounderBrief(brainId),
+      new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
+    ]);
+    const fresh = await repository.listAgentRuns(brainId, 5);
+    const generated = fresh.filter(isDailyBriefRun).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+    if (generated) {
+      return {
+        run: generated,
+        structured: readStructured(generated),
+        headline: readHeadline(generated),
+      };
+    }
+  } catch {
+    // swallow - fall through to empty state
+  }
+  return { run: null, structured: null, headline: null };
+}
+
 export default async function BriefPage({ params }: PageProps) {
   const { brainId } = await params;
-  const brief = await getLatestBrief(brainId);
+  const snapshot = await getBrainSnapshot(brainId);
+  const { run, structured, headline } = await getOrGenerateLatestBrief(brainId);
+
+  // Empty state - no brief has been generated yet for this brain.
+  if (!run || !structured) {
+    return (
+      <div className={styles.wrap}>
+        <div className={styles.meta}>
+          <span>The Founder Brief</span>
+          <div className={styles.metaRight}>
+            <span>{formatDateLong(new Date().toISOString())}</span>
+          </div>
+        </div>
+        <h1 className={styles.h1}>No brief yet for this brain.</h1>
+        <p className={styles.lede}>
+          The brain compiles a brief once it has at least a few sources to
+          read from. Connect a calendar, a meeting, or some emails - or run
+          the daily brief manually from <Link href={`/brains/${brainId}/agent-runs`}>Agent runs</Link>.
+        </p>
+      </div>
+    );
+  }
+
+  // Sequence existing runs to compute brief number (newest is current).
+  const repository = getRepository();
+  const allRuns = await repository.listAgentRuns(brainId, 200);
+  const briefRuns = allRuns.filter(isDailyBriefRun);
+  const briefNumber = briefRuns.findIndex((r) => r.id === run.id);
+  const briefIndex = briefNumber >= 0 ? briefRuns.length - briefNumber : briefRuns.length;
+
+  const compiledLabel = formatTime(run.startedAt);
+  const dateLabel = formatDateLong(structured.date ?? run.startedAt);
+  const sourceCount = snapshot.sourceItems?.length ?? 0;
+  const memoryCount = snapshot.memoryObjects?.length ?? 0;
+  const overdue = structured.overdue_follow_ups ?? [];
+  const dueSoon = structured.due_soon ?? [];
+  const priorities = structured.top_priorities_today ?? [];
+  const relationships = structured.high_intent_relationships ?? [];
+  const insights = structured.product_insights_to_act_on ?? [];
+  const risks = structured.risks_and_dropped_balls ?? [];
+  const naveenActions = structured.suggested_actions_naveen ?? [];
+  const pbActions = structured.suggested_actions_pb ?? [];
+  const questions = structured.questions_to_resolve ?? [];
+
+  const ledeIntro = `${sourceCount} artifacts logged. ${memoryCount} memory objects compiled. ${overdue.length} promises overdue, ${dueSoon.length} due soon.`;
 
   return (
     <div className={styles.wrap}>
@@ -217,46 +175,28 @@ export default async function BriefPage({ params }: PageProps) {
           <polyline points="12 6 12 12 16 14" />
         </svg>
         <span>
-          This brief was delivered to{" "}
-          {brief.delivered_to.map((name, i) => (
-            <span key={name}>
-              {i > 0 ? " and " : ""}
-              <b>{name}</b>
-            </span>
-          ))}{" "}
-          at {brief.delivered_at_label}. Reading time: <b>{brief.reading_time_min} min</b>. Signal-to-noise score: <b>{brief.signal.toFixed(2)}</b>.{" "}
+          Compiled by Arvya at <b>{compiledLabel}</b> from {sourceCount} sources and {memoryCount} memory objects.{" "}
           <Link href={`/brains/${brainId}/settings`}>Settings</Link>
         </span>
       </div>
 
       <div className={styles.meta}>
-        <span>The Founder Brief - No. {brief.brief_number}</span>
+        <span>The Founder Brief - No. {briefIndex}</span>
         <div className={styles.metaRight}>
-          <span>{brief.date_label}</span>
+          <span>{dateLabel}</span>
           <span>
-            Compiled <b>{brief.compiled_label}</b>
-          </span>
-          <span>
-            Signal <b>{brief.signal.toFixed(2)}</b>
+            Compiled <b>{compiledLabel}</b>
           </span>
         </div>
       </div>
 
-      <h1 className={styles.h1}>{brief.headline}</h1>
-      <p className={styles.lede}>
-        {brief.lede.map((part, i) =>
-          typeof part === "string" ? (
-            <span key={i}>{part}</span>
-          ) : (
-            <b key={i}>{part.strong}</b>
-          ),
-        )}
-      </p>
+      <h1 className={styles.h1}>{headline ?? "Today’s brief."}</h1>
+      <p className={styles.lede}>{ledeIntro}</p>
 
       <nav className={styles.toc}>
         <a href="#overnight">
           <span className={styles.tocNo}>01</span>
-          <span className={styles.tocNm}>Overnight</span>
+          <span className={styles.tocNm}>Signals</span>
         </a>
         <a href="#priorities">
           <span className={styles.tocNo}>02</span>
@@ -272,187 +212,337 @@ export default async function BriefPage({ params }: PageProps) {
         </a>
       </nav>
 
+      {/* 01 - Signals: synthesis of relationships, insights, risks. */}
       <section className={styles.section} id="overnight">
         <div className={styles.sectionHead}>
-          <span className={`${styles.no}`}>{brief.overnight_intro.eyebrow}</span>
-          <h2>{brief.overnight_intro.title}</h2>
+          <span className={styles.no}>01 Signals</span>
+          <h2>What the brain noticed.</h2>
           <span className={styles.rule} />
         </div>
 
-        {brief.overnight_cards.map((card, i) => (
+        {[
+          ...relationships.map((r: StructuredDailyBriefRelationship) => ({
+            kind: "relationship" as const,
+            data: r,
+          })),
+          ...insights.map((i: StructuredDailyBriefInsight) => ({
+            kind: "insight" as const,
+            data: i,
+          })),
+          ...risks.map((r: StructuredDailyBriefRisk) => ({
+            kind: "risk" as const,
+            data: r,
+          })),
+        ].length === 0 ? (
           <div
-            key={i}
-            className={`${styles.card} ${card.accent ? styles.cardAccent : ""}`}
+            style={{
+              padding: "32px 0",
+              fontSize: 14,
+              color: "var(--text-tertiary)",
+              fontStyle: "italic",
+            }}
           >
+            The brain has nothing remarkable to flag this morning.
+          </div>
+        ) : null}
+
+        {relationships.map((rel, i) => (
+          <div key={`rel-${i}`} className={styles.card}>
             <div className={styles.cardHead}>
-              <h3>{card.title}</h3>
-              {card.pill && (
-                <span className={pillClass(card.pill.variant)}>
-                  <span className="dot" />
-                  {card.pill.text}
-                </span>
-              )}
+              <h3>{rel.entity}</h3>
+              <span className={pillClass(relationshipPill(rel.kind).variant)}>
+                <span className="dot" />
+                {relationshipPill(rel.kind).text}
+              </span>
             </div>
             <div className={styles.cardBody}>
-              {card.paragraphs.map((para, j) => {
-                if (typeof para === "string") return <p key={j}>{para}</p>;
-                if ("quote" in para) {
-                  return (
-                    <div key={j} className={styles.quote}>
-                      {para.quote}
-                      <span className={styles.quoteWho}>{para.who}</span>
-                    </div>
-                  );
-                }
-                return (
-                  <p key={j}>
-                    {para.cites.map((c, k) => (
-                      <span key={k} className={styles.cite}>
-                        {c.label}
-                      </span>
-                    ))}
-                  </p>
-                );
-              })}
+              <p>{rel.signal}</p>
             </div>
-            <div className={styles.srcRow}>
-              {card.sources.map((s, j) => (
-                <span key={j} className={styles.cite}>
-                  {s.label}
+            {rel.source_refs.length > 0 ? (
+              <div className={styles.srcRow}>
+                {rel.source_refs.map((s, j) => (
+                  <span key={j} className={styles.cite}>
+                    {s}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+
+        {insights.map((ins, i) => (
+          <div key={`ins-${i}`} className={styles.card}>
+            <div className={styles.cardHead}>
+              <h3>Product insight</h3>
+              <span className={pillClass("default")}>
+                <span className="dot" />
+                Pattern
+              </span>
+            </div>
+            <div className={styles.cardBody}>
+              <p>{ins.insight}</p>
+              {ins.suggested_action ? (
+                <p>
+                  <b>Suggested action.</b> {ins.suggested_action}
+                </p>
+              ) : null}
+            </div>
+            {ins.source_refs.length > 0 ? (
+              <div className={styles.srcRow}>
+                {ins.source_refs.map((s, j) => (
+                  <span key={j} className={styles.cite}>
+                    {s}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+
+        {risks.map((risk, i) => {
+          const pill = severityToPill(risk.severity);
+          return (
+            <div key={`risk-${i}`} className={`${styles.card} ${styles.cardAccent}`}>
+              <div className={styles.cardHead}>
+                <h3>Risk / dropped ball</h3>
+                <span className={pillClass(pill.variant)}>
+                  <span className="dot" />
+                  {pill.text}
                 </span>
+              </div>
+              <div className={styles.cardBody}>
+                <p>{risk.description}</p>
+              </div>
+              {risk.source_refs.length > 0 ? (
+                <div className={styles.srcRow}>
+                  {risk.source_refs.map((s, j) => (
+                    <span key={j} className={styles.cite}>
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </section>
+
+      {/* 02 - Today: priorities + suggested actions per founder. */}
+      <section className={styles.section} id="priorities">
+        <div className={styles.sectionHead}>
+          <span className={styles.no}>02 Today</span>
+          <h2>What should happen.</h2>
+          <span className={styles.rule} />
+        </div>
+
+        {priorities.length > 0 ? (
+          <div className={styles.card}>
+            <div className={styles.cardHead}>
+              <h3>Top priorities</h3>
+            </div>
+            <div className={styles.cardBody}>
+              {priorities.map((p: StructuredDailyBriefPriority, i) => (
+                <p key={i}>
+                  <b>{p.statement}.</b> {p.why_today}
+                </p>
               ))}
             </div>
           </div>
-        ))}
-      </section>
-
-      <section className={styles.section} id="priorities">
-        <div className={styles.sectionHead}>
-          <span className={styles.no}>{brief.today_intro.eyebrow}</span>
-          <h2>{brief.today_intro.title}</h2>
-          <span className={styles.rule} />
-        </div>
+        ) : null}
 
         <div className={styles.actionsGrid}>
-          {brief.today.map((person, i) => (
-            <div key={i} className={styles.person}>
+          {naveenActions.length > 0 ? (
+            <div className={styles.person}>
               <h4>
-                <span
-                  className={`${styles.av} ${person.variant === "gold" ? styles.avGold : ""}`}
-                >
-                  {person.initial}
-                </span>
-                {person.name}
+                <span className={`${styles.av} ${styles.avGold}`}>N</span>
+                For Naveen.
               </h4>
               <ol>
-                {person.items.map((item, j) => (
+                {naveenActions.map((item: StructuredDailyBriefAction, j) => (
                   <li key={j}>
-                    <span className={styles.actionN}>
-                      {String(j + 1).padStart(2, "0")}
-                    </span>
+                    <span className={styles.actionN}>{String(j + 1).padStart(2, "0")}</span>
                     <div>
-                      <b>{item.text}</b>
-                      {item.cites && (
+                      <b>{item.action}</b>
+                      {item.source_refs && item.source_refs.length > 0 ? (
                         <div className={styles.actionSrc}>
-                          {item.cites.map((c, k) => (
+                          {item.source_refs.map((c: string, k: number) => (
                             <span key={k} className={styles.cite}>
-                              {c.label}
+                              {c}
                             </span>
                           ))}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </li>
                 ))}
               </ol>
             </div>
-          ))}
+          ) : null}
+
+          {pbActions.length > 0 ? (
+            <div className={styles.person}>
+              <h4>
+                <span className={styles.av}>P</span>
+                For PB.
+              </h4>
+              <ol>
+                {pbActions.map((item, j) => (
+                  <li key={j}>
+                    <span className={styles.actionN}>{String(j + 1).padStart(2, "0")}</span>
+                    <div>
+                      <b>{item.action}</b>
+                      {item.source_refs && item.source_refs.length > 0 ? (
+                        <div className={styles.actionSrc}>
+                          {item.source_refs.map((c, k) => (
+                            <span key={k} className={styles.cite}>
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
         </div>
+
+        {priorities.length === 0 && naveenActions.length === 0 && pbActions.length === 0 ? (
+          <div
+            style={{
+              padding: "24px 0",
+              fontSize: 14,
+              color: "var(--text-tertiary)",
+              fontStyle: "italic",
+            }}
+          >
+            No specific action items synthesized for today.
+          </div>
+        ) : null}
       </section>
 
+      {/* 03 - Promises: overdue + due soon, surfaced from open loops. */}
       <section className={styles.section} id="promises">
         <div className={styles.sectionHead}>
-          <span className={styles.no}>{brief.promises_intro.eyebrow}</span>
-          <h2>{brief.promises_intro.title}</h2>
+          <span className={styles.no}>03 Promises</span>
+          <h2>What we owe people.</h2>
           <span className={styles.rule} />
         </div>
 
-        <p className={styles.sectionIntro}>{brief.promises_intro.copy}</p>
+        <p className={styles.sectionIntro}>
+          Open commitments the brain is tracking. Overdue first, then due in the next few days.
+        </p>
 
-        <table className={styles.promiseTable}>
-          <thead>
-            <tr>
-              <th>Promise</th>
-              <th>To</th>
-              <th>Owner</th>
-              <th>Due</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {brief.promises.map((p, i) => (
-              <tr key={i}>
-                <td className={styles.tdWhat}>{p.what}</td>
-                <td>{p.to}</td>
-                <td className={styles.tdWho}>{p.who}</td>
-                <td className={`${styles.tdDue} ${p.due_late ? styles.tdDueLate : ""}`}>
-                  {p.due}
-                </td>
-                <td>
-                  <span className={pillClass(p.status.variant)}>
-                    <span className="dot" />
-                    {p.status.text}
-                  </span>
-                </td>
+        {overdue.length === 0 && dueSoon.length === 0 ? (
+          <div
+            style={{
+              padding: "24px 0",
+              fontSize: 14,
+              color: "var(--text-tertiary)",
+              fontStyle: "italic",
+            }}
+          >
+            Nothing overdue. Nothing due soon.
+          </div>
+        ) : (
+          <table className={styles.promiseTable}>
+            <thead>
+              <tr>
+                <th>Promise</th>
+                <th>Owner</th>
+                <th>Due</th>
+                <th>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {overdue.map((p: StructuredDailyBriefOverdueFollowUp, i) => (
+                <tr key={`o-${i}`}>
+                  <td className={styles.tdWhat}>{p.title}</td>
+                  <td className={styles.tdWho}>{p.owner.toUpperCase()}</td>
+                  <td className={`${styles.tdDue} ${styles.tdDueLate}`}>
+                    {p.days_overdue}d late
+                  </td>
+                  <td>
+                    <span className={pillClass("warn")}>
+                      <span className="dot" />
+                      Overdue
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {dueSoon.map((p: StructuredDailyBriefDueSoon, i) => (
+                <tr key={`d-${i}`}>
+                  <td className={styles.tdWhat}>{p.title}</td>
+                  <td className={styles.tdWho}>-</td>
+                  <td className={styles.tdDue}>
+                    {p.due_in_days <= 0 ? "today" : `in ${p.due_in_days}d`}
+                  </td>
+                  <td>
+                    <span className={pillClass("gold")}>
+                      <span className="dot" />
+                      Due soon
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
+      {/* 04 - Questions to resolve. */}
       <section className={styles.section} id="questions">
         <div className={styles.sectionHead}>
-          <span className={styles.no}>{brief.questions_intro.eyebrow}</span>
-          <h2>{brief.questions_intro.title}</h2>
+          <span className={styles.no}>04 Questions for you</span>
+          <h2>Things only you can decide.</h2>
           <span className={styles.rule} />
         </div>
 
-        <p className={styles.sectionIntro}>{brief.questions_intro.copy}</p>
-
-        <div className={styles.questions}>
-          <h2>{brief.questions_inner_title}</h2>
-          <p className={styles.questionsIntro}>{brief.questions_inner_intro}</p>
-          <ol>
-            {brief.questions.map((q, i) => (
-              <li key={i}>
-                <div>
-                  <b>{q.text}</b>
-                  <div className={styles.questionCtx}>
-                    {q.cites.map((c, j) => (
-                      <span key={j} className={styles.citeDark}>
-                        {c}
-                      </span>
-                    ))}
+        {questions.length === 0 ? (
+          <div
+            style={{
+              padding: "24px 0",
+              fontSize: 14,
+              color: "var(--text-tertiary)",
+              fontStyle: "italic",
+            }}
+          >
+            No open strategic questions this morning.
+          </div>
+        ) : (
+          <div className={styles.questions}>
+            <ol>
+              {questions.map((q: StructuredDailyBriefQuestion, i) => (
+                <li key={i}>
+                  <div>
+                    <b>{q.question}</b>
+                    {q.why_now ? (
+                      <div className={styles.questionCtx}>
+                        <span className={styles.citeDark}>{q.why_now}</span>
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </section>
 
       <div className={styles.footer}>
-        <span>Compiled by Arvya - 142 sources - 38 entity pages</span>
+        <span>
+          Compiled by Arvya - {sourceCount} sources - {memoryCount} memory objects
+        </span>
         <div className={styles.footerLinks}>
-          <a href="#" aria-label="Print brief">
-            Print
-          </a>
-          <a href="#" aria-label="Email a copy of this brief">
-            Email a copy
-          </a>
+          <Link href={`/brains/${brainId}/agent-runs`}>Agent runs</Link>
           <Link href={`/brains/${brainId}/settings`}>Tune signal</Link>
         </div>
       </div>
     </div>
   );
 }
+
+// Suppress unused-symbol lints for Cite which is intentionally kept for
+// future structured citation rendering.
+void ({} as Cite);

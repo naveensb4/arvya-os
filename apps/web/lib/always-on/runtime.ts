@@ -666,6 +666,15 @@ export async function runSourceIngested(input: { brainId: string; sourceItemId: 
   return processSourceItemIntoBrain(input);
 }
 
+/**
+ * @deprecated 2026-05-09. Replaced by the smart nudger in
+ * apps/web/lib/slack-bot/nudge.ts. The old monitor only fired
+ * `overdue_open_loop` brain_alerts AFTER a loop slipped, never notified
+ * anyone, and never closed loops. The new path posts pre-deadline /
+ * stale / outcome-uncertain prompts to the auto-created #arvya-brain
+ * Slack channel with interactive buttons. Kept for now because eval
+ * scripts (verify-always-on.ts) still reference it.
+ */
 export async function runOpenLoopMonitor() {
   const repository = getRepository();
   const brains = await repository.listBrains();
@@ -892,4 +901,168 @@ export async function handleRecallTranscriptWebhook(payload: Record<string, unkn
     domainType: "recall_transcript",
     sourceType: "transcript",
   });
+}
+
+export async function runMeetingPrepBatch() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = new Date();
+
+  let totalPrepped = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: todayStart.toISOString(),
+      to: todayEnd.toISOString(),
+    });
+
+    if (meetings.length === 0) continue;
+
+    const { wasMeetingPreppedForBrain, runMeetingPrep, IdempotencyHitError } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      try {
+        const alreadyPrepped = await wasMeetingPreppedForBrain(brain.id, meeting.id);
+        if (alreadyPrepped) continue;
+
+        await runMeetingPrep(brain.id, meeting.id, { skipIdempotency: true });
+        totalPrepped++;
+      } catch (error) {
+        if (error instanceof IdempotencyHitError) continue;
+        console.error(`[meeting-prep-batch] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalPrepped };
+}
+
+export async function runMeetingPrep30Min() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = Date.now();
+  const windowStart = new Date(now + 25 * 60 * 1000);
+  const windowEnd = new Date(now + 35 * 60 * 1000);
+
+  let totalPrepped = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: windowStart.toISOString(),
+      to: windowEnd.toISOString(),
+    });
+
+    const { runMeetingPrep, IdempotencyHitError } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      const meetingStart = new Date(meeting.startTime).getTime();
+      const cutoff = meetingStart - 40 * 60 * 1000;
+
+      const runs = await repository.listAgentRuns(brain.id, 200);
+      const recentPrep = runs.find(
+        (r) =>
+          r.name === "meeting_prep" &&
+          (r.rawInput as Record<string, unknown>)?.meeting_id === meeting.id &&
+          new Date(r.startedAt).getTime() > cutoff,
+      );
+      if (recentPrep) continue;
+
+      try {
+        await runMeetingPrep(brain.id, meeting.id, { skipIdempotency: true });
+        totalPrepped++;
+      } catch (error) {
+        if (error instanceof IdempotencyHitError) continue;
+        console.error(`[meeting-prep-30min] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalPrepped };
+}
+
+export async function runMeetingPrepDeltaWatch() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = new Date();
+  const fifteenMinAgo = new Date(now.getTime() - 15 * 60 * 1000);
+
+  let totalRegenerated = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: now.toISOString(),
+      to: todayEnd.toISOString(),
+    });
+
+    const runs = await repository.listAgentRuns(brain.id, 200);
+    const { runMeetingPrep, getRegenCount } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      const existingPrep = runs.find(
+        (r) =>
+          r.name === "meeting_prep" &&
+          (r.rawInput as Record<string, unknown>)?.meeting_id === meeting.id &&
+          r.status === "succeeded",
+      );
+      if (!existingPrep) continue;
+
+      const regenCount = getRegenCount(brain.id, meeting.id, runs);
+      if (regenCount >= 3) continue;
+
+      const recentSources = await repository.listSourceItems(brain.id, { limit: 50 });
+      const newSourcesSinceLastPrep = recentSources.filter(
+        (s) => new Date(s.createdAt) > fifteenMinAgo,
+      );
+
+      const participants = meeting.participants as Array<Record<string, unknown>> | undefined;
+      const attendeeEmails = (participants ?? [])
+        .map((p) => (p.email as string)?.toLowerCase())
+        .filter(Boolean);
+      const attendeeNames = (participants ?? [])
+        .map((p) => ((p.name as string) ?? "").toLowerCase())
+        .filter(Boolean);
+
+      const hasMaterialDelta = newSourcesSinceLastPrep.some((source) => {
+        const content = `${source.title} ${source.content}`.toLowerCase();
+        return (
+          attendeeEmails.some((email) => content.includes(email)) ||
+          attendeeNames.some((name) => content.includes(name))
+        );
+      });
+
+      if (!hasMaterialDelta) continue;
+
+      const slackTs = (existingPrep.rawOutput as Record<string, unknown>)?.slack_message_ts as string | undefined;
+
+      try {
+        await runMeetingPrep(brain.id, meeting.id, {
+          skipIdempotency: true,
+          regenCount: regenCount + 1,
+          existingSlackTs: slackTs,
+        });
+        totalRegenerated++;
+      } catch (error) {
+        console.error(`[meeting-prep-delta] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalRegenerated };
 }

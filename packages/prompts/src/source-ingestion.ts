@@ -28,7 +28,24 @@ For every memory object you emit, populate these fields:
 - entitiesMentioned (array of names of people/companies referenced; reuse the names you also extracted as person/company memories)
 - ownerHint (optional - the person or team this memory implicates, e.g. "Naveen", "PB", "Arvya")
 - dueHint (optional - any natural-language deadline mentioned, e.g. "by Friday", "next week", "before pricing", "April 30")
-- properties (free-form metadata such as feedback_audience for investor/customer/advisor feedback, signal classifications, etc.)
+- properties (free-form metadata; see person/company hints below)
+
+For person memories specifically, populate properties with:
+- email (if visible anywhere in the source - body, signature, From/To header, calendar invite)
+- role (their job title or function if mentioned, e.g. "GP at Northstar Ventures", "VP Sales")
+- company (the company/firm/fund they're affiliated with)
+- relation (one of: investor | customer | partner | advisor | team | press | recruit; infer from context)
+
+Person extraction rules - read carefully:
+- The "name" field is the PERSON'S ACTUAL NAME, not how someone addressed them. If an email opens with "Hi Sudi,", the person is "Sudi", NOT "Hi Sudi". If a message says "Thanks, Naveen" the closer name is "Naveen", not "Thanks Naveen".
+- Skip greetings (Hi, Hey, Hello, Dear), salutation closers (Best, Thanks, Regards, Cheers), header labels (From, To, Subject, Date), timezone abbreviations (PM, AM, PST, EST, GMT), days/months, and email reply markers (RE, Re, Fwd) - these are NOT people.
+- When you see "From: Naveen Siva <naveen@arvya.ai>" treat "Naveen Siva" as the name and "naveen@arvya.ai" as properties.email. Same for "To:" recipients.
+- If a person is unambiguously the same individual referenced by multiple forms ("PB", "Prashanth", "Prashanth Babu"), pick the fullest name and put alternates into properties.aliases.
+
+For company memories, populate properties with:
+- domain (web domain like "arvya.ai" if mentioned)
+- relation (one of: investor_firm | customer | partner | competitor | advisor_firm | other)
+- industry (if mentioned)
 
 VISION-required open loop kinds (use these exact loopType values):
 - follow_up   - explicit "send/share/circle back/follow up" actions Arvya owes

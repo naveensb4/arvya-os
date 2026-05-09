@@ -1,6 +1,7 @@
-import type { OpenLoop, SourceItem } from "@arvya/core";
+import type { OpenLoop } from "@arvya/core";
 import { getOpenLoopReviewSnapshot } from "@/lib/brain/store";
 import styles from "./page.module.css";
+import { OpenLoopsViews } from "./views-client";
 
 // Renders the prototype's 4-column kanban (Promised / In flight / Quiet stalled
 // / Closed last 7d) on top of the existing getOpenLoopReviewSnapshot data.
@@ -31,36 +32,6 @@ function bucketFor(loop: OpenLoop): Bucket {
   return "in_flight";
 }
 
-function ageLabel(loop: OpenLoop): { text: string; late?: boolean } {
-  const ref = loop.dueDate ?? loop.createdAt;
-  if (!ref) return { text: "recent" };
-  const ms = Date.now() - new Date(ref).getTime();
-  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-  if (days < 0) {
-    return { text: `due in ${-days}d` };
-  }
-  if (days === 0) {
-    const hours = Math.max(1, Math.floor(ms / (60 * 60 * 1000)));
-    return { text: `${hours}h ago` };
-  }
-  if (loop.dueDate && new Date(loop.dueDate).getTime() < Date.now()) {
-    return { text: `${days}d late`, late: true };
-  }
-  return { text: `${days}d ago` };
-}
-
-function recipientLabel(loop: OpenLoop): string {
-  if (loop.owner) return `to ${loop.owner}`;
-  return "no recipient";
-}
-
-function isClosedRecently(l: OpenLoop): boolean {
-  const ref = l.updatedAt ?? l.createdAt;
-  if (!ref) return true;
-  const now = Date.now();
-  return now - new Date(ref).getTime() < 7 * 24 * 60 * 60 * 1000;
-}
-
 function isQuiet(l: OpenLoop): boolean {
   const ref = l.updatedAt ?? l.createdAt;
   if (!ref) return false;
@@ -71,7 +42,6 @@ function isQuiet(l: OpenLoop): boolean {
 export default async function OpenLoopsPage({ params }: PageProps) {
   const { brainId } = await params;
   const snapshot = await getOpenLoopReviewSnapshot(brainId);
-  const sourceById = new Map(snapshot.sourceItems.map((s) => [s.id, s]));
 
   const buckets: Record<Bucket, OpenLoop[]> = {
     promised: [],
@@ -82,9 +52,6 @@ export default async function OpenLoopsPage({ params }: PageProps) {
   for (const loop of snapshot.openLoops) {
     buckets[bucketFor(loop)].push(loop);
   }
-
-  // Closed bucket trims to last 7 days of activity for readability.
-  const closedRecent = buckets.closed.filter(isClosedRecently).slice(0, 6);
 
   const overdueCount = buckets.quiet.length;
   const quietCount = buckets.in_flight.filter(isQuiet).length;
@@ -129,155 +96,23 @@ export default async function OpenLoopsPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className={styles.toolbar}>
-        <div className={styles.seg}>
-          <button type="button" className={styles.segOn}>
-            All <span className={styles.segCt}>{totalOpen}</span>
-          </button>
-          <button type="button">
-            Mine <span className={styles.segCt}>{buckets.in_flight.filter((l) => l.owner === "Naveen").length}</span>
-          </button>
-        </div>
-        <div className={styles.seg}>
-          <button type="button" className={styles.segOn}>
-            Board view
-          </button>
-          <button type="button">List</button>
-          <button type="button">Timeline</button>
-        </div>
-      </div>
-
-      <div className={styles.board}>
-        <Column
-          title="Promised"
-          count={buckets.promised.length}
-          loops={buckets.promised}
-          sourceById={sourceById}
-        />
-        <Column
-          title="In flight"
-          count={buckets.in_flight.length}
-          loops={buckets.in_flight}
-          sourceById={sourceById}
-        />
-        <Column
-          title="Quiet - stalled"
-          count={buckets.quiet.length}
-          loops={buckets.quiet}
-          sourceById={sourceById}
-          variant="warn"
-        />
-        <Column
-          title="Closed (last 7d)"
-          count={closedAllCount}
-          loops={closedRecent}
-          sourceById={sourceById}
-          variant="go"
-          trailingNote={
-            closedAllCount > closedRecent.length
-              ? `${closedAllCount - closedRecent.length} more closed this week`
-              : null
-          }
-        />
-      </div>
-
-      <div className={styles.audit}>
-        <div className={styles.lab}>How loops get opened and closed</div>
-        The brain opens a loop when it detects a forward-looking commitment in
-        any source - I will send, we will get back, by Friday, let me circle
-        back, an issue assigned, a calendar promise. It closes a loop when it
-        sees evidence - outbound email matching the recipient, a doc shared, a
-        PR merged, a contract signed, an inbound thank-you.
-      </div>
-    </div>
-  );
-}
-
-function Column({
-  title,
-  count,
-  loops,
-  sourceById,
-  variant,
-  trailingNote,
-}: {
-  title: string;
-  count: number;
-  loops: OpenLoop[];
-  sourceById: Map<string, SourceItem>;
-  variant?: "warn" | "go";
-  trailingNote?: string | null;
-}) {
-  const colClass =
-    variant === "warn"
-      ? `${styles.col} ${styles.colWarn}`
-      : variant === "go"
-        ? `${styles.col} ${styles.colGo}`
-        : styles.col;
-
-  return (
-    <div className={colClass}>
-      <div className={styles.colHead}>
-        <span>{title}</span>
-        <span className={styles.colHeadCt}>{count}</span>
-      </div>
-      {loops.length === 0 ? (
-        <p
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10.5,
-            color: "var(--text-tertiary)",
-            letterSpacing: "0.04em",
-            textAlign: "center",
-            padding: "20px 0",
-          }}
-        >
-          empty
-        </p>
-      ) : (
-        loops.map((loop) => {
-          const age = ageLabel(loop);
-          const source = loop.sourceItemId
-            ? sourceById.get(loop.sourceItemId)
-            : undefined;
-          const isLate = variant === "warn";
-          return (
-            <div
-              key={loop.id}
-              className={`${styles.loop} ${isLate ? styles.loopLate : ""}`}
-            >
-              <div className={styles.top}>
-                <span className={`${styles.age} ${age.late ? styles.ageLate : ""}`}>
-                  {age.text}
-                </span>
-                <span className={styles.whoPill}>{recipientLabel(loop)}</span>
-              </div>
-              <div className={styles.what}>{loop.title || "Untitled loop"}</div>
-              {loop.description && loop.description !== loop.title ? (
-                <div className={styles.ctx}>{loop.description}</div>
-              ) : null}
-              <div className={styles.src}>
-                <b>{loop.owner ?? "Unassigned"}</b>
-                {source ? <span>source: {source.title.slice(0, 24)}</span> : null}
-              </div>
-            </div>
-          );
-        })
-      )}
-      {trailingNote ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "14px 0",
-            fontFamily: "var(--font-mono)",
-            fontSize: 10.5,
-            color: "var(--text-tertiary)",
-            letterSpacing: "0.08em",
-          }}
-        >
-          {trailingNote}
-        </div>
-      ) : null}
+      <OpenLoopsViews
+        loops={snapshot.openLoops}
+        sourcesById={Object.fromEntries(
+          snapshot.sourceItems.map((s) => [
+            s.id,
+            { id: s.id, title: s.title, externalUri: s.externalUri ?? null },
+          ]),
+        )}
+        myOwnerName="Naveen"
+        brainId={brainId}
+        buckets={{
+          promised: buckets.promised,
+          in_flight: buckets.in_flight,
+          quiet: buckets.quiet,
+          closed: buckets.closed,
+        }}
+      />
     </div>
   );
 }

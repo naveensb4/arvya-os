@@ -3,3 +3,6 @@ export * from "./ask-brain-agent";
 export * from "./daily-brief-agent";
 export * from "./drift-review-agent";
 export * from "./follow-up-agent";
+export * from "./entity-resolver-agent";
+export * from "./outcome-detector-agent";
+export * from "./meeting-prep-agent";

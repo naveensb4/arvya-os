@@ -36,6 +36,8 @@
     "verify:supabase": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-supabase.ts",
     "verify:deployment": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-deployment.ts",
     "verify:live-end-to-end": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/verify-live-end-to-end.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate-direct": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/migrate-direct.ts",
@@ -45,6 +47,7 @@
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

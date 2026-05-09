@@ -7,6 +7,7 @@ import {
   getLatestDriftReview,
   isBrainNotFoundError,
 } from "@/lib/brain/store";
+import { runNotetakerCalendarSync } from "@/lib/notetaker/runtime";
 import styles from "./page.module.css";
 
 // Dashboard - prototype-matched layout per docs/prototype/Dashboard.html.
@@ -27,43 +28,28 @@ const PRESET_PROMPTS = [
   "Catch me up on Marlowe",
 ];
 
+// Friendly labels for the recent-activity widget, replaces snake_case run
+// names with what the user actually sees the brain doing.
+const AGENT_RUN_LABELS: Record<string, string> = {
+  daily_brief: "Compiled daily brief",
+  ask_brain: "Answered a question",
+  drift_review: "Reviewed drift",
+  source_ingest: "Read a new source",
+  meeting_prep: "Prepped for a meeting",
+  post_meeting: "Processed meeting transcript",
+  open_loop_monitor: "Checked open loops",
+  scheduled_connector_sync: "Pulled new sources",
+  weekly_learning_memo: "Compiled weekly memo",
+};
 
+
+// Drift signal fallback - shown only when no DriftReview has been run yet.
+// Once getLatestDriftReview returns real data, these go unused.
 const PLACEHOLDER_DRIFT_SIGNALS = [
   {
-    title: "Sales narrative drift",
-    body: "Investor deck says Brain for consulting, but 4 of 6 last customer calls were VC firms, and 2 cited Deal Brain as why they signed.",
+    title: "No drift signals yet.",
+    body: "Run a drift review (Operations - Drift review in the sidebar) and patterns the brain has noticed across your sources will appear here.",
   },
-  {
-    title: "Promise has no owner",
-    body: "Monday's BlackRock call: we will send a graph spec by Thursday. Not on Linear, not in drafts.",
-  },
-  {
-    title: "Same objection, third time",
-    body: "Where does the data live? Clearco, Founders Fund, Caffeinated. Not in the FAQ.",
-  },
-];
-
-const SOURCE_SPARK = [62, 71, 58, 82, 75, 90, 103, 88, 112, 98, 124, 131, 118, 142];
-const DONUT_SEGMENTS = [
-  { lab: "People", val: 0.94, color: "#0E1726" },
-  { lab: "Companies", val: 0.91, color: "#D89A3F" },
-  { lab: "Promises", val: 0.86, color: "#2ECC7A" },
-  { lab: "Topics", val: 0.81, color: "#5C5CE6" },
-];
-
-const PROMISE_BARS = [
-  { lab: "On track", val: 14, total: 22, kind: "green" as const },
-  { lab: "Drifting", val: 5, total: 22, kind: "gold" as const },
-  { lab: "Overdue", val: 3, total: 22, kind: "red" as const },
-];
-
-const LIVE_STREAM = [
-  { name: "extract_memory", arg: "email - Sequoia thread", state: "run" as const },
-  { name: "resolve_entity", arg: "J. Smith resolved to Jon Smith (BlackRock)", state: "ok" as const, t: "0.4s" },
-  { name: "compile_truth", arg: "person/sarah-chen", state: "ok" as const, t: "2.1s" },
-  { name: "detect_commitment", arg: "send by Thu - Jon", state: "ok" as const, t: "0.8s" },
-  { name: "embed_segment", arg: "call/marlowe-q4 - 47 turns", state: "ok" as const, t: "3.4s" },
-  { name: "propose_edge", arg: "BlackRock to Google - introduced_to", state: "ok" as const, t: "1.1s" },
 ];
 
 
@@ -80,6 +66,94 @@ function ageDays(iso: string | undefined): number {
   if (!iso) return 0;
   const ms = Date.now() - new Date(iso).getTime();
   return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+function formatRelativeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function build14DaySourceHistogram(
+  items: import("@arvya/core").SourceItem[],
+): number[] {
+  // Counts per day for the last 14 days, oldest -> newest.
+  const buckets = new Array(14).fill(0) as number[];
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  for (const item of items) {
+    const t = new Date(item.createdAt).getTime();
+    const daysAgo = Math.floor((todayStart.getTime() - t) / dayMs);
+    if (daysAgo < 0 || daysAgo >= 14) continue;
+    const idx = 13 - daysAgo;
+    buckets[idx] += 1;
+  }
+  return buckets;
+}
+
+function buildConfidenceDonut(
+  memoryObjects: import("@arvya/core").MemoryObject[],
+) {
+  // Group memory objects by objectType, average their confidence.
+  const groups = new Map<string, { sum: number; count: number }>();
+  for (const m of memoryObjects) {
+    const key = m.objectType ?? "other";
+    const conf = typeof m.confidence === "number" ? m.confidence : 0.7;
+    const g = groups.get(key) ?? { sum: 0, count: 0 };
+    g.sum += conf;
+    g.count += 1;
+    groups.set(key, g);
+  }
+  const palette: Record<string, string> = {
+    person: "#0E1726",
+    company: "#D89A3F",
+    commitment: "#2ECC7A",
+    insight: "#5C5CE6",
+    decision: "#B85FD9",
+    fact: "#2DBBB0",
+  };
+  return Array.from(groups.entries())
+    .map(([key, g]) => ({
+      lab: key.charAt(0).toUpperCase() + key.slice(1),
+      val: g.sum / Math.max(1, g.count),
+      color: palette[key] ?? "#6E6E73",
+    }))
+    .sort((a, b) => b.val - a.val)
+    .slice(0, 5);
+}
+
+function buildPromiseBars(openLoops: import("@arvya/core").OpenLoop[]) {
+  // Bucket loops by status into On track / Drifting / Overdue.
+  let onTrack = 0;
+  let drifting = 0;
+  let overdue = 0;
+  const nowMs = Date.now();
+  for (const loop of openLoops) {
+    if (loop.status === "done" || loop.status === "closed" || loop.status === "dismissed") {
+      continue;
+    }
+    const dueMs = loop.dueDate ? new Date(loop.dueDate).getTime() : null;
+    if (dueMs !== null && dueMs < nowMs) {
+      overdue += 1;
+    } else if (loop.status === "needs_review") {
+      drifting += 1;
+    } else {
+      onTrack += 1;
+    }
+  }
+  const total = onTrack + drifting + overdue || 1;
+  return [
+    { lab: "On track", val: onTrack, total, kind: "green" as const },
+    { lab: "Drifting", val: drifting, total, kind: "gold" as const },
+    { lab: "Overdue", val: overdue, total, kind: "red" as const },
+  ];
 }
 
 const AVATAR_PALETTE = [
@@ -106,7 +180,11 @@ function avatarFor(name: string): { initials: string; color: string } {
   return { initials, color };
 }
 
-function renderMeetingRows(meetings: NotetakerMeeting[]) {
+function renderMeetingRows(
+  meetings: NotetakerMeeting[],
+  brainId: string,
+  prepTimes?: Map<string, string>,
+) {
   // Group consecutive meetings on the same day so only the first row of each
   // day shows the date-block; later rows on the same day get a hidden block.
   // Also flag the meeting that is currently happening as `now`.
@@ -189,6 +267,37 @@ function renderMeetingRows(meetings: NotetakerMeeting[]) {
             </div>
           </div>
           <div className={styles.meetRight}>
+            <div className={`${styles.meetActions} ${isLive ? styles.meetActionsLive : ""}`}>
+              {(() => {
+                const preppedAt = prepTimes?.get(m.id);
+                const agoLabel = preppedAt
+                  ? (() => {
+                      const diffMs = Date.now() - new Date(preppedAt).getTime();
+                      const diffH = Math.floor(diffMs / 3600000);
+                      if (diffH < 1) return `${Math.max(1, Math.floor(diffMs / 60000))}m ago`;
+                      return `${diffH}h ago`;
+                    })()
+                  : null;
+                return (
+                  <Link
+                    className={styles.meetBtn}
+                    href={`/brains/${brainId}/meetings/${m.id}/prep`}
+                  >
+                    {agoLabel ? `✓ Prepped ${agoLabel}` : "Prep"}
+                  </Link>
+                );
+              })()}
+              {m.meetingUrl ? (
+                <a
+                  className={`${styles.meetBtn} ${styles.meetBtnPrimary}`}
+                  href={m.meetingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Join →
+                </a>
+              ) : null}
+            </div>
             <div className={styles.avStack}>
               {avatars.map((a, j) => (
                 <span
@@ -225,7 +334,9 @@ function buildSparklinePath(data: number[]): { path: string; fillPath: string; t
   return { path, fillPath, tip: { x: tipPt[0], y: tipPt[1] } };
 }
 
-function buildDonutSegments(segments: typeof DONUT_SEGMENTS) {
+type DonutSegment = { lab: string; val: number; color: string };
+
+function buildDonutSegments(segments: DonutSegment[]) {
   const r = 15.9155;
   const c = 2 * Math.PI * r;
   const total = segments.reduce((s, x) => s + x.val, 0);
@@ -260,6 +371,26 @@ export default async function DashboardPage({ params }: PageProps) {
   const repository = getRepository();
   const now = new Date();
   const windowEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  // Lazy-trigger calendar sync if it hasn't run in the last 5 minutes. The
+  // inngest cron runs every 10m, so without this the user sees stale data
+  // (or nothing on a fresh connect) until the next cron tick. Bounded by a
+  // 6s timeout so the dashboard never hangs on a slow Google API call.
+  const calendars = await repository.listNotetakerCalendars({
+    brainId: selectedBrainId,
+    status: "connected",
+  });
+  const stale = calendars.find((c) => {
+    if (!c.lastSyncAt) return true;
+    return Date.now() - new Date(c.lastSyncAt).getTime() > 5 * 60 * 1000;
+  });
+  if (stale) {
+    await Promise.race([
+      runNotetakerCalendarSync({ brainId: selectedBrainId }).catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 6000)),
+    ]);
+  }
+
   const upcomingMeetings = await repository.listNotetakerMeetings({
     brainId: selectedBrainId,
     from: now.toISOString(),
@@ -275,11 +406,50 @@ export default async function DashboardPage({ params }: PageProps) {
       : PLACEHOLDER_DRIFT_SIGNALS;
 
   const overdueLoops = openLoops.filter(isOverdueLoop).length;
-
   const topActions = openLoops.slice(0, 5);
 
-  const spark = buildSparklinePath(SOURCE_SPARK);
-  const donut = buildDonutSegments(DONUT_SEGMENTS);
+  // Real 14-day source ingestion histogram. Bucket sourceItems by their
+  // createdAt date, fill empty days with 0.
+  const sparkSeries = build14DaySourceHistogram(sourceItems);
+  const sparkValueToday = sparkSeries[sparkSeries.length - 1] ?? 0;
+  const sparkValuePrevWeek = sparkSeries.slice(0, 7).reduce((s, v) => s + v, 0);
+  const sparkValueThisWeek = sparkSeries.slice(7).reduce((s, v) => s + v, 0);
+  const sparkPctChange =
+    sparkValuePrevWeek > 0
+      ? Math.round(((sparkValueThisWeek - sparkValuePrevWeek) / sparkValuePrevWeek) * 100)
+      : null;
+  const spark = buildSparklinePath(sparkSeries);
+
+  // Real compile-confidence donut: average memoryObject.confidence per type.
+  const donutData = buildConfidenceDonut(memoryObjects);
+  const donut = buildDonutSegments(donutData);
+  const overallConfidence =
+    donutData.length > 0
+      ? donutData.reduce((s, d) => s + d.val, 0) / donutData.length
+      : 0;
+
+  // Real promises-by-status bars from open loops.
+  const promiseBars = buildPromiseBars(openLoops);
+  const promisesTotal = openLoops.length;
+
+  // Real live agent stream: 6 most recent runs.
+  const liveRuns = (agentRuns ?? [])
+    .slice()
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .slice(0, 6);
+  const failedRuns = agentRuns.filter((r) => r.status === "failed").length;
+
+  // Real "last drift review" - the most recent run of the drift_review
+  // agent. Replaces the unimplemented "dream cycle" tile.
+  const lastDriftRun = agentRuns
+    .filter((r) => r.name === "drift_review" && r.status === "succeeded")
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  const lastDriftAgo = lastDriftRun
+    ? formatRelativeAgo(lastDriftRun.startedAt)
+    : "never";
+
+  // Real ingesting count: agent runs in the "running" state right now.
+  const runningCount = agentRuns.filter((r) => r.status === "running").length;
 
   return (
     <div>
@@ -299,8 +469,13 @@ export default async function DashboardPage({ params }: PageProps) {
           <div className={styles.stat}>
             Sources today
             <b>
-              {sourceItems.length}
-              <small>+38%</small>
+              {sparkValueToday}
+              {sparkPctChange !== null ? (
+                <small>
+                  {sparkPctChange >= 0 ? "+" : ""}
+                  {sparkPctChange}%
+                </small>
+              ) : null}
             </b>
           </div>
           <div className={styles.stat}>
@@ -313,7 +488,7 @@ export default async function DashboardPage({ params }: PageProps) {
           </div>
           <div className={styles.stat}>
             Brain confidence
-            <b>0.89</b>
+            <b>{overallConfidence > 0 ? overallConfidence.toFixed(2) : "-"}</b>
           </div>
         </div>
 
@@ -372,11 +547,17 @@ export default async function DashboardPage({ params }: PageProps) {
             {overdueLoops} overdue
           </span>
         </div>
-        <div>
-          <span className={styles.pulseLab}>Last dream cycle</span>
-          <span className={styles.pulseV}>4h ago</span>
-          <span className={styles.pulseSub}>+12 new edges</span>
-        </div>
+        <Link
+          href={`/brains/${selectedBrainId}/drift`}
+          style={{ textDecoration: "none", color: "inherit" }}
+          title="The brain compares what was said vs what was done across your sources, and surfaces patterns. Click to open or run a new review."
+        >
+          <span className={styles.pulseLab}>Last drift review</span>
+          <span className={styles.pulseV}>{lastDriftAgo}</span>
+          <span className={styles.pulseSub}>
+            {lastDriftRun ? "click to review" : "click to run"}
+          </span>
+        </Link>
       </div>
 
       <div className={styles.dashGrid}>
@@ -400,7 +581,20 @@ export default async function DashboardPage({ params }: PageProps) {
                 No upcoming meetings on the calendar.
               </div>
             ) : (
-              renderMeetingRows(upcomingMeetings)
+              renderMeetingRows(upcomingMeetings, selectedBrainId, (() => {
+                const map = new Map<string, string>();
+                for (const run of agentRuns) {
+                  if (
+                    run.name === "meeting_prep" &&
+                    run.status === "succeeded" &&
+                    run.rawInput
+                  ) {
+                    const mid = (run.rawInput as Record<string, unknown>).meeting_id as string;
+                    if (mid && !map.has(mid)) map.set(mid, run.startedAt);
+                  }
+                }
+                return map;
+              })())
             )}
           </div>
 
@@ -500,17 +694,23 @@ export default async function DashboardPage({ params }: PageProps) {
               <span className="meta">Last 14 days</span>
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-              <span className="stat">{SOURCE_SPARK[SOURCE_SPARK.length - 1]}</span>
-              <small
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--arvya-status-active)",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                +38% vs last week
-              </small>
+              <span className="stat">{sparkValueToday}</span>
+              {sparkPctChange !== null ? (
+                <small
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color:
+                      sparkPctChange >= 0
+                        ? "var(--arvya-status-active)"
+                        : "var(--text-tertiary)",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  {sparkPctChange >= 0 ? "+" : ""}
+                  {sparkPctChange}% vs last week
+                </small>
+              ) : null}
             </div>
             <div className={styles.spark}>
               <svg viewBox="0 0 280 64" preserveAspectRatio="none" aria-hidden>
@@ -576,19 +776,31 @@ export default async function DashboardPage({ params }: PageProps) {
                 </svg>
                 <div className={styles.ctr}>
                   <div>
-                    <b>0.89</b>
+                    <b>{overallConfidence > 0 ? overallConfidence.toFixed(2) : "-"}</b>
                     <small>brain</small>
                   </div>
                 </div>
               </div>
               <div className={styles.donutLegend}>
-                {DONUT_SEGMENTS.map((s) => (
-                  <div key={s.lab} className="it">
-                    <span className="sw" style={{ background: s.color }} />
-                    <span>{s.lab}</span>
-                    <span className="v">{s.val.toFixed(2)}</span>
+                {donutData.length === 0 ? (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-tertiary)",
+                      padding: "4px 0",
+                    }}
+                  >
+                    No memory objects yet.
                   </div>
-                ))}
+                ) : (
+                  donutData.map((s) => (
+                    <div key={s.lab} className="it">
+                      <span className="sw" style={{ background: s.color }} />
+                      <span>{s.lab}</span>
+                      <span className="v">{s.val.toFixed(2)}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -596,10 +808,10 @@ export default async function DashboardPage({ params }: PageProps) {
           <div className={styles.chartCard}>
             <div className={styles.chartHd}>
               <h4>Promises by status</h4>
-              <span className="meta">{PROMISE_BARS.reduce((s, b) => s + b.val, 0)} tracked</span>
+              <span className="meta">{promisesTotal} tracked</span>
             </div>
             <div className={styles.bars}>
-              {PROMISE_BARS.map((b) => (
+              {promiseBars.map((b) => (
                 <div key={b.lab} className="bar">
                   <span className="lab">{b.lab}</span>
                   <span className="tr">
@@ -616,40 +828,66 @@ export default async function DashboardPage({ params }: PageProps) {
 
           <div className={`${styles.card} ${styles.live}`} style={{ marginBottom: 0 }}>
             <div className={styles.cardHead}>
-              <h3>Brain - live</h3>
+              <h3>Recent activity</h3>
               <span
                 className={styles.cardMeta}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
+                title="Background jobs the brain has run: ingesting sources, compiling memory, generating briefs, answering questions."
               >
                 <span
                   style={{
                     width: 6,
                     height: 6,
                     borderRadius: "50%",
-                    background: "#2ECC7A",
+                    background: runningCount > 0 ? "#D89A3F" : "#2ECC7A",
                     display: "inline-block",
                   }}
                 />
-                watching
+                {runningCount > 0 ? "working" : "idle"}
               </span>
             </div>
-            {LIVE_STREAM.map((ev, i) => (
-              <div key={i} className="row">
-                <span className={`ic ${ev.state === "run" ? "icRun" : ""}`}>
-                  {ev.state === "ok" ? "+" : null}
-                </span>
-                <span>
-                  <span className="nm">{ev.name}</span>
-                  <span className="arg">{ev.arg}</span>
-                </span>
-                <span className={`st ${ev.state === "run" ? "stRun" : ""}`}>
-                  {ev.state === "run" ? "running" : ev.t}
-                </span>
+            {liveRuns.length === 0 ? (
+              <div
+                style={{
+                  padding: "20px 12px",
+                  fontSize: 12,
+                  color: "var(--text-tertiary)",
+                  textAlign: "center",
+                }}
+              >
+                No background jobs have run yet.
               </div>
-            ))}
+            ) : (
+              liveRuns.map((run) => {
+                const state =
+                  run.status === "running"
+                    ? "run"
+                    : run.status === "succeeded"
+                      ? "ok"
+                      : "fail";
+                const label =
+                  AGENT_RUN_LABELS[run.name] ?? run.name.replace(/_/g, " ");
+                return (
+                  <div key={run.id} className="row">
+                    <span className={`ic ${state === "run" ? "icRun" : ""}`}>
+                      {state === "ok" ? "✓" : state === "fail" ? "!" : null}
+                    </span>
+                    <span>
+                      <span className="nm">{label}</span>
+                    </span>
+                    <span className={`st ${state === "run" ? "stRun" : ""}`}>
+                      {state === "run"
+                        ? "running"
+                        : formatRelativeAgo(run.startedAt)}
+                    </span>
+                  </div>
+                );
+              })
+            )}
             <div className={styles.liveFoot}>
               <span>
-                {agentRuns.length} runs today - {agentRuns.filter((r) => r.status === "failed").length} failed
+                {agentRuns.length} runs - {failedRuns} failed
+                {runningCount > 0 ? ` - ${runningCount} live` : ""}
               </span>
               <Link href={`/brains/${selectedBrainId}/agent-runs`}>All runs</Link>
             </div>

@@ -445,3 +445,4 @@ export type Source = SourceItem;
 export type MemoryKind = MemoryObjectType;
 export type MemoryStatus = MemoryObjectStatus;
 export type MemoryItem = MemoryObject;
+

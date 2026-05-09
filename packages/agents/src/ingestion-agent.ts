@@ -77,6 +77,139 @@ const stopNames = new Set([
   "SOC",
 ]);
 
+// Defensive belt-and-suspenders for the regex fallback. The LLM is the
+// primary extractor now (gmail no longer short-circuits to regex), but
+// when ANTHROPIC_API_KEY/OPENAI_API_KEY isn't set or a source is too
+// large to send to the model, the regex still runs. These tokens are
+// what bit us before: greetings, header labels, timezones, weekdays,
+// device tags. Anything where the FIRST word of a candidate person name
+// is in this set gets rejected.
+const stopFirstTokens = new Set(
+  [
+    "Hi",
+    "Hey",
+    "Hello",
+    "Dear",
+    "Best",
+    "Regards",
+    "Thanks",
+    "Thx",
+    "Cheers",
+    "Sincerely",
+    "Yours",
+    "Greetings",
+    "From",
+    "To",
+    "Cc",
+    "Bcc",
+    "Subject",
+    "Date",
+    "Re",
+    "Fwd",
+    "Get",
+    "Sent",
+    "On",
+    "When",
+    "Where",
+    "Who",
+    "Why",
+    "Forwarding",
+    "Forwarded",
+    "Attached",
+    "Please",
+    "Looking",
+    "Looking",
+    "Customer",
+    "Innovation",
+    "Eastern",
+    "Pacific",
+    "Central",
+    "Mountain",
+    "Google",
+    "Microsoft",
+    "Outlook",
+    "Apple",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ].map((token) => token),
+);
+
+const stopShortTokens = new Set([
+  "AI",
+  "AM",
+  "PM",
+  "PT",
+  "PST",
+  "PDT",
+  "MT",
+  "MST",
+  "MDT",
+  "CT",
+  "CST",
+  "CDT",
+  "ET",
+  "EST",
+  "EDT",
+  "GMT",
+  "UTC",
+  "UK",
+  "US",
+  "EU",
+  "RE",
+  "FW",
+  "FYI",
+  "TBD",
+  "TBC",
+  "ASAP",
+  "EOD",
+  "EOW",
+  "TMT",
+  "IB",
+  "PE",
+  "VC",
+  "PO",
+  "CEO",
+  "CFO",
+  "CTO",
+  "COO",
+]);
+
+function isLikelyPersonName(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (!trimmed) return false;
+  if (stopNames.has(trimmed)) return false;
+
+  const tokens = trimmed.split(/\s+/);
+  // 2-3 letter all-caps acronyms — only allow through if NOT in the
+  // stop-short set. The regex picks "AM"/"PM" from "5 PM" and "RE"
+  // from email reply markers; reject those.
+  if (tokens.length === 1) {
+    if (stopShortTokens.has(tokens[0])) return false;
+    // Allow real 2-3 letter initials like "PB" / "JR".
+    return /^[A-Z]{2,3}$/.test(tokens[0]);
+  }
+
+  if (stopFirstTokens.has(tokens[0])) return false;
+  return true;
+}
+
 const explicitActionPattern =
   /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|set up|introduce|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes|can you|can we|please)/i;
 const requestPattern =
@@ -110,11 +243,14 @@ function splitSentences(content: string) {
     .filter((line) => line.length > 12);
 }
 
-function uniqueMatches(content: string, pattern: RegExp) {
+function uniqueMatches(content: string, pattern: RegExp, options?: { peopleOnly?: boolean }) {
   const values = new Set<string>();
   for (const match of content.matchAll(pattern)) {
     const value = match[1]?.trim();
-    if (value && !stopNames.has(value)) values.add(value);
+    if (!value) continue;
+    if (stopNames.has(value)) continue;
+    if (options?.peopleOnly && !isLikelyPersonName(value)) continue;
+    values.add(value);
   }
   return [...values].slice(0, 8);
 }
@@ -201,7 +337,7 @@ function fallbackMemory(source: SourceItem): ExtractedMemoryObject[] {
   const sentences = splitSentences(source.content);
   const memories: ExtractedMemoryObject[] = [];
 
-  for (const person of uniqueMatches(source.content, personPattern)) {
+  for (const person of uniqueMatches(source.content, personPattern, { peopleOnly: true })) {
     memories.push({
       objectType: "person",
       name: person,
@@ -341,7 +477,9 @@ function fallbackRelationships(source: SourceItem): ExtractedRelationship[] {
   for (const match of source.content.matchAll(personCompanyPattern)) {
     const fromName = match[1]?.trim();
     const toName = match[2]?.trim();
-    if (!fromName || !toName || stopNames.has(fromName) || stopNames.has(toName)) continue;
+    if (!fromName || !toName) continue;
+    if (stopNames.has(fromName) || stopNames.has(toName)) continue;
+    if (!isLikelyPersonName(fromName)) continue;
 
     const key = `${fromName}->${toName}`;
     if (seen.has(key)) continue;

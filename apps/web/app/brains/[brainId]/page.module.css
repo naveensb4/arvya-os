@@ -403,12 +403,12 @@
   color: var(--text-tertiary);
   letter-spacing: 0.04em;
 }
-.legend .it {
+.legend :global(.it) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.legend .sw {
+.legend :global(.sw) {
   width: 8px;
   height: 8px;
   border-radius: 2px;
@@ -460,22 +460,22 @@
   font-size: 11.5px;
   color: var(--text-secondary);
 }
-.donutLegend .it {
+.donutLegend :global(.it) {
   display: grid;
   grid-template-columns: 8px 1fr auto;
   gap: 8px;
   align-items: center;
 }
-.donutLegend .sw {
+.donutLegend :global(.sw) {
   width: 8px;
   height: 8px;
   border-radius: 2px;
 }
-.donutLegend .v {
+.donutLegend :global(.v) {
   color: var(--text-primary);
 }
 
-.bars .bar {
+.bars :global(.bar) {
   display: grid;
   grid-template-columns: 70px 1fr 40px;
   gap: 10px;
@@ -483,40 +483,40 @@
   padding: 4px 0;
   font-size: 12px;
 }
-.bars .lab {
+.bars :global(.lab) {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
   letter-spacing: 0.02em;
 }
-.bars .tr {
+.bars :global(.tr) {
   height: 6px;
   border-radius: 999px;
   background: var(--cream-200);
   overflow: hidden;
 }
-.bars .fl {
+.bars :global(.fl) {
   height: 100%;
   background: var(--arvya-dark-800);
   border-radius: 999px;
 }
-.bars .fl.gold {
+.bars :global(.fl.gold) {
   background: var(--arvya-gold);
 }
-.bars .fl.green {
+.bars :global(.fl.green) {
   background: #2ecc7a;
 }
-.bars .fl.red {
+.bars :global(.fl.red) {
   background: #c75050;
 }
-.bars .v {
+.bars :global(.v) {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-primary);
   text-align: right;
 }
 
-.live .row {
+.live :global(.row) {
   padding: 10px 20px;
   border-bottom: 1px solid var(--cream-200);
   display: grid;
@@ -524,40 +524,45 @@
   gap: 10px;
   align-items: center;
 }
-.live .row:last-child {
+.live :global(.row:last-child) {
   border-bottom: 0;
 }
-.live .ic {
+.live :global(.ic) {
   width: 14px;
   height: 14px;
   border-radius: 3px;
   background: #ddefe2;
   display: grid;
   place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #247048;
+  font-weight: 600;
 }
-.live .icRun {
+.live :global(.icRun) {
   background: var(--arvya-gold-bg);
+  color: var(--arvya-gold-700);
 }
-.live .nm {
+.live :global(.nm) {
   color: var(--text-primary);
   font-weight: 500;
   font-size: 11px;
   font-family: var(--font-mono);
 }
-.live .arg {
+.live :global(.arg) {
   color: var(--text-tertiary);
   font-weight: 400;
   margin-left: 4px;
   font-family: var(--font-mono);
 }
-.live .st {
+.live :global(.st) {
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
-.live .stRun {
+.live :global(.stRun) {
   color: var(--arvya-gold-700);
 }
 .liveFoot {
@@ -668,6 +673,52 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Prep + Join buttons. Hidden until row hover; always visible on the live
+   meeting (meetRowNow). */
+.meetActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.meetRow:hover .meetActions,
+.meetActionsLive {
+  opacity: 1;
+  pointer-events: auto;
+}
+.meetBtn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border-default);
+  background: #fff;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+  white-space: nowrap;
+}
+.meetBtn:hover {
+  border-color: var(--arvya-gold);
+  color: var(--arvya-gold-700);
+}
+.meetBtnPrimary {
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+  border-color: var(--arvya-dark-900);
+}
+.meetBtnPrimary:hover {
+  background: var(--arvya-gold);
+  color: var(--arvya-dark-900);
+  border-color: var(--arvya-gold);
 }
 .avStack {
   display: inline-flex;

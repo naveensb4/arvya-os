@@ -387,6 +387,15 @@ export class InMemoryRepository implements BrainRepository {
     return clone(brain);
   }
 
+  async updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null> {
+    const state = loadState();
+    const brain = state.brains.find((b) => b.id === brainId);
+    if (!brain) return null;
+    if (update.metadata !== undefined) brain.metadata = update.metadata;
+    brain.updatedAt = new Date().toISOString();
+    return clone(brain);
+  }
+
   async listSourceItems(brainId: string, options: { limit?: number } = {}): Promise<SourceItem[]> {
     return clone(
       loadState()
