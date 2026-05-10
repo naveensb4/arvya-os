@@ -13,7 +13,27 @@ type Props = {
   brief: MeetingPrepBrief | null;
   isLowConfidence: boolean;
   agentRunId?: string;
+  docId?: string;
+  initialFeedback?: "useful" | "not_useful" | null;
 };
+
+function ThumbUpIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4.5 7L7.1 2.9C7.3 2.6 7.7 2.4 8 2.4H8.2C8.8 2.4 9.2 2.9 9.1 3.5L8.7 5.5H12.2C12.9 5.5 13.5 6.2 13.3 6.9L12.1 11.9C12 12.4 11.5 12.8 11 12.8H6.5C6 12.8 5.5 12.6 5.2 12.2L4.5 11.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="2" y="7" width="2.5" height="5.8" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
+
+function ThumbDownIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M11.5 9L8.9 13.1C8.7 13.4 8.3 13.6 8 13.6H7.8C7.2 13.6 6.8 13.1 6.9 12.5L7.3 10.5H3.8C3.1 10.5 2.5 9.8 2.7 9.1L3.9 4.1C4 3.6 4.5 3.2 5 3.2H9.5C10 3.2 10.5 3.4 10.8 3.8L11.5 4.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="11.5" y="3.2" width="2.5" height="5.8" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
 
 function ConfidenceMeter({ value }: { value: number }) {
   const pct = Math.round(value * 100);
@@ -140,9 +160,10 @@ function SourceChip({ source }: { source: { kind: string; id_or_url: string; exc
 }
 
 export default function PrepViewClient(props: Props) {
-  const { brief, brainId, meetingId, meetingTitle, isLowConfidence } = props;
+  const { brief, brainId, meetingId, meetingTitle, isLowConfidence, docId, initialFeedback } = props;
   const [reprepping, setReprepping] = useState(false);
-  const [feedback, setFeedback] = useState<"useful" | "not_useful" | null>(null);
+  const [feedback, setFeedback] = useState<"useful" | "not_useful" | null>(initialFeedback ?? null);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(!!initialFeedback);
 
   const handleReprep = useCallback(async () => {
     setReprepping(true);
@@ -158,7 +179,19 @@ export default function PrepViewClient(props: Props) {
 
   const handleFeedback = useCallback(async (rating: "useful" | "not_useful") => {
     setFeedback(rating);
-  }, []);
+    if (docId) {
+      try {
+        await fetch(`/api/brains/${brainId}/docs/${docId}/feedback`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ feedback: rating }),
+        });
+        setFeedbackSubmitted(true);
+      } catch {
+        // Keep the UI state even if the API call fails
+      }
+    }
+  }, [brainId, docId]);
 
   const startDate = props.meetingStart ? new Date(props.meetingStart) : null;
   const endDate = props.meetingEnd ? new Date(props.meetingEnd) : null;
@@ -568,34 +601,56 @@ export default function PrepViewClient(props: Props) {
             borderTop: "1px solid var(--border-subtle, #EBE5DC)",
             display: "flex",
             alignItems: "center",
-            gap: 16,
+            gap: 12,
           }}>
-            <button
-              onClick={() => handleFeedback("useful")}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 8,
-                border: `1px solid ${feedback === "useful" ? "var(--arvya-gold, #D89A3F)" : "var(--border-subtle, #EBE5DC)"}`,
-                background: feedback === "useful" ? "var(--arvya-gold-bg, #FBF2E0)" : "transparent",
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              👍 useful
-            </button>
-            <button
-              onClick={() => handleFeedback("not_useful")}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 8,
-                border: `1px solid ${feedback === "not_useful" ? "var(--arvya-gold, #D89A3F)" : "var(--border-subtle, #EBE5DC)"}`,
-                background: feedback === "not_useful" ? "var(--arvya-gold-bg, #FBF2E0)" : "transparent",
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              👎 not useful
-            </button>
+            {feedbackSubmitted ? (
+              <span style={{
+                fontSize: 12,
+                color: "var(--text-tertiary, #71717A)",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                Feedback recorded
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleFeedback("useful")}
+                  aria-label="Mark as useful"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${feedback === "useful" ? "var(--arvya-gold, #D89A3F)" : "var(--border-subtle, #EBE5DC)"}`,
+                    background: feedback === "useful" ? "var(--arvya-gold-bg, #FBF2E0)" : "transparent",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    color: "var(--text-secondary, #52525B)",
+                  }}
+                >
+                  <ThumbUpIcon size={14} /> useful
+                </button>
+                <button
+                  onClick={() => handleFeedback("not_useful")}
+                  aria-label="Mark as not useful"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${feedback === "not_useful" ? "var(--arvya-gold, #D89A3F)" : "var(--border-subtle, #EBE5DC)"}`,
+                    background: feedback === "not_useful" ? "var(--arvya-gold-bg, #FBF2E0)" : "transparent",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    color: "var(--text-secondary, #52525B)",
+                  }}
+                >
+                  <ThumbDownIcon size={14} /> not useful
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

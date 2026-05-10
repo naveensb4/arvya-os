@@ -99,8 +99,8 @@ async function main() {
 
     const sync = await runNotetakerCalendarSync({ client: new MockRecallClient() });
     check("calendar sync schedules exactly one bot for the valid event", () => {
-      assert.equal(sync[0]?.status, "completed");
-      assert.equal(sync[0]?.itemsFound, 4);
+      assert.equal(sync[0]?.status, "synced");
+      assert.equal(sync[0]?.synced, 4);
       assert.equal(sync[0]?.scheduled, 1);
     });
 
@@ -126,7 +126,7 @@ async function main() {
     const reSync = await runNotetakerCalendarSync({ client: new MockRecallClient() });
     const meetingsAfterReSync = await repository.listNotetakerMeetings({ calendarId: calendar.id });
     check("re-running calendar sync does not double-schedule bots", () => {
-      assert.equal(reSync[0]?.status, "completed");
+      assert.equal(reSync[0]?.status, "synced");
       const scheduledCount = meetingsAfterReSync.filter((meeting) => meeting.botStatus === "scheduled").length;
       assert.equal(scheduledCount, 1);
     });

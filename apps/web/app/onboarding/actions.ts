@@ -24,6 +24,28 @@ export async function createOnboardingBrain(formData: FormData) {
   if (session) {
     userId = session.dbUser.id;
     const db = getDb();
+    const { users } = await import("@/lib/db/schema");
+
+    const [existingUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, session.dbUser.id))
+      .limit(1);
+
+    if (!existingUser) {
+      await db.insert(users).values({
+        id: session.dbUser.id,
+        email: session.email ?? session.dbUser.email ?? "",
+        displayName:
+          (session.user_metadata?.full_name as string) ??
+          (session.user_metadata?.name as string) ??
+          session.email ??
+          "",
+        avatarUrl: (session.user_metadata?.avatar_url as string) ?? null,
+        authProvider: "google",
+      });
+    }
+
     const [membership] = await db
       .select({ workspaceId: workspaceMembers.workspaceId })
       .from(workspaceMembers)
@@ -67,15 +89,13 @@ export async function getOnboardingState() {
   const repository = getRepository();
   const brains = await repository.listBrains();
 
-  if (brains.length === 0) return { step: "create" as const, brainId: null };
+  if (brains.length === 0) return { step: "create" as const, brainId: null, connected: [] as string[] };
 
   const brain = brains[0];
   const configs = await repository.listConnectorConfigs(brain.id);
-  const connectedCount = configs.filter(
-    (c) => c.status === "connected" && (c.connectorType === "gmail" || c.connectorType === "google_drive" || c.connectorType === "slack"),
-  ).length;
+  const connected = configs
+    .filter((c) => c.status === "connected")
+    .map((c) => c.connectorType);
 
-  if (connectedCount === 0) return { step: "connect" as const, brainId: brain.id };
-
-  return { step: "progress" as const, brainId: brain.id };
+  return { step: "connect" as const, brainId: brain.id, connected };
 }

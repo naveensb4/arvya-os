@@ -43,17 +43,15 @@ export async function wasMeetingPreppedRecently(
   withinHours = IDEMPOTENCY_HOURS,
 ): Promise<boolean> {
   const repository = getRepository();
+  const cutoff = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
   const brains = await repository.listBrains();
   for (const brain of brains) {
-    const runs = await repository.listAgentRuns(brain.id, 200);
-    const cutoff = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
-    const recentPrep = runs.find(
-      (run) =>
-        run.name === "meeting_prep" &&
-        (run.rawInput as Record<string, unknown>)?.meeting_id === meetingId &&
-        run.startedAt > cutoff,
-    );
-    if (recentPrep) return true;
+    const docs = await repository.listBrainDocs(brain.id, {
+      meetingId,
+      docType: "meeting_prep",
+      limit: 1,
+    });
+    if (docs.length > 0 && docs[0].createdAt > cutoff) return true;
   }
   return false;
 }
@@ -64,17 +62,16 @@ export async function wasMeetingPreppedForBrain(
   withinHours = IDEMPOTENCY_HOURS,
 ): Promise<boolean> {
   const repository = getRepository();
-  const runs = await repository.listAgentRuns(brainId, 200);
   const cutoff = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
-  return runs.some(
-    (run) =>
-      run.name === "meeting_prep" &&
-      (run.rawInput as Record<string, unknown>)?.meeting_id === meetingId &&
-      run.startedAt > cutoff,
-  );
+  const docs = await repository.listBrainDocs(brainId, {
+    meetingId,
+    docType: "meeting_prep",
+    limit: 1,
+  });
+  return docs.length > 0 && docs[0].createdAt > cutoff;
 }
 
-export function getRegenCount(brainId: string, meetingId: string, runs: Array<{ name: string; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown> }>): number {
+export function getRegenCount(_brainId: string, meetingId: string, runs: Array<{ name: string; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown> }>): number {
   const prepRuns = runs.filter(
     (r) =>
       r.name === "meeting_prep" &&
@@ -436,6 +433,21 @@ export async function runMeetingPrep(
       },
     });
 
+    try {
+      await repository.createBrainDoc({
+        brainId,
+        docType: "meeting_prep",
+        title: `Meeting Prep: ${meeting.title}`,
+        content: brief as unknown as Record<string, unknown>,
+        contentText: slackText,
+        agentRunId: run.id,
+        externalEventId: meeting.externalEventId ?? undefined,
+        meetingId: meeting.id,
+      });
+    } catch (docError) {
+      console.error("[meeting-prep] brain_doc write failed (agent_run persisted):", docError instanceof Error ? docError.message : docError);
+    }
+
     let slackDelivered = false;
 
     if (!isLowConfidence) {
@@ -498,8 +510,22 @@ export async function runMeetingPrep(
 export async function getLatestMeetingPrep(
   brainId: string,
   meetingId: string,
-): Promise<{ brief: MeetingPrepBrief; agentRunId: string } | null> {
+): Promise<{ brief: MeetingPrepBrief; agentRunId: string; docId?: string } | null> {
   const repository = getRepository();
+
+  const docs = await repository.listBrainDocs(brainId, {
+    meetingId,
+    docType: "meeting_prep",
+    limit: 1,
+  });
+  if (docs.length > 0) {
+    const doc = docs[0];
+    const brief = doc.content as unknown as MeetingPrepBrief;
+    if (brief) {
+      return { brief, agentRunId: doc.agentRunId ?? "", docId: doc.id };
+    }
+  }
+
   const runs = await repository.listAgentRuns(brainId, 200);
   const prepRun = runs.find(
     (r) =>
@@ -512,5 +538,19 @@ export async function getLatestMeetingPrep(
   const raw = prepRun.rawOutput as Record<string, unknown>;
   const brief = raw.structured as MeetingPrepBrief | undefined;
   if (!brief) return null;
-  return { brief, agentRunId: prepRun.id };
+
+  try {
+    const doc = await repository.createBrainDoc({
+      brainId,
+      docType: "meeting_prep",
+      title: `Meeting Prep: ${(prepRun.rawInput as Record<string, unknown>)?.meeting_title ?? "Unknown"}`,
+      content: brief as unknown as Record<string, unknown>,
+      contentText: (raw.formatted_slack_text as string) ?? undefined,
+      agentRunId: prepRun.id,
+      meetingId,
+    });
+    return { brief, agentRunId: prepRun.id, docId: doc.id };
+  } catch {
+    return { brief, agentRunId: prepRun.id };
+  }
 }

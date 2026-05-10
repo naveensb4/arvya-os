@@ -669,6 +669,34 @@
   margin-top: 1px;
   font-family: var(--font-mono);
 }
+.meetLocation {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eventBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+}
+.eventBadgeInPerson {
+  background: var(--arvya-gold-100, #fef3c7);
+  color: var(--arvya-gold-800, #92400e);
+}
+.eventBadgeHybrid {
+  background: var(--blue-100, #dbeafe);
+  color: var(--blue-800, #1e40af);
+}
 .meetRight {
   display: flex;
   align-items: center;

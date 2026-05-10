@@ -227,6 +227,29 @@ CREATE TYPE public.notetaker_provider AS ENUM (
 
 
 --
+-- Name: calendar_event_status; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.calendar_event_status AS ENUM (
+    'active',
+    'cancelled',
+    'deleted'
+);
+
+
+--
+-- Name: calendar_event_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.calendar_event_type AS ENUM (
+    'virtual',
+    'in_person',
+    'hybrid',
+    'unknown'
+);
+
+
+--
 -- Name: open_loop_priority; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -778,12 +801,15 @@ CREATE TABLE public.notetaker_meetings (
     provider public.notetaker_provider NOT NULL,
     title text NOT NULL,
     meeting_url text,
+    location text,
     start_time timestamp with time zone NOT NULL,
     end_time timestamp with time zone NOT NULL,
     participants jsonb DEFAULT '[]'::jsonb NOT NULL,
     auto_join_decision public.notetaker_auto_join_decision DEFAULT 'needs_review'::public.notetaker_auto_join_decision NOT NULL,
     auto_join_reason text,
     bot_status public.notetaker_bot_status DEFAULT 'not_scheduled'::public.notetaker_bot_status NOT NULL,
+    event_status public.calendar_event_status DEFAULT 'active'::public.calendar_event_status NOT NULL,
+    event_type public.calendar_event_type DEFAULT 'unknown'::public.calendar_event_type NOT NULL,
     source_item_id uuid,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1873,6 +1899,13 @@ CREATE INDEX notetaker_meetings_source_item_id_idx ON public.notetaker_meetings 
 --
 
 CREATE INDEX notetaker_meetings_start_time_idx ON public.notetaker_meetings USING btree (start_time);
+
+
+--
+-- Name: notetaker_meetings_event_status_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notetaker_meetings_event_status_idx ON public.notetaker_meetings USING btree (event_status);
 
 
 --
@@ -3725,4 +3758,36 @@ CREATE POLICY workspaces_select ON public.workspaces FOR SELECT TO authenticated
 -- PostgreSQL database dump complete
 --
 
+--
+-- Name: brain_docs; Type: TABLE; Schema: public; Owner: -
+--
 
+CREATE TABLE public.brain_docs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  brain_id uuid NOT NULL REFERENCES public.brains(id) ON DELETE CASCADE,
+  doc_type text NOT NULL,
+  title text NOT NULL,
+  content jsonb NOT NULL,
+  content_text text,
+  feedback text,
+  feedback_at timestamptz,
+  agent_run_id uuid REFERENCES public.agent_runs(id) ON DELETE SET NULL,
+  external_event_id text,
+  meeting_id uuid REFERENCES public.notetaker_meetings(id) ON DELETE SET NULL,
+  metadata jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX idx_brain_docs_meeting ON public.brain_docs(brain_id, meeting_id);
+CREATE INDEX idx_brain_docs_type ON public.brain_docs(brain_id, doc_type);
+CREATE INDEX idx_brain_docs_ext_event ON public.brain_docs(brain_id, external_event_id);
+CREATE INDEX idx_brain_docs_agent_run ON public.brain_docs(agent_run_id);
+
+-- Meeting Prep Agent: brain-level settings
+-- Settings are stored as keys in the existing brains.metadata jsonb column:
+--   meeting_prep_enabled   (boolean, default false)
+--   linkedin_enrichment_enabled (boolean, default false)
+--   web_search_enabled     (boolean, default true)
+--   timezone               (string, default "UTC")
+-- No schema change needed — metadata column already exists.

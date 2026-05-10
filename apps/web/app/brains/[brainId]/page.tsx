@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { NotetakerMeeting } from "@/lib/db/repository";
+import type { BrainDoc } from "@arvya/core";
+import type { CalendarEvent } from "@/lib/db/repository";
 import { getRepository } from "@/lib/db/repository";
 import {
   getBrainSnapshot,
   getLatestDriftReview,
   isBrainNotFoundError,
 } from "@/lib/brain/store";
-import { runNotetakerCalendarSync } from "@/lib/notetaker/runtime";
+import { runCalendarPipeline } from "@/lib/notetaker/runtime";
 import styles from "./page.module.css";
 
 // Dashboard - prototype-matched layout per docs/prototype/Dashboard.html.
@@ -180,10 +181,21 @@ function avatarFor(name: string): { initials: string; color: string } {
   return { initials, color };
 }
 
+function DocIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.5 1.75H8.75L11.375 4.375V12.25H3.5V1.75Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/>
+      <path d="M8.75 1.75V4.375H11.375" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/>
+      <line x1="5.25" y1="6.5" x2="9.625" y2="6.5" stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="5.25" y1="8.75" x2="9.625" y2="8.75" stroke="currentColor" strokeWidth="1.1"/>
+    </svg>
+  );
+}
+
 function renderMeetingRows(
-  meetings: NotetakerMeeting[],
+  meetings: CalendarEvent[],
   brainId: string,
-  prepTimes?: Map<string, string>,
+  docByMeetingId?: Map<string | undefined, BrainDoc>,
 ) {
   // Group consecutive meetings on the same day so only the first row of each
   // day shows the date-block; later rows on the same day get a hidden block.
@@ -251,6 +263,11 @@ function renderMeetingRows(
           <div className={styles.meetBody}>
             <div className={styles.meetTitle}>
               {m.title}
+              {m.eventType === "in_person" ? (
+                <span className={`${styles.eventBadge} ${styles.eventBadgeInPerson}`}>In-person</span>
+              ) : m.eventType === "hybrid" ? (
+                <span className={`${styles.eventBadge} ${styles.eventBadgeHybrid}`}>Hybrid</span>
+              ) : null}
               {isLive ? (
                 <span className={styles.live}>
                   ▶ Now - {startLabel} - {endLabel}
@@ -265,25 +282,32 @@ function renderMeetingRows(
                 ? `${!isLive ? " - " : ""}${participants.length} attendees`
                 : null}
             </div>
+            {m.location && !m.meetingUrl ? (
+              <div className={styles.meetLocation}>{m.location}</div>
+            ) : null}
           </div>
           <div className={styles.meetRight}>
             <div className={`${styles.meetActions} ${isLive ? styles.meetActionsLive : ""}`}>
               {(() => {
-                const preppedAt = prepTimes?.get(m.id);
-                const agoLabel = preppedAt
-                  ? (() => {
-                      const diffMs = Date.now() - new Date(preppedAt).getTime();
-                      const diffH = Math.floor(diffMs / 3600000);
-                      if (diffH < 1) return `${Math.max(1, Math.floor(diffMs / 60000))}m ago`;
-                      return `${diffH}h ago`;
-                    })()
-                  : null;
+                const doc = docByMeetingId?.get(m.id);
+                if (doc) {
+                  return (
+                    <Link
+                      className={styles.meetBtn}
+                      href={`/brains/${brainId}/meetings/${m.id}/prep`}
+                      title="Open meeting prep doc"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                    >
+                      <DocIcon /> Prepped
+                    </Link>
+                  );
+                }
                 return (
                   <Link
                     className={styles.meetBtn}
-                    href={`/brains/${brainId}/meetings/${m.id}/prep`}
+                    href={`/brains/${brainId}/ask?mode=meeting-prep&meetingId=${m.id}`}
                   >
-                    {agoLabel ? `✓ Prepped ${agoLabel}` : "Prep"}
+                    Prep
                   </Link>
                 );
               })()}
@@ -372,10 +396,6 @@ export default async function DashboardPage({ params }: PageProps) {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
-  // Lazy-trigger calendar sync if it hasn't run in the last 5 minutes. The
-  // inngest cron runs every 10m, so without this the user sees stale data
-  // (or nothing on a fresh connect) until the next cron tick. Bounded by a
-  // 6s timeout so the dashboard never hangs on a slow Google API call.
   const calendars = await repository.listNotetakerCalendars({
     brainId: selectedBrainId,
     status: "connected",
@@ -385,19 +405,23 @@ export default async function DashboardPage({ params }: PageProps) {
     return Date.now() - new Date(c.lastSyncAt).getTime() > 5 * 60 * 1000;
   });
   if (stale) {
-    await Promise.race([
-      runNotetakerCalendarSync({ brainId: selectedBrainId }).catch(() => {}),
-      new Promise<void>((resolve) => setTimeout(resolve, 6000)),
-    ]);
+    runCalendarPipeline({ brainId: selectedBrainId }).catch(() => {});
   }
 
-  const upcomingMeetings = await repository.listNotetakerMeetings({
+  const upcomingMeetings = await repository.listCalendarEvents({
     brainId: selectedBrainId,
     from: now.toISOString(),
     to: windowEnd.toISOString(),
+    eventStatus: "active",
     limit: 10,
   });
   const sourceById = new Map(sourceItems.map((s) => [s.id, s]));
+
+  const meetingIds = upcomingMeetings.map((m) => m.id);
+  const meetingDocs = meetingIds.length > 0
+    ? await repository.listBrainDocsForMeetings(selectedBrainId, meetingIds)
+    : [];
+  const docByMeetingId = new Map(meetingDocs.map((d) => [d.meetingId, d]));
 
   const driftSignals = latestDrift?.review.signals ?? [];
   const driftDisplay =
@@ -581,20 +605,7 @@ export default async function DashboardPage({ params }: PageProps) {
                 No upcoming meetings on the calendar.
               </div>
             ) : (
-              renderMeetingRows(upcomingMeetings, selectedBrainId, (() => {
-                const map = new Map<string, string>();
-                for (const run of agentRuns) {
-                  if (
-                    run.name === "meeting_prep" &&
-                    run.status === "succeeded" &&
-                    run.rawInput
-                  ) {
-                    const mid = (run.rawInput as Record<string, unknown>).meeting_id as string;
-                    if (mid && !map.has(mid)) map.set(mid, run.startedAt);
-                  }
-                }
-                return map;
-              })())
+              renderMeetingRows(upcomingMeetings, selectedBrainId, docByMeetingId)
             )}
           </div>
 

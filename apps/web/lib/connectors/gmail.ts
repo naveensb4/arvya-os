@@ -186,22 +186,31 @@ class GmailRestClient implements GmailClient {
   }
 
   async listMessages(labelId: string, options?: GmailListMessagesOptions) {
-    const url = new URL(`${GMAIL_API}/messages`);
-    url.searchParams.set("labelIds", labelId);
-    url.searchParams.set("maxResults", "50");
-    if (options?.since) {
-      const sinceMs = Date.parse(options.since);
-      if (Number.isFinite(sinceMs)) {
-        const sinceSeconds = Math.floor(sinceMs / 1000);
-        url.searchParams.set("q", `after:${sinceSeconds}`);
+    const allMessages: GmailMessageListItem[] = [];
+    let pageToken: string | undefined;
+
+    for (;;) {
+      const url = new URL(`${GMAIL_API}/messages`);
+      url.searchParams.set("labelIds", labelId);
+      url.searchParams.set("maxResults", "100");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      if (options?.since) {
+        const sinceMs = Date.parse(options.since);
+        if (Number.isFinite(sinceMs)) {
+          const sinceSeconds = Math.floor(sinceMs / 1000);
+          url.searchParams.set("q", `after:${sinceSeconds}`);
+        }
       }
+      const response = await fetch(url, {
+        headers: { authorization: `Bearer ${await this.getAccessToken()}` },
+      });
+      const json = await response.json() as { messages?: GmailMessageListItem[]; nextPageToken?: string; error?: { message?: string } };
+      if (!response.ok) throw new Error(json.error?.message ?? "Gmail message listing failed.");
+      allMessages.push(...(json.messages ?? []));
+      pageToken = json.nextPageToken;
+      if (!pageToken) break;
     }
-    const response = await fetch(url, {
-      headers: { authorization: `Bearer ${await this.getAccessToken()}` },
-    });
-    const json = await response.json() as { messages?: GmailMessageListItem[]; error?: { message?: string } };
-    if (!response.ok) throw new Error(json.error?.message ?? "Gmail message listing failed.");
-    return json.messages ?? [];
+    return allMessages;
   }
 
   async getMessage(messageId: string) {
@@ -401,24 +410,32 @@ export async function syncGmailConnector(config: ConnectorConfig, client?: Gmail
         reason: `safety_cap_${itemLimit}`,
       });
     }
-    for (const item of messagesToSync) {
-      try {
-        const message = await gmail.getMessage(item.id);
-        const threadId = message.threadId ?? message.id;
-        const bucket = threadBuckets.get(threadId);
-        if (bucket) {
-          bucket.messages.push(message);
+    const FETCH_CONCURRENCY = 10;
+    for (let i = 0; i < messagesToSync.length; i += FETCH_CONCURRENCY) {
+      const batch = messagesToSync.slice(i, i + FETCH_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((item) => gmail.getMessage(item.id)),
+      );
+      for (let j = 0; j < results.length; j++) {
+        const settled = results[j];
+        if (settled.status === "fulfilled") {
+          const message = settled.value;
+          const threadId = message.threadId ?? message.id;
+          const bucket = threadBuckets.get(threadId);
+          if (bucket) {
+            bucket.messages.push(message);
+          } else {
+            threadBuckets.set(threadId, { label, messages: [message], firstSeenIndex: messageIndex });
+          }
+          messageIndex += 1;
         } else {
-          threadBuckets.set(threadId, { label, messages: [message], firstSeenIndex: messageIndex });
+          result.itemsFailed += 1;
+          result.failedItems.push({
+            externalId: `gmail:${batch[j].id}`,
+            title: batch[j].id,
+            error: settled.reason instanceof Error ? settled.reason.message : "Unknown Gmail sync error",
+          });
         }
-        messageIndex += 1;
-      } catch (error) {
-        result.itemsFailed += 1;
-        result.failedItems.push({
-          externalId: `gmail:${item.id}`,
-          title: item.id,
-          error: error instanceof Error ? error.message : "Unknown Gmail sync error",
-        });
       }
     }
   }

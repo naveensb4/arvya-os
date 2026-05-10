@@ -9,6 +9,7 @@ import type {
   AiStructuredInput,
   ModelProvider,
 } from "@arvya/core";
+import { isRateLimitError, withRetry } from "./resilient-call";
 
 function zodToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
   return z.toJSONSchema(schema, { target: "draft-2020-12" }) as Record<
@@ -175,16 +176,29 @@ class LiveAiClient implements AiClient {
     return this.openai;
   }
 
-  async complete(input: AiCompleteInput): Promise<AiCompletion> {
-    if (this.preferredProvider === "anthropic") {
+  private canFailover(): boolean {
+    if (this.preferredProvider === "anthropic" && this.config.openaiKey) return true;
+    if (this.preferredProvider === "openai" && this.config.anthropicKey) return true;
+    return false;
+  }
+
+  private get fallbackProvider(): ModelProvider {
+    return this.preferredProvider === "anthropic" ? "openai" : "anthropic";
+  }
+
+  private async completeWithProvider(input: AiCompleteInput, provider: ModelProvider): Promise<AiCompletion> {
+    if (provider === "anthropic") {
       const client = this.getAnthropic();
-      const response = await client.messages.create({
-        model: this.config.anthropicModel,
-        max_tokens: input.maxTokens ?? 1500,
-        temperature: input.temperature ?? 0.2,
-        system: input.system,
-        messages: [{ role: "user", content: input.prompt }],
-      });
+      const response = await withRetry(
+        () => client.messages.create({
+          model: this.config.anthropicModel,
+          max_tokens: input.maxTokens ?? 1500,
+          temperature: input.temperature ?? 0.2,
+          system: input.system,
+          messages: [{ role: "user", content: input.prompt }],
+        }),
+        { onRetry: (attempt, err, delay) => console.warn(`[ai] complete retry ${attempt}/3 after ${delay}ms:`, err.message) },
+      );
       const text = response.content
         .map((part) => (part.type === "text" ? part.text : ""))
         .join("");
@@ -197,15 +211,18 @@ class LiveAiClient implements AiClient {
     }
 
     const client = this.getOpenAi();
-    const response = await client.chat.completions.create({
-      model: this.config.openaiModel,
-      temperature: input.temperature ?? 0.2,
-      max_tokens: input.maxTokens ?? 1500,
-      messages: [
-        { role: "system", content: input.system },
-        { role: "user", content: input.prompt },
-      ],
-    });
+    const response = await withRetry(
+      () => client.chat.completions.create({
+        model: this.config.openaiModel,
+        temperature: input.temperature ?? 0.2,
+        max_tokens: input.maxTokens ?? 1500,
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: input.prompt },
+        ],
+      }),
+      { onRetry: (attempt, err, delay) => console.warn(`[ai] complete retry ${attempt}/3 after ${delay}ms:`, err.message) },
+    );
     return {
       text: response.choices[0]?.message.content ?? "",
       provider: "openai",
@@ -214,29 +231,45 @@ class LiveAiClient implements AiClient {
     };
   }
 
-  async completeStructured<T>(
+  async complete(input: AiCompleteInput): Promise<AiCompletion> {
+    try {
+      return await this.completeWithProvider(input, this.preferredProvider);
+    } catch (error) {
+      if (isRateLimitError(error) && this.canFailover()) {
+        console.warn(`[ai] failing over complete() from ${this.preferredProvider} to ${this.fallbackProvider}`);
+        return await this.completeWithProvider(input, this.fallbackProvider);
+      }
+      throw error;
+    }
+  }
+
+  private async completeStructuredWithProvider<T>(
     input: AiStructuredInput<T>,
+    provider: ModelProvider,
   ): Promise<AiStructuredCompletion<T>> {
     const jsonSchema = zodToJsonSchema(input.schema);
 
-    if (this.preferredProvider === "anthropic") {
+    if (provider === "anthropic") {
       const client = this.getAnthropic();
-      const response = await client.messages.create({
-        model: this.config.anthropicModel,
-        max_tokens: input.maxTokens ?? 2400,
-        temperature: input.temperature ?? 0.1,
-        system: input.system,
-        tools: [
-          {
-            name: input.schemaName,
-            description:
-              input.schemaDescription ?? `Structured output for ${input.schemaName}`,
-            input_schema: jsonSchema as Anthropic.Tool["input_schema"],
-          },
-        ],
-        tool_choice: { type: "tool", name: input.schemaName },
-        messages: [{ role: "user", content: input.prompt }],
-      });
+      const response = await withRetry(
+        () => client.messages.create({
+          model: this.config.anthropicModel,
+          max_tokens: input.maxTokens ?? 2400,
+          temperature: input.temperature ?? 0.1,
+          system: input.system,
+          tools: [
+            {
+              name: input.schemaName,
+              description:
+                input.schemaDescription ?? `Structured output for ${input.schemaName}`,
+              input_schema: jsonSchema as Anthropic.Tool["input_schema"],
+            },
+          ],
+          tool_choice: { type: "tool", name: input.schemaName },
+          messages: [{ role: "user", content: input.prompt }],
+        }),
+        { onRetry: (attempt, err, delay) => console.warn(`[ai] structured retry ${attempt}/3 after ${delay}ms:`, err.message) },
+      );
 
       const toolUse = response.content.find((part) => part.type === "tool_use");
       if (!toolUse || toolUse.type !== "tool_use") {
@@ -254,24 +287,27 @@ class LiveAiClient implements AiClient {
     }
 
     const client = this.getOpenAi();
-    const response = await client.chat.completions.create({
-      model: this.config.openaiModel,
-      temperature: input.temperature ?? 0.1,
-      max_tokens: input.maxTokens ?? 2400,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: input.schemaName,
-          description: input.schemaDescription,
-          schema: jsonSchema,
-          strict: false,
+    const response = await withRetry(
+      () => client.chat.completions.create({
+        model: this.config.openaiModel,
+        temperature: input.temperature ?? 0.1,
+        max_tokens: input.maxTokens ?? 2400,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: input.schemaName,
+            description: input.schemaDescription,
+            schema: jsonSchema,
+            strict: false,
+          },
         },
-      },
-      messages: [
-        { role: "system", content: input.system },
-        { role: "user", content: input.prompt },
-      ],
-    });
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: input.prompt },
+        ],
+      }),
+      { onRetry: (attempt, err, delay) => console.warn(`[ai] structured retry ${attempt}/3 after ${delay}ms:`, err.message) },
+    );
 
     const text = response.choices[0]?.message.content ?? "";
     const parsed = ensureJsonObject(text);
@@ -283,14 +319,31 @@ class LiveAiClient implements AiClient {
     };
   }
 
+  async completeStructured<T>(
+    input: AiStructuredInput<T>,
+  ): Promise<AiStructuredCompletion<T>> {
+    try {
+      return await this.completeStructuredWithProvider(input, this.preferredProvider);
+    } catch (error) {
+      if (isRateLimitError(error) && this.canFailover()) {
+        console.warn(`[ai] failing over completeStructured() from ${this.preferredProvider} to ${this.fallbackProvider}`);
+        return await this.completeStructuredWithProvider(input, this.fallbackProvider);
+      }
+      throw error;
+    }
+  }
+
   async embed(texts: string[]): Promise<number[][] | null> {
     if (!this.embeddingModel) return null;
     if (texts.length === 0) return [];
     const client = this.getOpenAi();
-    const response = await client.embeddings.create({
-      model: this.embeddingModel,
-      input: texts,
-    });
+    const response = await withRetry(
+      () => client.embeddings.create({
+        model: this.embeddingModel!,
+        input: texts,
+      }),
+      { onRetry: (attempt, err, delay) => console.warn(`[ai] embed retry ${attempt}/3 after ${delay}ms:`, err.message) },
+    );
     return response.data
       .sort((a, b) => a.index - b.index)
       .map((row) => row.embedding as number[]);

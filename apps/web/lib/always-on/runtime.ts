@@ -548,9 +548,11 @@ export async function syncConnectorConfig(
         },
       });
       const nextWatermark = "nextWatermark" in synced ? synced.nextWatermark : undefined;
-      const mergedConfig = nextWatermark
-        ? { ...config.config, watermark: nextWatermark }
-        : config.config;
+      const mergedConfig = {
+        ...config.config,
+        ...(nextWatermark ? { watermark: nextWatermark } : {}),
+        ...(config.config.mode === "onboarding" ? { mode: "live", maxItemTestMode: true } : {}),
+      };
       await repository.updateConnectorConfig(config.id, {
         lastSyncAt: nowIso(),
         lastSuccessAt: synced.itemsFailed === 0 ? nowIso() : config.lastSuccessAt ?? null,
@@ -969,14 +971,15 @@ export async function runMeetingPrep30Min() {
       const meetingStart = new Date(meeting.startTime).getTime();
       const cutoff = meetingStart - 40 * 60 * 1000;
 
-      const runs = await repository.listAgentRuns(brain.id, 200);
-      const recentPrep = runs.find(
-        (r) =>
-          r.name === "meeting_prep" &&
-          (r.rawInput as Record<string, unknown>)?.meeting_id === meeting.id &&
-          new Date(r.startedAt).getTime() > cutoff,
+      const existingDocs = await repository.listBrainDocs(brain.id, {
+        meetingId: meeting.id,
+        docType: "meeting_prep",
+        limit: 1,
+      });
+      const recentDoc = existingDocs.find(
+        (d) => new Date(d.createdAt).getTime() > cutoff,
       );
-      if (recentPrep) continue;
+      if (recentDoc) continue;
 
       try {
         await runMeetingPrep(brain.id, meeting.id, { skipIdempotency: true });
@@ -1015,13 +1018,12 @@ export async function runMeetingPrepDeltaWatch() {
     const { runMeetingPrep, getRegenCount } = await import("@/lib/agents/meeting-prep");
 
     for (const meeting of meetings) {
-      const existingPrep = runs.find(
-        (r) =>
-          r.name === "meeting_prep" &&
-          (r.rawInput as Record<string, unknown>)?.meeting_id === meeting.id &&
-          r.status === "succeeded",
-      );
-      if (!existingPrep) continue;
+      const prepDocs = await repository.listBrainDocs(brain.id, {
+        meetingId: meeting.id,
+        docType: "meeting_prep",
+        limit: 1,
+      });
+      if (prepDocs.length === 0) continue;
 
       const regenCount = getRegenCount(brain.id, meeting.id, runs);
       if (regenCount >= 3) continue;
@@ -1049,7 +1051,7 @@ export async function runMeetingPrepDeltaWatch() {
 
       if (!hasMaterialDelta) continue;
 
-      const slackTs = (existingPrep.rawOutput as Record<string, unknown>)?.slack_message_ts as string | undefined;
+      const slackTs = (prepDocs[0].content as Record<string, unknown>)?.slack_message_ts as string | undefined;
 
       try {
         await runMeetingPrep(brain.id, meeting.id, {

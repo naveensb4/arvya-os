@@ -2,6 +2,9 @@ import type {
   AgentRun,
   AgentRunStatus,
   Brain,
+  BrainDoc,
+  BrainDocFeedback,
+  BrainDocType,
   BrainKind,
   MemoryObject,
   MemoryObjectStatus,
@@ -199,6 +202,28 @@ export type UpdateAgentRunData = {
   completedAt?: string;
 };
 
+export type CreateBrainDocData = {
+  brainId: string;
+  docType: BrainDocType;
+  title: string;
+  content: Record<string, unknown>;
+  contentText?: string;
+  agentRunId?: string;
+  externalEventId?: string;
+  meetingId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateBrainDocFeedbackData = {
+  feedback: BrainDocFeedback;
+};
+
+export type ListBrainDocsOptions = {
+  meetingId?: string;
+  docType?: BrainDocType;
+  limit?: number;
+};
+
 export type ConnectorType = "google_drive" | "gmail" | "outlook" | "recall" | "mock" | "onedrive" | "slack" | "hubspot" | "github" | "notion";
 export type ConnectorStatus = "active" | "connected" | "paused" | "error" | "needs_reauth";
 export type ConnectorSyncRunStatus = "started" | "completed" | "failed";
@@ -271,7 +296,10 @@ export type NotetakerCalendar = {
   updatedAt?: string;
 };
 
-export type NotetakerMeeting = {
+export type CalendarEventStatus = "active" | "cancelled" | "deleted";
+export type CalendarEventType = "virtual" | "in_person" | "hybrid" | "unknown";
+
+export type CalendarEvent = {
   id: string;
   brainId: string;
   notetakerCalendarId?: string | null;
@@ -281,17 +309,21 @@ export type NotetakerMeeting = {
   provider: NotetakerProvider;
   title: string;
   meetingUrl?: string | null;
+  location?: string | null;
   startTime: string;
   endTime: string;
   participants: unknown[];
   autoJoinDecision: NotetakerAutoJoinDecision;
   autoJoinReason?: string | null;
   botStatus: NotetakerBotStatus;
+  eventStatus: CalendarEventStatus;
+  eventType: CalendarEventType;
   sourceItemId?: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt?: string;
 };
+export type NotetakerMeeting = CalendarEvent;
 
 export type NotetakerEvent = {
   id: string;
@@ -407,7 +439,7 @@ export type UpdateNotetakerCalendarData = Partial<{
   lastError: string | null;
 }>;
 
-export type CreateNotetakerMeetingData = {
+export type CreateCalendarEventData = {
   brainId: string;
   notetakerCalendarId?: string | null;
   recallCalendarEventId?: string | null;
@@ -416,30 +448,38 @@ export type CreateNotetakerMeetingData = {
   provider: NotetakerProvider;
   title: string;
   meetingUrl?: string | null;
+  location?: string | null;
   startTime: string;
   endTime: string;
   participants?: unknown[];
   autoJoinDecision?: NotetakerAutoJoinDecision;
   autoJoinReason?: string | null;
   botStatus?: NotetakerBotStatus;
+  eventStatus?: CalendarEventStatus;
+  eventType?: CalendarEventType;
   sourceItemId?: string | null;
   metadata?: Record<string, unknown>;
 };
+export type CreateNotetakerMeetingData = CreateCalendarEventData;
 
-export type UpdateNotetakerMeetingData = Partial<{
+export type UpdateCalendarEventData = Partial<{
   recallCalendarEventId: string | null;
   recallBotId: string | null;
   title: string;
   meetingUrl: string | null;
+  location: string | null;
   startTime: string;
   endTime: string;
   participants: unknown[];
   autoJoinDecision: NotetakerAutoJoinDecision;
   autoJoinReason: string | null;
   botStatus: NotetakerBotStatus;
+  eventStatus: CalendarEventStatus;
+  eventType: CalendarEventType;
   sourceItemId: string | null;
   metadata: Record<string, unknown>;
 }>;
+export type UpdateNotetakerMeetingData = UpdateCalendarEventData;
 
 export type CreateNotetakerEventData = {
   brainId: string;
@@ -511,6 +551,12 @@ export interface BrainRepository {
   createAgentRun(input: CreateAgentRunData): Promise<AgentRun>;
   updateAgentRun(runId: string, update: UpdateAgentRunData): Promise<AgentRun | null>;
 
+  createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc>;
+  getBrainDoc(docId: string): Promise<BrainDoc | null>;
+  listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]>;
+  updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null>;
+  listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]>;
+
   listConnectorConfigs(brainId?: string): Promise<ConnectorConfig[]>;
   createConnectorConfig(input: CreateConnectorConfigData): Promise<ConnectorConfig>;
   updateConnectorConfig(configId: string, update: UpdateConnectorConfigData): Promise<ConnectorConfig | null>;
@@ -524,9 +570,12 @@ export interface BrainRepository {
   createNotetakerCalendar(input: CreateNotetakerCalendarData): Promise<NotetakerCalendar>;
   updateNotetakerCalendar(calendarId: string, update: UpdateNotetakerCalendarData): Promise<NotetakerCalendar | null>;
   deleteNotetakerCalendar(calendarId: string): Promise<boolean>;
-  listNotetakerMeetings(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number }): Promise<NotetakerMeeting[]>;
-  createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<NotetakerMeeting>;
-  updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData): Promise<NotetakerMeeting | null>;
+  listCalendarEvents(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: CalendarEventStatus }): Promise<CalendarEvent[]>;
+  createCalendarEvent(input: CreateCalendarEventData): Promise<CalendarEvent>;
+  updateCalendarEvent(eventId: string, update: UpdateCalendarEventData): Promise<CalendarEvent | null>;
+  listNotetakerMeetings(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number }): Promise<CalendarEvent[]>;
+  createNotetakerMeeting(input: CreateCalendarEventData): Promise<CalendarEvent>;
+  updateNotetakerMeeting(meetingId: string, update: UpdateCalendarEventData): Promise<CalendarEvent | null>;
   listNotetakerEvents(input?: { brainId?: string; providerEventId?: string; limit?: number }): Promise<NotetakerEvent[]>;
   createNotetakerEvent(input: CreateNotetakerEventData): Promise<NotetakerEvent>;
   updateNotetakerEvent(eventId: string, update: UpdateNotetakerEventData): Promise<NotetakerEvent | null>;

@@ -2,6 +2,8 @@ import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
   AgentRun,
   Brain,
+  BrainDoc,
+  BrainDocFeedback,
   MemoryObject,
   ModelProvider,
   OpenLoop,
@@ -18,6 +20,7 @@ import type { Db } from "./client";
 import {
   agentRuns,
   brainAlerts,
+  brainDocs,
   brains,
   connectorConfigs,
   connectorSyncRuns,
@@ -36,6 +39,7 @@ import {
   workflows,
   type AgentRunRow,
   type BrainAlertRow,
+  type BrainDocRow,
   type BrainRow,
   type ConnectorConfigRow,
   type ConnectorSyncRunRow,
@@ -58,6 +62,7 @@ import type {
   CreateAgentRunData,
   CreateBrainAlertData,
   CreateBrainData,
+  CreateBrainDocData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
   CreateMemoryObjectData,
@@ -73,10 +78,12 @@ import type {
   CreateWorkflowData,
   CreateWorkspaceData,
   CreateWorkspaceMemberData,
+  ListBrainDocsOptions,
   ListOptions,
   ListPrioritiesOptions,
   UpdateAgentRunData,
   UpdateConnectorConfigData,
+  UpdateBrainDocFeedbackData,
   UpdateConnectorSyncRunData,
   UpdateMemoryObjectData,
   UpdateNotetakerCalendarData,
@@ -288,6 +295,25 @@ function toAgentRun(row: AgentRunRow): AgentRun {
   };
 }
 
+function toBrainDoc(row: BrainDocRow): BrainDoc {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    docType: row.docType as BrainDoc["docType"],
+    title: row.title,
+    content: (row.content ?? {}) as Record<string, unknown>,
+    contentText: row.contentText ?? undefined,
+    feedback: (row.feedback as BrainDocFeedback) ?? null,
+    feedbackAt: isoOrNull(row.feedbackAt),
+    agentRunId: row.agentRunId ?? undefined,
+    externalEventId: row.externalEventId ?? undefined,
+    meetingId: row.meetingId ?? undefined,
+    metadata: (row.metadata ?? undefined) as Record<string, unknown> | undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 function toConnectorConfig(row: ConnectorConfigRow) {
   return {
     id: row.id,
@@ -357,7 +383,7 @@ function toNotetakerCalendar(row: NotetakerCalendarRow) {
   };
 }
 
-function toNotetakerMeeting(row: NotetakerMeetingRow) {
+function toCalendarEvent(row: NotetakerMeetingRow) {
   return {
     id: row.id,
     brainId: row.brainId,
@@ -368,18 +394,22 @@ function toNotetakerMeeting(row: NotetakerMeetingRow) {
     provider: row.provider,
     title: row.title,
     meetingUrl: row.meetingUrl,
+    location: row.location,
     startTime: row.startTime.toISOString(),
     endTime: row.endTime.toISOString(),
     participants: (row.participants ?? []) as unknown[],
     autoJoinDecision: row.autoJoinDecision,
     autoJoinReason: row.autoJoinReason ?? undefined,
     botStatus: row.botStatus,
+    eventStatus: row.eventStatus,
+    eventType: row.eventType,
     sourceItemId: row.sourceItemId,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+const toNotetakerMeeting = toCalendarEvent;
 
 function toNotetakerEvent(row: NotetakerEventRow) {
   return {
@@ -476,7 +506,9 @@ export class SupabaseRepository implements BrainRepository {
         kind: input.kind,
         thesis: input.thesis,
         metadata: input.metadata ?? {},
-      })
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.createdByUserId ? { createdByUserId: input.createdByUserId } : {}),
+      } as typeof brains.$inferInsert)
       .returning();
     return toBrain(row);
   }
@@ -949,6 +981,71 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toAgentRun(row) : null;
   }
 
+  async createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc> {
+    const [row] = await this.db
+      .insert(brainDocs)
+      .values({
+        brainId: input.brainId,
+        docType: input.docType,
+        title: input.title,
+        content: input.content,
+        contentText: input.contentText ?? null,
+        agentRunId: input.agentRunId ?? null,
+        externalEventId: input.externalEventId ?? null,
+        meetingId: input.meetingId ?? null,
+        metadata: input.metadata ?? null,
+      })
+      .returning();
+    return toBrainDoc(row);
+  }
+
+  async getBrainDoc(docId: string): Promise<BrainDoc | null> {
+    const [row] = await this.db
+      .select()
+      .from(brainDocs)
+      .where(eq(brainDocs.id, docId))
+      .limit(1);
+    return row ? toBrainDoc(row) : null;
+  }
+
+  async listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]> {
+    const filters = [eq(brainDocs.brainId, brainId)];
+    if (opts?.meetingId) filters.push(eq(brainDocs.meetingId, opts.meetingId));
+    if (opts?.docType) filters.push(eq(brainDocs.docType, opts.docType));
+    return (
+      await this.db
+        .select()
+        .from(brainDocs)
+        .where(and(...filters))
+        .orderBy(desc(brainDocs.createdAt))
+        .limit(opts?.limit ?? 50)
+    ).map(toBrainDoc);
+  }
+
+  async updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null> {
+    const [row] = await this.db
+      .update(brainDocs)
+      .set({
+        feedback: update.feedback,
+        feedbackAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(brainDocs.id, docId))
+      .returning();
+    return row ? toBrainDoc(row) : null;
+  }
+
+  async listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]> {
+    if (meetingIds.length === 0) return [];
+    return (
+      await this.db
+        .select()
+        .from(brainDocs)
+        .where(and(eq(brainDocs.brainId, brainId), inArray(brainDocs.meetingId, meetingIds)))
+        .orderBy(desc(brainDocs.createdAt))
+    ).map(toBrainDoc);
+  }
+
   async listConnectorConfigs(brainId?: string) {
     const query = this.db.select().from(connectorConfigs);
     const rows = brainId
@@ -1128,8 +1225,8 @@ export class SupabaseRepository implements BrainRepository {
     return rows.length > 0;
   }
 
-  async listNotetakerMeetings(
-    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  async listCalendarEvents(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: string } = {},
   ) {
     const from = dateOrNull(input.from);
     const to = dateOrNull(input.to);
@@ -1138,15 +1235,22 @@ export class SupabaseRepository implements BrainRepository {
       input.calendarId ? eq(notetakerMeetings.notetakerCalendarId, input.calendarId) : undefined,
       from ? gte(notetakerMeetings.startTime, from) : undefined,
       to ? lte(notetakerMeetings.startTime, to) : undefined,
+      input.eventStatus ? eq(notetakerMeetings.eventStatus, input.eventStatus as "active" | "cancelled" | "deleted") : undefined,
     ].filter(Boolean);
     const base = this.db.select().from(notetakerMeetings);
     const rows = await (filters.length
       ? base.where(and(...filters)).orderBy(notetakerMeetings.startTime).limit(input.limit ?? 100)
       : base.orderBy(notetakerMeetings.startTime).limit(input.limit ?? 100));
-    return rows.map(toNotetakerMeeting);
+    return rows.map(toCalendarEvent);
   }
 
-  async createNotetakerMeeting(input: CreateNotetakerMeetingData) {
+  async listNotetakerMeetings(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  ) {
+    return this.listCalendarEvents(input);
+  }
+
+  async createCalendarEvent(input: CreateNotetakerMeetingData) {
     const [row] = await this.db
       .insert(notetakerMeetings)
       .values({
@@ -1158,39 +1262,53 @@ export class SupabaseRepository implements BrainRepository {
         provider: input.provider,
         title: input.title,
         meetingUrl: input.meetingUrl ?? null,
+        location: input.location ?? null,
         startTime: dateOrNull(input.startTime) ?? new Date(input.startTime),
         endTime: dateOrNull(input.endTime) ?? new Date(input.endTime),
         participants: input.participants ?? [],
         autoJoinDecision: input.autoJoinDecision ?? "needs_review",
         autoJoinReason: input.autoJoinReason ?? null,
         botStatus: input.botStatus ?? "not_scheduled",
+        eventStatus: input.eventStatus ?? "active",
+        eventType: input.eventType ?? "unknown",
         sourceItemId: input.sourceItemId ?? null,
         metadata: input.metadata ?? {},
       })
       .returning();
-    return toNotetakerMeeting(row);
+    return toCalendarEvent(row);
   }
 
-  async updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData) {
+  async createNotetakerMeeting(input: CreateNotetakerMeetingData) {
+    return this.createCalendarEvent(input);
+  }
+
+  async updateCalendarEvent(eventId: string, update: UpdateNotetakerMeetingData) {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (update.recallCalendarEventId !== undefined) set.recallCalendarEventId = update.recallCalendarEventId;
     if (update.recallBotId !== undefined) set.recallBotId = update.recallBotId;
     if (update.title !== undefined) set.title = update.title;
     if (update.meetingUrl !== undefined) set.meetingUrl = update.meetingUrl;
+    if (update.location !== undefined) set.location = update.location;
     if (update.startTime !== undefined) set.startTime = dateOrNull(update.startTime);
     if (update.endTime !== undefined) set.endTime = dateOrNull(update.endTime);
     if (update.participants !== undefined) set.participants = update.participants;
     if (update.autoJoinDecision !== undefined) set.autoJoinDecision = update.autoJoinDecision;
     if (update.autoJoinReason !== undefined) set.autoJoinReason = update.autoJoinReason;
     if (update.botStatus !== undefined) set.botStatus = update.botStatus;
+    if (update.eventStatus !== undefined) set.eventStatus = update.eventStatus;
+    if (update.eventType !== undefined) set.eventType = update.eventType;
     if (update.sourceItemId !== undefined) set.sourceItemId = update.sourceItemId;
     if (update.metadata !== undefined) set.metadata = update.metadata;
     const [row] = await this.db
       .update(notetakerMeetings)
       .set(set)
-      .where(eq(notetakerMeetings.id, meetingId))
+      .where(eq(notetakerMeetings.id, eventId))
       .returning();
-    return row ? toNotetakerMeeting(row) : null;
+    return row ? toCalendarEvent(row) : null;
+  }
+
+  async updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData) {
+    return this.updateCalendarEvent(meetingId, update);
   }
 
   async listNotetakerEvents(input: { brainId?: string; providerEventId?: string; limit?: number } = {}) {

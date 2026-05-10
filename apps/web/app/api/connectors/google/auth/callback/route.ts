@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { selectedBrainOrDefault } from "@/lib/brain/store";
 import { decodeOAuthState } from "@/lib/connectors/email-common";
 import { getRepository } from "@/lib/db/repository";
-import { runNotetakerCalendarSync } from "@/lib/notetaker/runtime";
+import { runCalendarPipeline } from "@/lib/notetaker/runtime";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
@@ -87,11 +87,11 @@ export async function GET(request: Request) {
 
   const configs = await repository.listConnectorConfigs(selectedBrainId);
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
   const gmailOnboardingConfig = {
     labelIds: ["INBOX"],
     mode: "onboarding",
-    watermark: sevenDaysAgo,
+    watermark: ninetyDaysAgo,
   };
 
   const gmailConfig = configs.find((c) => c.connectorType === "gmail");
@@ -117,7 +117,7 @@ export async function GET(request: Request) {
 
   const driveOnboardingConfig = {
     mode: "recent_files",
-    watermark: sevenDaysAgo,
+    watermark: ninetyDaysAgo,
   };
 
   const driveConfig = configs.find((c) => c.connectorType === "google_drive");
@@ -164,10 +164,12 @@ export async function GET(request: Request) {
     });
   }
 
-  // Trigger an immediate sync so the dashboard shows real meetings without
-  // waiting for the 10-minute inngest cron tick. Errors are swallowed - the
-  // sync also runs lazily on dashboard load and via the cron.
-  await runNotetakerCalendarSync({ brainId: selectedBrainId }).catch(() => {});
+  // Calendar sync is fast — await it. Gmail/Drive backfill is triggered
+  // separately by the frontend via POST /api/brains/[brainId]/sync so it
+  // runs in its own long-lived request, not blocking the redirect.
+  await runCalendarPipeline({ brainId: selectedBrainId }).catch((e) =>
+    console.error("[google-callback] calendar sync failed:", e),
+  );
 
   revalidatePath(`/brains/${selectedBrainId}`);
   revalidatePath(`/brains/${selectedBrainId}/connections`);

@@ -78,14 +78,7 @@ export async function createBrain(input: {
    * dropped by repositories that do not yet store it. */
   createdByUserId?: string;
 }) {
-  // Pass through to the repository. Repository implementations that don't
-  // yet recognize workspaceId / createdByUserId ignore them - this keeps
-  // the call site (onboarding/actions.ts) compilable without forcing every
-  // repository implementation to update on the same PR.
-  const { workspaceId, createdByUserId, ...rest } = input;
-  void workspaceId;
-  void createdByUserId;
-  return getRepository().createBrain(rest);
+  return getRepository().createBrain(input);
 }
 
 export async function addSourceAndIngest(input: {

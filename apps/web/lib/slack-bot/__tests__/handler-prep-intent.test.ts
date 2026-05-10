@@ -4,24 +4,19 @@ vi.mock("@/lib/db/repository", () => ({
   getRepository: vi.fn(),
 }));
 
-vi.mock("@/lib/brain/store", () => ({
-  answerBrainQuestion: vi.fn(),
-}));
-
-vi.mock("@/lib/agents/meeting-prep", () => ({
-  runMeetingPrep: vi.fn(),
-  getLatestMeetingPrep: vi.fn(),
+vi.mock("../agent", () => ({
+  runAgent: vi.fn(),
 }));
 
 import { handleSlackMention } from "../handler";
 import { getRepository } from "@/lib/db/repository";
-import { runMeetingPrep } from "@/lib/agents/meeting-prep";
+import { runAgent } from "../agent";
 
 const BRAIN_ID = "brain-test";
 const BOT_TOKEN = "xoxb-test";
 const TEAM_ID = "T123";
 
-function makeSlackPayload(text: string, eventId = `evt-${Date.now()}`) {
+function makeSlackPayload(text: string, eventId = `evt-${Date.now()}-${Math.random()}`) {
   return {
     type: "event_callback",
     event_id: eventId,
@@ -38,8 +33,8 @@ function makeSlackPayload(text: string, eventId = `evt-${Date.now()}`) {
 }
 
 function setupMockRepository() {
-  const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  const mockFetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    new Response(JSON.stringify({ ok: true, ts: "msg-ts-1" }), { status: 200 }),
   );
 
   const repo = {
@@ -59,13 +54,6 @@ function setupMockRepository() {
       thesis: "Test",
       createdAt: new Date().toISOString(),
     }),
-    listMemoryObjects: vi.fn().mockResolvedValue(
-      Array.from({ length: 15 }, (_, i) => ({ id: `mo-${i}` })),
-    ),
-    listNotetakerMeetings: vi.fn().mockResolvedValue([
-      { id: "m-1", title: "Acme <> Arvya", startTime: new Date().toISOString(), endTime: new Date().toISOString() },
-      { id: "m-2", title: "Investor call with Sequoia", startTime: new Date().toISOString(), endTime: new Date().toISOString() },
-    ]),
   };
 
   (getRepository as ReturnType<typeof vi.fn>).mockReturnValue(repo);
@@ -76,53 +64,60 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("handleSlackMention — prep intent", () => {
-  it('routes "prep me for Acme" to runMeetingPrep with correct meeting', async () => {
-    const { repo } = setupMockRepository();
-    (runMeetingPrep as ReturnType<typeof vi.fn>).mockResolvedValue({
-      brief: { overall_confidence: 0.8 },
-      agentRunId: "run-1",
-      slackDelivered: true,
-      status: "succeeded",
-    });
+describe("handleSlackMention", () => {
+  it("posts Thinking then calls runAgent for any question", async () => {
+    const { mockFetch } = setupMockRepository();
+    (runAgent as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
-    await handleSlackMention(makeSlackPayload("<@BOT> prep me for Acme"));
-
-    expect(runMeetingPrep).toHaveBeenCalledWith(
-      BRAIN_ID,
-      "m-1",
-      expect.objectContaining({ skipIdempotency: true }),
-    );
-  });
-
-  it("responds with no-match message when meeting not found", async () => {
-    const { repo, mockFetch } = setupMockRepository();
-    repo.listNotetakerMeetings.mockResolvedValue([
-      { id: "m-1", title: "Internal standup", startTime: new Date().toISOString(), endTime: new Date().toISOString() },
-    ]);
-
-    await handleSlackMention(makeSlackPayload("<@BOT> prep me for XYZ Corp"));
+    await handleSlackMention(makeSlackPayload("<@BOT> What's on my calendar today?"));
 
     const postCalls = mockFetch.mock.calls.filter(
       (c) => (c[0] as string).includes("chat.postMessage"),
     );
     expect(postCalls.length).toBeGreaterThan(0);
-    const body = JSON.parse(postCalls[postCalls.length - 1][1]?.body as string);
-    expect(body.text).toContain("couldn't match");
+    const thinkingBody = JSON.parse(postCalls[0][1]?.body as string);
+    expect(thinkingBody.text).toContain("Thinking");
+
+    expect(runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brainId: BRAIN_ID,
+        brainName: "Test Brain",
+        question: "What's on my calendar today?",
+      }),
+    );
   });
 
-  it("falls through to Q&A for non-prep mentions", async () => {
+  it("deduplicates events by event_id", async () => {
     setupMockRepository();
-    const { answerBrainQuestion } = await import("@/lib/brain/store");
-    (answerBrainQuestion as ReturnType<typeof vi.fn>).mockResolvedValue({
-      question: "What is the latest deal status?",
-      answer: "The deal is progressing well.",
-      citations: [],
-    });
+    (runAgent as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
-    await handleSlackMention(makeSlackPayload("<@BOT> What is the latest deal status?"));
+    const payload = makeSlackPayload("<@BOT> hello", "evt-dedup");
+    await handleSlackMention(payload);
+    await handleSlackMention(payload);
 
-    expect(runMeetingPrep).not.toHaveBeenCalled();
-    expect(answerBrainQuestion).toHaveBeenCalled();
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips empty questions after cleaning mentions", async () => {
+    setupMockRepository();
+    (runAgent as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    await handleSlackMention(makeSlackPayload("<@BOT>"));
+
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it("handles missing brain gracefully", async () => {
+    const { repo, mockFetch } = setupMockRepository();
+    repo.getBrain.mockResolvedValue(null);
+
+    await handleSlackMention(makeSlackPayload("<@BOT> hello"));
+
+    const updateCalls = mockFetch.mock.calls.filter(
+      (c) => (c[0] as string).includes("chat.update"),
+    );
+    expect(updateCalls.length).toBeGreaterThan(0);
+    const body = JSON.parse(updateCalls[0][1]?.body as string);
+    expect(body.text).toContain("couldn't find your brain");
   });
 });

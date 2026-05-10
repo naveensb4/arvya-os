@@ -261,13 +261,18 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       relationships: result.relationships,
     });
 
+    const VALID_LOOP_TYPES = new Set([
+      "follow_up", "intro", "product", "investor", "sales", "marketing",
+      "engineering", "deal", "diligence", "crm", "scheduling", "task",
+      "investor_ask", "customer_ask", "strategic_question", "other",
+    ]);
     const openLoops = await repository.createOpenLoops(
       result.openLoops.map((loop) => ({
         brainId: brain.id,
         sourceItemId: sourceItem.id,
         title: loop.title,
         description: loop.description,
-        loopType: loop.loopType,
+        loopType: VALID_LOOP_TYPES.has(loop.loopType) ? loop.loopType : "other",
         owner: loop.owner,
         status: loop.status,
         priority: loop.priority,
@@ -308,7 +313,12 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
     }
 
     const chunks = chunkText(sourceItem.content);
-    const embeddings = await ai.embed(chunks);
+    let embeddings: number[][] | null = null;
+    try {
+      embeddings = await ai.embed(chunks);
+    } catch (error) {
+      console.warn(`[source-ingestion] embed() failed for ${sourceItem.id}, saving chunks without vectors:`, error instanceof Error ? error.message : error);
+    }
     await repository.createSourceEmbeddings(
       chunks.map((content, index) => ({
         brainId: brain.id,

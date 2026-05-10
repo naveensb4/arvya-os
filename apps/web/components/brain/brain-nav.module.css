@@ -11,9 +11,10 @@
   font-size: 13px;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
   width: 232px;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .brand {
@@ -168,7 +169,7 @@
   gap: 10px;
   padding: 10px 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 4px;
+  margin-top: auto;
 }
 .me .av {
   width: 28px;

@@ -11,7 +11,7 @@ import {
 import {
   handleNotetakerWebhook,
   ingestNotetakerTranscript,
-  runNotetakerCalendarSync,
+  runCalendarPipeline,
 } from "@/lib/notetaker/runtime";
 import { runDeadlineNudgerForAllBrains } from "@/lib/slack-bot/nudge";
 import { inngest } from "../client";
@@ -62,9 +62,9 @@ export const weeklyLearningMemo = inngest.createFunction(
 );
 
 export const notetakerCalendarSync = inngest.createFunction(
-  { id: "notetaker-calendar-sync", name: "Notetaker calendar sync", triggers: [{ cron: "*/10 * * * *" }] },
+  { id: "notetaker-calendar-sync", name: "Notetaker calendar sync", triggers: [{ cron: "*/3 * * * *" }] },
   async ({ step }) => {
-    return step.run("sync notetaker calendars", () => runNotetakerCalendarSync());
+    return step.run("sync notetaker calendars", () => runCalendarPipeline());
   },
 );
 

@@ -11,6 +11,12 @@ const PUBLIC_API_PATHS = [
   "/api/connectors/google-drive/auth/callback",
 ];
 
+function getOrigin(request: NextRequest): string {
+  const host = request.headers.get("host") || "localhost:3000";
+  const proto = request.headers.get("x-forwarded-proto") || "http";
+  return `${proto}://${host}`;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -66,13 +72,14 @@ export async function middleware(request: NextRequest) {
         !PUBLIC_API_PATHS.some((p) => pathname.startsWith(p))));
 
   if (!user && isProtected) {
-    const loginUrl = new URL("/login", request.url);
+    const origin = getOrigin(request);
+    const loginUrl = new URL("/login", origin);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (user && (pathname === "/login" || pathname === "/signup")) {
-    return NextResponse.redirect(new URL("/onboarding", request.url));
+    return NextResponse.redirect(new URL("/onboarding", getOrigin(request)));
   }
 
   return response;

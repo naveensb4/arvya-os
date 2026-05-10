@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type {
   AgentRun,
   Brain,
+  BrainDoc,
   MemoryObject,
   OpenLoop,
   Priority,
@@ -21,6 +22,7 @@ import type {
   CreateAgentRunData,
   CreateBrainAlertData,
   CreateBrainData,
+  CreateBrainDocData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
   CreateMemoryObjectData,
@@ -37,10 +39,13 @@ import type {
   CreateWorkspaceData,
   CreateWorkspaceMemberData,
   ListPrioritiesOptions,
+  CalendarEvent,
   NotetakerCalendar,
   NotetakerEvent,
   NotetakerMeeting,
+  ListBrainDocsOptions,
   UpdateAgentRunData,
+  UpdateBrainDocFeedbackData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
   UpdateMemoryObjectData,
@@ -211,6 +216,7 @@ type InMemoryState = {
   workflows: Workflow[];
   embeddings: SourceEmbedding[];
   agentRuns: AgentRun[];
+  brainDocs: BrainDoc[];
   priorities: Priority[];
   connectorConfigs: ConnectorConfig[];
   connectorSyncRuns: ConnectorSyncRun[];
@@ -269,6 +275,7 @@ function createSeedState(): InMemoryState {
     workflows: clone(seedWorkflows),
     embeddings: clone(seedEmbeddings),
     agentRuns: clone(seedAgentRuns),
+    brainDocs: [],
     priorities: clone(seedPriorities),
     connectorConfigs: clone(seedConnectorConfigs),
     connectorSyncRuns: clone(seedConnectorSyncRuns),
@@ -692,6 +699,55 @@ export class InMemoryRepository implements BrainRepository {
     return clone(run);
   }
 
+  async createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc> {
+    const doc: BrainDoc = {
+      id: nanoid(),
+      brainId: input.brainId,
+      docType: input.docType,
+      title: input.title,
+      content: input.content,
+      contentText: input.contentText,
+      feedback: null,
+      agentRunId: input.agentRunId,
+      externalEventId: input.externalEventId,
+      meetingId: input.meetingId,
+      metadata: input.metadata,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().brainDocs.unshift(doc);
+    return clone(doc);
+  }
+
+  async getBrainDoc(docId: string): Promise<BrainDoc | null> {
+    const doc = loadState().brainDocs.find((d) => d.id === docId);
+    return doc ? clone(doc) : null;
+  }
+
+  async listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]> {
+    let docs = loadState().brainDocs.filter((d) => d.brainId === brainId);
+    if (opts?.meetingId) docs = docs.filter((d) => d.meetingId === opts.meetingId);
+    if (opts?.docType) docs = docs.filter((d) => d.docType === opts.docType);
+    return clone(docs.slice(0, opts?.limit ?? 50));
+  }
+
+  async updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null> {
+    const doc = loadState().brainDocs.find((d) => d.id === docId);
+    if (!doc) return null;
+    doc.feedback = update.feedback;
+    doc.feedbackAt = now();
+    doc.updatedAt = now();
+    return clone(doc);
+  }
+
+  async listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]> {
+    if (meetingIds.length === 0) return [];
+    const set = new Set(meetingIds);
+    return clone(
+      loadState().brainDocs.filter((d) => d.brainId === brainId && d.meetingId && set.has(d.meetingId)),
+    );
+  }
+
   async listPriorities(brainId: string, opts: ListPrioritiesOptions = {}): Promise<Priority[]> {
     const statuses = opts.status
       ? Array.isArray(opts.status)
@@ -907,9 +963,9 @@ export class InMemoryRepository implements BrainRepository {
     return state.notetakerCalendars.length !== before;
   }
 
-  async listNotetakerMeetings(
-    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
-  ): Promise<NotetakerMeeting[]> {
+  async listCalendarEvents(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: string } = {},
+  ): Promise<CalendarEvent[]> {
     const from = input.from ? new Date(input.from).getTime() : Number.NEGATIVE_INFINITY;
     const to = input.to ? new Date(input.to).getTime() : Number.POSITIVE_INFINITY;
     return clone(
@@ -919,6 +975,7 @@ export class InMemoryRepository implements BrainRepository {
           if (input.brainId && meeting.brainId !== input.brainId) return false;
           if (input.calendarId && meeting.notetakerCalendarId !== input.calendarId) return false;
           if (start < from || start > to) return false;
+          if (input.eventStatus && meeting.eventStatus !== input.eventStatus) return false;
           return true;
         })
         .sort((a, b) => a.startTime.localeCompare(b.startTime))
@@ -926,8 +983,14 @@ export class InMemoryRepository implements BrainRepository {
     );
   }
 
-  async createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<NotetakerMeeting> {
-    const meeting: NotetakerMeeting = {
+  async listNotetakerMeetings(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  ): Promise<CalendarEvent[]> {
+    return this.listCalendarEvents(input);
+  }
+
+  async createCalendarEvent(input: CreateNotetakerMeetingData): Promise<CalendarEvent> {
+    const meeting: CalendarEvent = {
       id: nanoid(),
       brainId: input.brainId,
       notetakerCalendarId: input.notetakerCalendarId ?? null,
@@ -937,12 +1000,15 @@ export class InMemoryRepository implements BrainRepository {
       provider: input.provider,
       title: input.title,
       meetingUrl: input.meetingUrl ?? null,
+      location: input.location ?? null,
       startTime: input.startTime,
       endTime: input.endTime,
       participants: input.participants ?? [],
       autoJoinDecision: input.autoJoinDecision ?? "needs_review",
       autoJoinReason: input.autoJoinReason ?? null,
       botStatus: input.botStatus ?? "not_scheduled",
+      eventStatus: input.eventStatus ?? "active",
+      eventType: input.eventType ?? "unknown",
       sourceItemId: input.sourceItemId ?? null,
       metadata: input.metadata ?? {},
       createdAt: now(),
@@ -952,14 +1018,25 @@ export class InMemoryRepository implements BrainRepository {
     return clone(meeting);
   }
 
-  async updateNotetakerMeeting(
-    meetingId: string,
+  async createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<CalendarEvent> {
+    return this.createCalendarEvent(input);
+  }
+
+  async updateCalendarEvent(
+    eventId: string,
     update: UpdateNotetakerMeetingData,
-  ): Promise<NotetakerMeeting | null> {
-    const meeting = loadState().notetakerMeetings.find((item) => item.id === meetingId);
+  ): Promise<CalendarEvent | null> {
+    const meeting = loadState().notetakerMeetings.find((item) => item.id === eventId);
     if (!meeting) return null;
     Object.assign(meeting, update, { updatedAt: now() });
     return clone(meeting);
+  }
+
+  async updateNotetakerMeeting(
+    meetingId: string,
+    update: UpdateNotetakerMeetingData,
+  ): Promise<CalendarEvent | null> {
+    return this.updateCalendarEvent(meetingId, update);
   }
 
   async listNotetakerEvents(

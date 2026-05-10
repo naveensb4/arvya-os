@@ -192,6 +192,19 @@ export const notetakerBotStatusEnum = pgEnum("notetaker_bot_status", [
   "canceled",
 ]);
 
+export const calendarEventStatusEnum = pgEnum("calendar_event_status", [
+  "active",
+  "cancelled",
+  "deleted",
+]);
+
+export const calendarEventTypeEnum = pgEnum("calendar_event_type", [
+  "virtual",
+  "in_person",
+  "hybrid",
+  "unknown",
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
@@ -567,6 +580,38 @@ export const agentRuns = pgTable(
   ],
 );
 
+export const brainDocs = pgTable(
+  "brain_docs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    docType: text("doc_type").notNull(),
+    title: text("title").notNull(),
+    content: jsonb("content").notNull(),
+    contentText: text("content_text"),
+    feedback: text("feedback"),
+    feedbackAt: timestamp("feedback_at", { withTimezone: true }),
+    agentRunId: uuid("agent_run_id").references(() => agentRuns.id, {
+      onDelete: "set null",
+    }),
+    externalEventId: text("external_event_id"),
+    meetingId: uuid("meeting_id").references(() => notetakerMeetings.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_brain_docs_meeting").on(table.brainId, table.meetingId),
+    index("idx_brain_docs_type").on(table.brainId, table.docType),
+    index("idx_brain_docs_ext_event").on(table.brainId, table.externalEventId),
+    index("idx_brain_docs_agent_run").on(table.agentRunId),
+  ],
+);
+
 export const connectorConfigs = pgTable(
   "connector_configs",
   {
@@ -669,7 +714,7 @@ export const notetakerCalendars = pgTable(
   ],
 );
 
-export const notetakerMeetings = pgTable(
+export const calendarEvents = pgTable(
   "notetaker_meetings",
   {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -685,12 +730,15 @@ export const notetakerMeetings = pgTable(
     provider: notetakerProviderEnum("provider").notNull(),
     title: text("title").notNull(),
     meetingUrl: text("meeting_url"),
+    location: text("location"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),
     endTime: timestamp("end_time", { withTimezone: true }).notNull(),
     participants: jsonb("participants").notNull().default([]),
     autoJoinDecision: notetakerAutoJoinDecisionEnum("auto_join_decision").notNull().default("needs_review"),
     autoJoinReason: text("auto_join_reason"),
     botStatus: notetakerBotStatusEnum("bot_status").notNull().default("not_scheduled"),
+    eventStatus: calendarEventStatusEnum("event_status").notNull().default("active"),
+    eventType: calendarEventTypeEnum("event_type").notNull().default("unknown"),
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -704,8 +752,10 @@ export const notetakerMeetings = pgTable(
     index("notetaker_meetings_external_event_id_idx").on(table.externalEventId),
     index("notetaker_meetings_start_time_idx").on(table.startTime),
     index("notetaker_meetings_source_item_id_idx").on(table.sourceItemId),
+    index("notetaker_meetings_event_status_idx").on(table.eventStatus),
   ],
 );
+export const notetakerMeetings = calendarEvents;
 
 export const notetakerEvents = pgTable(
   "notetaker_events",
@@ -1065,8 +1115,10 @@ export type BrainAlertRow = typeof brainAlerts.$inferSelect;
 export type NewBrainAlertRow = typeof brainAlerts.$inferInsert;
 export type NotetakerCalendarRow = typeof notetakerCalendars.$inferSelect;
 export type NewNotetakerCalendarRow = typeof notetakerCalendars.$inferInsert;
-export type NotetakerMeetingRow = typeof notetakerMeetings.$inferSelect;
-export type NewNotetakerMeetingRow = typeof notetakerMeetings.$inferInsert;
+export type CalendarEventRow = typeof calendarEvents.$inferSelect;
+export type NewCalendarEventRow = typeof calendarEvents.$inferInsert;
+export type NotetakerMeetingRow = CalendarEventRow;
+export type NewNotetakerMeetingRow = NewCalendarEventRow;
 export type NotetakerEventRow = typeof notetakerEvents.$inferSelect;
 export type NewNotetakerEventRow = typeof notetakerEvents.$inferInsert;
 export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
@@ -1090,6 +1142,8 @@ export type NewSkillRow = typeof skills.$inferInsert;
 export type SkillExecutionRow = typeof skillExecutions.$inferSelect;
 export type NewSkillExecutionRow = typeof skillExecutions.$inferInsert;
 
+export type BrainDocRow = typeof brainDocs.$inferSelect;
+export type NewBrainDocRow = typeof brainDocs.$inferInsert;
 export type BrainEventRow = typeof brainEvents.$inferSelect;
 export type NewBrainEventRow = typeof brainEvents.$inferInsert;
 export type EntityPageRow = typeof entityPages.$inferSelect;

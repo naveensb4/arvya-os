@@ -3,6 +3,11 @@ import type { BrainRepository, CreateMemoryObjectData, CreateRelationshipData, U
 import { applyResolverDecision, resolveEntityForIngestion } from "./entity-resolver";
 
 const ENTITY_TYPES = new Set(["person", "company"]);
+const VALID_MEMORY_KINDS = new Set([
+  "person", "company", "fact", "event", "decision", "insight", "risk",
+  "question", "commitment", "task", "product_insight", "marketing_idea",
+  "outcome", "investor_feedback", "customer_feedback", "advisor_feedback", "custom",
+]);
 const COMPANY_SUFFIXES = /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|technologies|technology|labs|systems)\b\.?$/i;
 const PERSON_PREFIXES = /^(mr|mrs|ms|dr|prof)\.?\s+/i;
 const MAX_DESCRIPTION_LENGTH = 1200;
@@ -207,7 +212,10 @@ export async function mergeMemoryObjectsForIngestion(input: {
     input.repository.mode === "supabase";
 
   const saved: MemoryObject[] = [];
-  for (const memory of input.memoryObjects) {
+  for (const rawMemory of input.memoryObjects) {
+    const memory = VALID_MEMORY_KINDS.has(rawMemory.objectType)
+      ? rawMemory
+      : { ...rawMemory, objectType: "custom" };
     if (!shouldDedupeMemory(memory)) {
       const [created] = await input.repository.createMemoryObjects([
         buildCanonicalMemory({ brainId: input.brainId, sourceItemId: input.sourceItemId, memory }),

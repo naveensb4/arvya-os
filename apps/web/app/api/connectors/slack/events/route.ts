@@ -34,7 +34,14 @@ export async function POST(req: NextRequest) {
     const eventType = payload.event?.type;
 
     if (eventType === "app_mention" || (eventType === "message" && payload.event?.channel_type === "im")) {
-      if (payload.event?.bot_id) {
+      const subtype = payload.event?.subtype;
+      if (subtype === "message_changed" || subtype === "message_deleted" || subtype === "bot_message") {
+        return NextResponse.json({ ok: true });
+      }
+      if (payload.event?.bot_id || payload.event?.message?.bot_id) {
+        return NextResponse.json({ ok: true });
+      }
+      if (!payload.event?.text) {
         return NextResponse.json({ ok: true });
       }
       handleSlackMention(payload).catch((err) =>

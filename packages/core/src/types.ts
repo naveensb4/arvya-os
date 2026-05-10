@@ -441,6 +441,26 @@ export interface AiClient {
   embed(texts: string[]): Promise<number[][] | null>;
 }
 
+export type BrainDocType = "meeting_prep" | "transcript" | "summary" | "action_items";
+export type BrainDocFeedback = "useful" | "not_useful";
+
+export type BrainDoc = {
+  id: string;
+  brainId: string;
+  docType: BrainDocType;
+  title: string;
+  content: Record<string, unknown>;
+  contentText?: string;
+  feedback?: BrainDocFeedback | null;
+  feedbackAt?: string;
+  agentRunId?: string;
+  externalEventId?: string;
+  meetingId?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type Source = SourceItem;
 export type MemoryKind = MemoryObjectType;
 export type MemoryStatus = MemoryObjectStatus;

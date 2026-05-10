@@ -104,21 +104,98 @@ export function AskChat({
 }) {
   const search = useSearchParams();
   const initialQ = search.get("q") ?? "";
+  const mode = search.get("mode");
+  const meetingIdParam = search.get("meetingId");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeChip, setActiveChip] = useState("all");
+  const [prepRedirect, setPrepRedirect] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
-  // Guard against React 19 strict-mode double-mount in dev: useEffect with
-  // [] still fires twice, which used to submit the URL ?q= question twice.
   const initialSubmittedRef = useRef(false);
 
   useEffect(() => {
     if (initialSubmittedRef.current) return;
     initialSubmittedRef.current = true;
-    if (initialQ) submit(initialQ);
+    if (mode === "meeting-prep" && meetingIdParam) {
+      triggerMeetingPrep(meetingIdParam);
+    } else if (initialQ) {
+      submit(initialQ);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function triggerMeetingPrep(meetingId: string) {
+    setBusy(true);
+    const id = Date.now();
+    const turn: Turn = {
+      id,
+      user: "Preparing meeting brief...",
+      phase: "thinking",
+      tools: [],
+      answer: "",
+      answerChars: 0,
+      citations: [],
+    };
+    setTurns([turn]);
+
+    await wait(300);
+    setTurns((ts) =>
+      ts.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              phase: "running_tools",
+              tools: [
+                { tool: { name: "retrieve_context", arg: "brain memory + sources" }, state: "run" as const },
+                { tool: { name: "meeting_prep", arg: "generate brief" }, state: "run" as const },
+              ],
+            }
+          : t,
+      ),
+    );
+
+    try {
+      const r = await fetch(`/api/brains/${brainId}/meetings/${meetingId}/prep`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        throw new Error((data as { error?: string }).error ?? `Prep failed (HTTP ${r.status})`);
+      }
+      setTurns((ts) =>
+        ts.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                phase: "done",
+                tools: t.tools.map((row) => ({ ...row, state: "ok" as const })),
+                answer: "Meeting prep generated. Redirecting to your prep doc...",
+                answerChars: 999,
+              }
+            : t,
+        ),
+      );
+      setPrepRedirect(`/brains/${brainId}/meetings/${meetingId}/prep`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Prep generation failed";
+      setTurns((ts) =>
+        ts.map((t) =>
+          t.id === id ? { ...t, phase: "error", errorMessage: msg } : t,
+        ),
+      );
+    }
+    setBusy(false);
+  }
+
+  useEffect(() => {
+    if (prepRedirect) {
+      const timer = setTimeout(() => {
+        window.location.href = prepRedirect;
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [prepRedirect]);
 
   function autoscroll() {
     const el = streamRef.current;

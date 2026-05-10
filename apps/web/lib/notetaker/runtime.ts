@@ -11,7 +11,7 @@ import {
   sourceMatchesFingerprint,
 } from "@/lib/workflows/source-normalization";
 import { getOneDriveConfigForBrain, ensureTranscriptFolder, uploadTranscript } from "@/lib/connectors/onedrive";
-import { listProviderCalendarEvents, MEETING_URL_PATTERN } from "./calendar-providers";
+import { listProviderCalendarEvents, MEETING_URL_PATTERN, type CalendarSyncResult } from "./calendar-providers";
 
 export function notetakerCalendarHasCredentials(calendar: NotetakerCalendar) {
   const creds = calendar.config?.credentials;
@@ -123,12 +123,14 @@ export type NotetakerCalendarEvent = {
   title: string;
   description?: string;
   meetingUrl?: string;
+  location?: string;
   startTime: string;
   endTime: string;
   participants?: unknown[];
   isCanceled?: boolean;
   isAllDay?: boolean;
   isPrivate?: boolean;
+  eventType?: "virtual" | "in_person" | "hybrid" | "unknown";
   recallCalendarEventId?: string;
   metadata?: Record<string, unknown>;
 };
@@ -140,8 +142,9 @@ export type RecallScheduleResult = {
 };
 
 export type RecallClient = {
-  listCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]>;
+  listCalendarEvents(calendar: NotetakerCalendar): Promise<CalendarSyncResult>;
   scheduleBot(input: { meeting: NotetakerMeeting; joinAt: string }): Promise<RecallScheduleResult>;
+  cancelBot(botId: string): Promise<void>;
   fetchTranscript(input: { botId?: string | null; transcriptId?: string | null; payload?: Record<string, unknown> }): Promise<TranscriptPayload>;
 };
 
@@ -334,13 +337,13 @@ class RecallApiClient implements RecallClient {
     return json;
   }
 
-  async listCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
+  async listCalendarEvents(calendar: NotetakerCalendar): Promise<CalendarSyncResult> {
     if (!calendar.recallCalendarId) return listProviderCalendarEvents(calendar);
     const json = await this.request<{ results?: unknown[]; calendar_events?: unknown[] }>(
       `/calendar-events?calendar_id=${encodeURIComponent(calendar.recallCalendarId)}`,
     );
     const events = json.results ?? json.calendar_events ?? [];
-    return events.flatMap((item) => normalizeRecallCalendarEvent(item));
+    return { events: events.flatMap((item) => normalizeRecallCalendarEvent(item)) };
   }
 
   async scheduleBot(input: { meeting: NotetakerMeeting; joinAt: string }): Promise<RecallScheduleResult> {
@@ -371,6 +374,10 @@ class RecallApiClient implements RecallClient {
       status: "scheduled",
       metadata: { recallScheduleResponse: json },
     };
+  }
+
+  async cancelBot(botId: string): Promise<void> {
+    await this.request(`/bot/${encodeURIComponent(botId)}`, { method: "DELETE" });
   }
 
   async fetchTranscript(input: { botId?: string | null; transcriptId?: string | null; payload?: Record<string, unknown> }) {
@@ -455,9 +462,10 @@ function flattenRecallTranscriptDownload(payload: RecallTranscriptDownload) {
 }
 
 export class MockRecallClient implements RecallClient {
-  async listCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
+  async listCalendarEvents(calendar: NotetakerCalendar): Promise<CalendarSyncResult> {
     const configured = calendar.config.mockEvents;
-    return Array.isArray(configured) ? configured.map((event) => normalizeConfiguredEvent(event)).filter(Boolean) : [];
+    const events = Array.isArray(configured) ? configured.map((event) => normalizeConfiguredEvent(event)).filter(Boolean) : [];
+    return { events };
   }
 
   async scheduleBot(input: { meeting: NotetakerMeeting; joinAt: string }): Promise<RecallScheduleResult> {
@@ -467,6 +475,8 @@ export class MockRecallClient implements RecallClient {
       metadata: { mockScheduledAt: nowIso(), joinAt: input.joinAt },
     };
   }
+
+  async cancelBot(_botId: string): Promise<void> {}
 
   async fetchTranscript(input: { botId?: string | null; transcriptId?: string | null; payload?: Record<string, unknown> }) {
     const inline = transcriptFromPayload(input.payload ?? {});
@@ -611,7 +621,206 @@ async function findBrainAndMeetingForEvent(input: {
   throw new Error("Recall webhook could not be mapped to a Brain. Include brain_id in the bot metadata or schedule the meeting first.");
 }
 
-export async function runNotetakerCalendarSync(options: { brainId?: string; client?: RecallClient } = {}) {
+async function cancelBotIfScheduled(meeting: NotetakerMeeting, client: RecallClient, repository: BrainRepository) {
+  if (meeting.recallBotId && meetingHasActiveBot(meeting)) {
+    try {
+      await client.cancelBot(meeting.recallBotId);
+    } catch (e) {
+      console.warn(`[calendar] failed to cancel bot ${meeting.recallBotId}:`, e);
+    }
+    await repository.updateCalendarEvent(meeting.id, {
+      botStatus: "canceled",
+      autoJoinReason: "event_cancelled_or_deleted",
+    });
+  }
+}
+
+export async function syncCalendarEvents(
+  calendar: NotetakerCalendar,
+  client: RecallClient,
+  repository?: BrainRepository,
+) {
+  const repo = repository ?? getRepository();
+  let synced = 0;
+  let cancelled = 0;
+  let deleted = 0;
+
+  const syncResult = await client.listCalendarEvents(calendar);
+  const events = syncResult.events.filter((event) => isWithinLookahead(event));
+
+  if (syncResult.nextSyncToken) {
+    await repo.updateNotetakerCalendar(calendar.id, {
+      config: { ...calendar.config, calendar_sync_token: syncResult.nextSyncToken },
+    });
+  }
+
+  const existingEvents = await repo.listCalendarEvents({ brainId: calendar.brainId, calendarId: calendar.id, limit: 500 });
+  const syncedExternalIds = new Set<string>();
+
+  for (const event of events) {
+    const existing = existingEvents.find((e) =>
+      (e.notetakerCalendarId === calendar.id && e.externalEventId === event.id) ||
+      (event.recallCalendarEventId && e.recallCalendarEventId === event.recallCalendarEventId)
+    );
+
+    if (event.isCanceled) {
+      if (existing && existing.eventStatus !== "cancelled") {
+        await repo.updateCalendarEvent(existing.id, { eventStatus: "cancelled" });
+        await cancelBotIfScheduled(existing, client, repo);
+        cancelled += 1;
+      }
+      syncedExternalIds.add(event.id);
+      continue;
+    }
+
+    const meetingUrl = extractMeetingUrl({
+      title: event.title,
+      description: event.description,
+      meetingUrl: event.meetingUrl,
+    });
+
+    const baseEvent = {
+      brainId: calendar.brainId,
+      notetakerCalendarId: calendar.id,
+      recallCalendarEventId: event.recallCalendarEventId ?? null,
+      externalEventId: event.id,
+      provider: calendar.provider,
+      title: event.title,
+      meetingUrl: meetingUrl ?? event.meetingUrl ?? null,
+      location: event.location ?? null,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      participants: event.participants ?? [],
+      eventStatus: "active" as const,
+      eventType: event.eventType ?? "unknown" as const,
+      metadata: {
+        ...(event.metadata ?? {}),
+        calendar_provider: calendar.provider,
+        notetaker_synced_at: nowIso(),
+      },
+    };
+
+    if (existing) {
+      await repo.updateCalendarEvent(existing.id, baseEvent);
+    } else {
+      await repo.createCalendarEvent(baseEvent);
+    }
+    syncedExternalIds.add(event.id);
+    synced += 1;
+  }
+
+  // Mark events in DB that weren't in the provider response as deleted (full sync only)
+  const isFullSync = !syncResult.nextSyncToken || !calendar.config?.calendar_sync_token;
+  if (isFullSync) {
+    const now = Date.now();
+    for (const existing of existingEvents) {
+      if (existing.eventStatus !== "active") continue;
+      if (existing.externalEventId && syncedExternalIds.has(existing.externalEventId)) continue;
+      const startMs = new Date(existing.startTime).getTime();
+      if (startMs > now + NOTETAKER_LOOKAHEAD_MS) continue;
+      if (startMs < now - 24 * 60 * 60 * 1000) continue;
+      await repo.updateCalendarEvent(existing.id, { eventStatus: "deleted" });
+      await cancelBotIfScheduled(existing, client, repo);
+      deleted += 1;
+    }
+  }
+
+  return { synced, cancelled, deleted };
+}
+
+export async function evaluateBotScheduling(
+  brainId: string,
+  client: RecallClient,
+  repository?: BrainRepository,
+) {
+  const repo = repository ?? getRepository();
+  let scheduled = 0;
+  let skipped = 0;
+
+  const calendars = (await repo.listNotetakerCalendars({ brainId, status: "connected" }))
+    .filter((c) => c.autoJoinEnabled && c.status !== "disabled");
+  const calendarById = new Map(calendars.map((c) => [c.id, c]));
+
+  const activeEvents = await repo.listCalendarEvents({ brainId, eventStatus: "active", limit: 500 });
+  const now = Date.now();
+  const upcoming = activeEvents.filter((e) => {
+    const startMs = new Date(e.startTime).getTime();
+    return startMs <= now + NOTETAKER_LOOKAHEAD_MS && new Date(e.endTime).getTime() > now;
+  });
+
+  for (const event of upcoming) {
+    const calendar = event.notetakerCalendarId ? calendarById.get(event.notetakerCalendarId) : undefined;
+    if (!calendar) {
+      skipped += 1;
+      continue;
+    }
+
+    const decision = shouldJoinMeeting(
+      {
+        id: event.externalEventId ?? event.id,
+        title: event.title,
+        description: (event.metadata?.description as string) ?? undefined,
+        meetingUrl: event.meetingUrl ?? undefined,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        participants: event.participants,
+        isCanceled: event.eventStatus === "cancelled",
+        isAllDay: Boolean(event.metadata?.isAllDay),
+        isPrivate: Boolean(event.metadata?.isPrivate),
+      },
+      { autoJoinEnabled: calendar.autoJoinEnabled, autoJoinMode: calendar.autoJoinMode },
+    );
+
+    if (event.autoJoinDecision !== decision.decision || event.autoJoinReason !== decision.reason) {
+      await repo.updateCalendarEvent(event.id, {
+        autoJoinDecision: decision.decision,
+        autoJoinReason: decision.reason,
+      });
+    }
+
+    if (decision.decision !== "join") {
+      skipped += 1;
+      continue;
+    }
+    if (event.recallBotId || event.botStatus === "scheduled") {
+      skipped += 1;
+      continue;
+    }
+
+    const eventUrl = decision.meetingUrl ?? event.meetingUrl;
+    if (eventUrl) {
+      const normalizedUrl = normalizeMeetingUrl(eventUrl);
+      const eventStart = new Date(event.startTime).getTime();
+      const dupeMeeting = upcoming.find((other) => {
+        if (other.id === event.id) return false;
+        if (!other.meetingUrl || !meetingHasActiveBot(other)) return false;
+        const otherStart = new Date(other.startTime).getTime();
+        if (Math.abs(eventStart - otherStart) > DEDUP_WINDOW_MS) return false;
+        return normalizeMeetingUrl(other.meetingUrl) === normalizedUrl;
+      });
+      if (dupeMeeting) {
+        await repo.updateCalendarEvent(event.id, {
+          botStatus: "not_scheduled",
+          autoJoinReason: `dedup: bot already scheduled via meeting ${dupeMeeting.id}`,
+        });
+        skipped += 1;
+        continue;
+      }
+    }
+
+    const bot = await client.scheduleBot({ meeting: event, joinAt: joinAtForMeeting(event) });
+    await repo.updateCalendarEvent(event.id, {
+      recallBotId: bot.botId,
+      botStatus: bot.status ?? "scheduled",
+      metadata: { ...event.metadata, ...(bot.metadata ?? {}) },
+    });
+    scheduled += 1;
+  }
+
+  return { scheduled, skipped };
+}
+
+export async function runCalendarPipeline(options: { brainId?: string; client?: RecallClient } = {}) {
   const repository = getRepository();
   const client = getRecallClient(options);
   await ensureCalendarFromOutlookConnector({ brainId: options.brainId });
@@ -620,115 +829,54 @@ export async function runNotetakerCalendarSync(options: { brainId?: string; clie
   const summaries = [];
 
   for (const calendar of calendars) {
-    let itemsFound = 0;
-    let scheduled = 0;
-    let skipped = 0;
     if (!calendar.recallCalendarId && !notetakerCalendarHasCredentials(calendar)) {
       summaries.push({
         calendarId: calendar.id,
         status: "skipped",
-        itemsFound,
-        scheduled,
-        skipped,
+        synced: 0, cancelled: 0, deleted: 0, scheduled: 0, skipped: 0,
         reason: "oauth_not_completed",
       });
       continue;
     }
     try {
-      const events = (await client.listCalendarEvents(calendar)).filter((event) => isWithinLookahead(event));
-      itemsFound = events.length;
-      const brainMeetings = await repository.listNotetakerMeetings({ brainId: calendar.brainId, limit: 500 });
-
-      for (const event of events) {
-        const decision = shouldJoinMeeting(event, {
-          autoJoinEnabled: calendar.autoJoinEnabled,
-          autoJoinMode: calendar.autoJoinMode,
-        });
-        const existing = brainMeetings.find((meeting) =>
-          (meeting.notetakerCalendarId === calendar.id && meeting.externalEventId === event.id) ||
-          (event.recallCalendarEventId && meeting.recallCalendarEventId === event.recallCalendarEventId)
-        );
-        const baseMeeting = {
-          brainId: calendar.brainId,
-          notetakerCalendarId: calendar.id,
-          recallCalendarEventId: event.recallCalendarEventId ?? null,
-          externalEventId: event.id,
-          provider: calendar.provider,
-          title: event.title,
-          meetingUrl: decision.meetingUrl ?? event.meetingUrl ?? null,
-          startTime: event.startTime,
-          endTime: event.endTime,
-          participants: event.participants ?? [],
-          autoJoinDecision: decision.decision,
-          autoJoinReason: decision.reason,
-          metadata: {
-            ...(event.metadata ?? {}),
-            calendar_provider: calendar.provider,
-            notetaker_synced_at: nowIso(),
-          },
-        };
-        const meeting = existing
-          ? await repository.updateNotetakerMeeting(existing.id, baseMeeting)
-          : await repository.createNotetakerMeeting(baseMeeting);
-        if (!meeting) continue;
-
-        if (decision.decision !== "join") {
-          skipped += 1;
-          continue;
-        }
-        if (meeting.recallBotId || meeting.botStatus === "scheduled") {
-          skipped += 1;
-          continue;
-        }
-
-        const eventUrl = decision.meetingUrl ?? event.meetingUrl;
-        if (eventUrl) {
-          const normalizedUrl = normalizeMeetingUrl(eventUrl);
-          const eventStart = new Date(event.startTime).getTime();
-          const dupeMeeting = brainMeetings.find((other) => {
-            if (other.id === meeting.id) return false;
-            if (!other.meetingUrl || !meetingHasActiveBot(other)) return false;
-            const otherStart = new Date(other.startTime).getTime();
-            if (Math.abs(eventStart - otherStart) > DEDUP_WINDOW_MS) return false;
-            return normalizeMeetingUrl(other.meetingUrl) === normalizedUrl;
-          });
-          if (dupeMeeting) {
-            await repository.updateNotetakerMeeting(meeting.id, {
-              botStatus: "not_scheduled",
-              autoJoinReason: `dedup: bot already scheduled via meeting ${dupeMeeting.id}`,
-            });
-            skipped += 1;
-            continue;
-          }
-        }
-
-        const bot = await client.scheduleBot({ meeting, joinAt: joinAtForMeeting(meeting) });
-        await repository.updateNotetakerMeeting(meeting.id, {
-          recallBotId: bot.botId,
-          botStatus: bot.status ?? "scheduled",
-          metadata: { ...meeting.metadata, ...(bot.metadata ?? {}) },
-        });
-        brainMeetings.push(meeting);
-        scheduled += 1;
-      }
-
+      const syncResult = await syncCalendarEvents(calendar, client, repository);
       await repository.updateNotetakerCalendar(calendar.id, {
         lastSyncAt: nowIso(),
         lastError: null,
       });
-      summaries.push({ calendarId: calendar.id, status: "completed", itemsFound, scheduled, skipped });
+      summaries.push({ calendarId: calendar.id, status: "synced", ...syncResult, scheduled: 0, skipped: 0 });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown notetaker calendar sync error";
+      const message = error instanceof Error ? error.message : "Unknown calendar sync error";
       await repository.updateNotetakerCalendar(calendar.id, {
         status: "error",
         lastSyncAt: nowIso(),
         lastError: message,
       });
-      summaries.push({ calendarId: calendar.id, status: "failed", itemsFound, scheduled, skipped, error: message });
+      summaries.push({ calendarId: calendar.id, status: "failed", synced: 0, cancelled: 0, deleted: 0, scheduled: 0, skipped: 0, error: message });
+    }
+  }
+
+  // Phase 2: evaluate bot scheduling per brain
+  const brainIds = [...new Set(calendars.map((c) => c.brainId))];
+  for (const brainId of brainIds) {
+    try {
+      const botResult = await evaluateBotScheduling(brainId, client, repository);
+      for (const s of summaries) {
+        if (calendars.find((c) => c.id === s.calendarId && c.brainId === brainId)) {
+          s.scheduled += botResult.scheduled;
+          s.skipped += botResult.skipped;
+        }
+      }
+    } catch (error) {
+      console.error(`[calendar] bot scheduling failed for brain ${brainId}:`, error);
     }
   }
 
   return summaries;
+}
+
+export async function runNotetakerCalendarSync(options: { brainId?: string; client?: RecallClient } = {}) {
+  return runCalendarPipeline(options);
 }
 
 export async function scheduleNotetakerBotForMeeting(input: {

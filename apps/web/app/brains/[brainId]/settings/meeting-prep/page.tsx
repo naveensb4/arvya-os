@@ -13,12 +13,11 @@ export default async function MeetingPrepSettingsPage({ params }: PageProps) {
   if (!brain) redirect("/onboarding");
 
   const config = (brain.metadata ?? {}) as Record<string, unknown>;
-  const runs = await repository.listAgentRuns(brainId, 200);
-  const prepRuns = runs.filter((r) => r.name === "meeting_prep");
-  const thisMonthRuns = prepRuns.filter((r) => {
-    const d = new Date(r.startedAt);
+  const prepDocs = await repository.listBrainDocs(brainId, { docType: "meeting_prep" });
+  const thisMonthDocs = prepDocs.filter((d) => {
+    const date = new Date(d.createdAt);
     const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
   });
 
   return (
@@ -29,7 +28,7 @@ export default async function MeetingPrepSettingsPage({ params }: PageProps) {
       linkedinEnabled={config.linkedin_enrichment_enabled === true}
       webSearchEnabled={config.web_search_enabled !== false}
       timezone={(config.timezone as string) ?? "America/Los_Angeles"}
-      prepCountThisMonth={thisMonthRuns.length}
+      prepCountThisMonth={thisMonthDocs.length}
     />
   );
 }
