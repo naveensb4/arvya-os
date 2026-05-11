@@ -414,6 +414,190 @@ export const followUpDraftAnswerSchema = z.object({
     .max(8),
 });
 
+export const marketingSourcePlatformSchema = z.enum([
+  "google_drive",
+  "manual",
+  "slack",
+  "gmail",
+  "outlook",
+  "voice",
+  "blog",
+]);
+
+export const marketingSourceTypeSchema = z.enum([
+  "google_drive_transcript",
+  "manual_note",
+  "voice_note",
+  "slack_thread",
+  "gmail_email",
+  "outlook_email",
+  "blog",
+  "demo_form",
+  "investor_question",
+  "customer_objection",
+  "product_update",
+]);
+
+export const marketingConfidentialitySchema = z.enum([
+  "public",
+  "internal",
+  "customer_sensitive",
+  "investor_sensitive",
+  "confidential",
+]);
+
+export const marketingSensitivityLevelSchema = z.enum(["low", "medium", "high", "blocked"]);
+export const marketingChannelSchema = z.enum(["linkedin_company", "x", "linkedin_founder", "linkedin_pb"]);
+export const marketingPostStatusSchema = z.enum([
+  "draft",
+  "needs_revision",
+  "approved",
+  "scheduled",
+  "published",
+  "archived",
+  "failed_schedule",
+]);
+export const marketingFormatTypeSchema = z.enum([
+  "teardown",
+  "founder_story",
+  "list",
+  "contrarian",
+  "product_pov",
+  "case_study",
+  "memo",
+  "other",
+]);
+export const marketingHookTypeSchema = z.enum(["pain", "insight", "mistake", "lesson", "workflow", "future_of_work", "other"]);
+export const marketingTargetIcpSchema = z.enum(["ib", "pe", "hf", "investor", "founder", "operator", "other"]);
+export const marketingFunnelStageSchema = z.enum(["awareness", "problem_aware", "solution_aware", "conversion"]);
+export const marketingEventTypeSchema = z.enum(["demo", "dm", "reply", "qualified_lead", "website_visit", "manual_attribution"]);
+
+export const createMarketingContentItemSchema = z.object({
+  brainId: z.string().min(1),
+  sourceItemId: z.string().min(1).optional(),
+  sourcePlatform: marketingSourcePlatformSchema,
+  sourceType: marketingSourceTypeSchema,
+  sourceUrl: z.string().url().optional().or(z.literal("")).transform((value) => (value ? value : undefined)),
+  sourceExternalId: z.string().max(240).optional(),
+  sourceOwner: z.string().max(160).optional(),
+  sourceDate: z.string().optional(),
+  sourceConfidentiality: marketingConfidentialitySchema.default("internal"),
+  rawText: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const updateMarketingPostSchema = z.object({
+  bodyText: z.string().min(1).max(6000).optional(),
+  plannedPostDate: z.string().optional().nullable(),
+  postingWindow: z.string().max(120).optional().nullable(),
+  campaignTag: z.string().max(120).optional().nullable(),
+  pillar: z.string().max(120).optional().nullable(),
+  formatType: marketingFormatTypeSchema.optional().nullable(),
+  hookType: marketingHookTypeSchema.optional().nullable(),
+  targetIcp: marketingTargetIcpSchema.optional().nullable(),
+  funnelStage: marketingFunnelStageSchema.optional().nullable(),
+});
+
+export const approveMarketingPostSchema = z.object({
+  approvedBy: z.string().min(1).max(120).default("naveen"),
+  bodyText: z.string().min(1).max(6000).optional(),
+});
+
+export const scheduleMarketingPostSchema = z.object({
+  scheduledAt: z.string().optional(),
+  approvedBy: z.string().min(1).max(120).default("naveen"),
+});
+
+export const recordMarketingMetricsSchema = z.object({
+  channelPostId: z.string().min(1),
+  metricDate: z.string().min(1),
+  impressions: z.number().int().min(0).default(0),
+  reactions: z.number().int().min(0).default(0),
+  comments: z.number().int().min(0).default(0),
+  shares: z.number().int().min(0).default(0),
+  clicks: z.number().int().min(0).default(0),
+  saves: z.number().int().min(0).default(0),
+  follows: z.number().int().min(0).default(0),
+  rawMetrics: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const recordMarketingEventSchema = z.object({
+  channelPostId: z.string().min(1).optional().nullable(),
+  eventType: marketingEventTypeSchema,
+  eventSource: z.string().min(1).max(120),
+  eventAt: z.string().optional(),
+  description: z.string().min(1).max(1000),
+  contactName: z.string().max(160).optional().nullable(),
+  companyName: z.string().max(160).optional().nullable(),
+  value: z.number().optional().nullable(),
+  utmSource: z.string().max(120).optional().nullable(),
+  utmMedium: z.string().max(120).optional().nullable(),
+  utmCampaign: z.string().max(160).optional().nullable(),
+  utmContent: z.string().max(160).optional().nullable(),
+  attributionConfidence: z.enum(["direct", "assisted", "manual", "unknown"]).default("unknown"),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const marketingRedactionResultSchema = z.object({
+  cleanedSummary: z.string().min(1).max(2400),
+  contentSafeSummary: z.string().min(1).max(2400),
+  sourceConfidentiality: marketingConfidentialitySchema,
+  requiresRedaction: z.boolean(),
+  approvedForContent: z.boolean(),
+  insights: z
+    .array(
+      z.object({
+        rawInsight: z.string().min(1).max(1000),
+        contentSafeInsight: z.string().min(1).max(1000),
+        sensitivityLevel: marketingSensitivityLevelSchema,
+        suggestedPillar: z.string().max(120).optional(),
+        suggestedChannels: z.array(marketingChannelSchema).max(4),
+      }),
+    )
+    .max(8),
+  redactionNotes: z.array(z.string().min(1).max(400)).max(12),
+});
+
+export const marketingDraftResultSchema = z.object({
+  drafts: z
+    .array(
+      z.object({
+        contentInsightId: z.string().min(1),
+        channel: marketingChannelSchema,
+        bodyText: z.string().min(1).max(6000),
+        pillar: z.string().max(120).optional(),
+        formatType: marketingFormatTypeSchema.optional(),
+        hookType: marketingHookTypeSchema.optional(),
+        targetIcp: marketingTargetIcpSchema.optional(),
+        funnelStage: marketingFunnelStageSchema.optional(),
+        campaignTag: z.string().max(120).optional(),
+        rationale: z.string().min(1).max(500),
+      }),
+    )
+    .max(12),
+});
+
+export const marketingSafetyCheckResultSchema = z.object({
+  passed: z.boolean(),
+  reason: z.string().min(1).max(1000),
+  flags: z.array(z.string().min(1).max(120)).max(12),
+});
+
+export const marketingWeeklyAnalysisResultSchema = z.object({
+  summary: z.string().min(1).max(1200),
+  markdown: z.string().min(1).max(12000),
+  recommendedExperiments: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(160),
+        rationale: z.string().min(1).max(600),
+        tag: z.string().max(120).optional(),
+      }),
+    )
+    .min(1)
+    .max(5),
+});
+
 export type CreateBrainInput = z.infer<typeof createBrainSchema>;
 export type IngestSourceInput = z.infer<typeof ingestSourceSchema>;
 export type AskBrainInput = z.infer<typeof askBrainSchema>;
@@ -433,6 +617,16 @@ export type DriftReviewSchemaType = z.infer<typeof driftReviewSchema>;
 export type CreatePriorityInput = z.infer<typeof createPrioritySchema>;
 export type UpdatePriorityStatusInput = z.infer<typeof updatePriorityStatusSchema>;
 export type PrioritySchemaType = z.infer<typeof prioritySchema>;
+export type CreateMarketingContentItemInput = z.infer<typeof createMarketingContentItemSchema>;
+export type UpdateMarketingPostInput = z.infer<typeof updateMarketingPostSchema>;
+export type ApproveMarketingPostInput = z.infer<typeof approveMarketingPostSchema>;
+export type ScheduleMarketingPostInput = z.infer<typeof scheduleMarketingPostSchema>;
+export type RecordMarketingMetricsInput = z.infer<typeof recordMarketingMetricsSchema>;
+export type RecordMarketingEventInput = z.infer<typeof recordMarketingEventSchema>;
+export type MarketingRedactionResultSchemaType = z.infer<typeof marketingRedactionResultSchema>;
+export type MarketingDraftResultSchemaType = z.infer<typeof marketingDraftResultSchema>;
+export type MarketingSafetyCheckResultSchemaType = z.infer<typeof marketingSafetyCheckResultSchema>;
+export type MarketingWeeklyAnalysisResultSchemaType = z.infer<typeof marketingWeeklyAnalysisResultSchema>;
 
 export const memoryKindSchema = memoryObjectTypeSchema;
 export const memoryStatusSchema = memoryObjectStatusSchema;

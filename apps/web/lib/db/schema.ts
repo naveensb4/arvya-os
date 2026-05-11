@@ -202,6 +202,123 @@ export const notetakerBotStatusEnum = pgEnum("notetaker_bot_status", [
   "canceled",
 ]);
 
+export const marketingSourcePlatformEnum = pgEnum("marketing_source_platform", [
+  "google_drive",
+  "manual",
+  "slack",
+  "gmail",
+  "outlook",
+  "voice",
+  "blog",
+]);
+
+export const marketingSourceTypeEnum = pgEnum("marketing_source_type", [
+  "google_drive_transcript",
+  "manual_note",
+  "voice_note",
+  "slack_thread",
+  "gmail_email",
+  "outlook_email",
+  "blog",
+  "demo_form",
+  "investor_question",
+  "customer_objection",
+  "product_update",
+]);
+
+export const marketingConfidentialityEnum = pgEnum("marketing_confidentiality", [
+  "public",
+  "internal",
+  "customer_sensitive",
+  "investor_sensitive",
+  "confidential",
+]);
+
+export const marketingSensitivityLevelEnum = pgEnum("marketing_sensitivity_level", [
+  "low",
+  "medium",
+  "high",
+  "blocked",
+]);
+
+export const marketingChannelEnum = pgEnum("marketing_channel", [
+  "linkedin_company",
+  "x",
+  "linkedin_founder",
+  "linkedin_pb",
+]);
+
+export const marketingPostStatusEnum = pgEnum("marketing_post_status", [
+  "draft",
+  "needs_revision",
+  "approved",
+  "scheduled",
+  "published",
+  "archived",
+  "failed_schedule",
+]);
+
+export const marketingFormatTypeEnum = pgEnum("marketing_format_type", [
+  "teardown",
+  "founder_story",
+  "list",
+  "contrarian",
+  "product_pov",
+  "case_study",
+  "memo",
+  "other",
+]);
+
+export const marketingHookTypeEnum = pgEnum("marketing_hook_type", [
+  "pain",
+  "insight",
+  "mistake",
+  "lesson",
+  "workflow",
+  "future_of_work",
+  "other",
+]);
+
+export const marketingTargetIcpEnum = pgEnum("marketing_target_icp", [
+  "ib",
+  "pe",
+  "hf",
+  "investor",
+  "founder",
+  "operator",
+  "other",
+]);
+
+export const marketingFunnelStageEnum = pgEnum("marketing_funnel_stage", [
+  "awareness",
+  "problem_aware",
+  "solution_aware",
+  "conversion",
+]);
+
+export const marketingEventTypeEnum = pgEnum("marketing_event_type", [
+  "demo",
+  "dm",
+  "reply",
+  "qualified_lead",
+  "website_visit",
+  "manual_attribution",
+]);
+
+export const marketingExperimentStatusEnum = pgEnum("marketing_experiment_status", [
+  "planned",
+  "running",
+  "completed",
+  "paused",
+]);
+
+export const marketingAttributionConfidenceEnum = pgEnum("marketing_attribution_confidence", [
+  "direct",
+  "assisted",
+  "manual",
+  "unknown",
+]);
+
 export const brains = pgTable("brains", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -618,6 +735,248 @@ export const priorities = pgTable(
   ],
 );
 
+export const marketingContentItems = pgTable(
+  "marketing_content_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
+    sourcePlatform: marketingSourcePlatformEnum("source_platform").notNull(),
+    sourceType: marketingSourceTypeEnum("source_type").notNull(),
+    sourceUrl: text("source_url"),
+    sourceExternalId: text("source_external_id"),
+    sourceOwner: text("source_owner"),
+    sourceDate: timestamp("source_date", { withTimezone: true }),
+    sourceConfidentiality: marketingConfidentialityEnum("source_confidentiality").notNull().default("internal"),
+    rawText: text("raw_text").notNull(),
+    cleanedSummary: text("cleaned_summary"),
+    contentSafeSummary: text("content_safe_summary"),
+    requiresRedaction: boolean("requires_redaction").notNull().default(true),
+    approvedForContent: boolean("approved_for_content").notNull().default(false),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_content_items_brain_id_idx").on(table.brainId),
+    index("marketing_content_items_source_item_id_idx").on(table.sourceItemId),
+    index("marketing_content_items_external_id_idx").on(table.sourcePlatform, table.sourceExternalId),
+    index("marketing_content_items_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const marketingContentInsights = pgTable(
+  "marketing_content_insights",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    contentItemId: uuid("content_item_id")
+      .notNull()
+      .references(() => marketingContentItems.id, { onDelete: "cascade" }),
+    rawInsight: text("raw_insight").notNull(),
+    contentSafeInsight: text("content_safe_insight").notNull(),
+    sensitivityLevel: marketingSensitivityLevelEnum("sensitivity_level").notNull().default("medium"),
+    suggestedPillar: text("suggested_pillar"),
+    suggestedChannels: jsonb("suggested_channels").notNull().default([]),
+    approvedForContent: boolean("approved_for_content").notNull().default(false),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_content_insights_brain_id_idx").on(table.brainId),
+    index("marketing_content_insights_item_id_idx").on(table.contentItemId),
+    index("marketing_content_insights_approved_idx").on(table.approvedForContent),
+  ],
+);
+
+export const marketingChannelPosts = pgTable(
+  "marketing_channel_posts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    contentItemId: uuid("content_item_id").references(() => marketingContentItems.id, { onDelete: "set null" }),
+    contentInsightId: uuid("content_insight_id").references(() => marketingContentInsights.id, { onDelete: "set null" }),
+    channel: marketingChannelEnum("channel").notNull(),
+    status: marketingPostStatusEnum("status").notNull().default("draft"),
+    bodyText: text("body_text").notNull(),
+    mediaType: text("media_type"),
+    mediaReference: text("media_reference"),
+    plannedPostDate: timestamp("planned_post_date", { withTimezone: true }),
+    postingWindow: text("posting_window"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    liveUrl: text("live_url"),
+    schedulerProvider: text("scheduler_provider"),
+    schedulerPostId: text("scheduler_post_id"),
+    campaignTag: text("campaign_tag"),
+    pillar: text("pillar"),
+    formatType: marketingFormatTypeEnum("format_type"),
+    hookType: marketingHookTypeEnum("hook_type"),
+    targetIcp: marketingTargetIcpEnum("target_icp"),
+    funnelStage: marketingFunnelStageEnum("funnel_stage"),
+    experimentTag: text("experiment_tag"),
+    requiresReview: boolean("requires_review").notNull().default(true),
+    sensitivityLevel: marketingSensitivityLevelEnum("sensitivity_level").notNull().default("medium"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    revisionReason: text("revision_reason"),
+    safetyCheckStatus: text("safety_check_status").notNull().default("not_run"),
+    safetyCheckReason: text("safety_check_reason"),
+    isExemplar: boolean("is_exemplar").notNull().default(false),
+    performanceTag: text("performance_tag"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_channel_posts_brain_id_idx").on(table.brainId),
+    index("marketing_channel_posts_item_id_idx").on(table.contentItemId),
+    index("marketing_channel_posts_insight_id_idx").on(table.contentInsightId),
+    index("marketing_channel_posts_status_idx").on(table.status),
+    index("marketing_channel_posts_scheduled_idx").on(table.scheduledAt),
+    index("marketing_channel_posts_scheduler_idx").on(table.schedulerProvider, table.schedulerPostId),
+  ],
+);
+
+export const marketingPostMetrics = pgTable(
+  "marketing_post_metrics",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    channelPostId: uuid("channel_post_id")
+      .notNull()
+      .references(() => marketingChannelPosts.id, { onDelete: "cascade" }),
+    metricDate: timestamp("metric_date", { withTimezone: true }).notNull(),
+    impressions: integer("impressions").notNull().default(0),
+    reactions: integer("reactions").notNull().default(0),
+    comments: integer("comments").notNull().default(0),
+    shares: integer("shares").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    saves: integer("saves").notNull().default(0),
+    follows: integer("follows").notNull().default(0),
+    rawMetrics: jsonb("raw_metrics").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_post_metrics_brain_id_idx").on(table.brainId),
+    index("marketing_post_metrics_post_id_idx").on(table.channelPostId),
+    index("marketing_post_metrics_date_idx").on(table.metricDate),
+  ],
+);
+
+export const marketingExperiments = pgTable(
+  "marketing_experiments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+    title: text("title").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    status: marketingExperimentStatusEnum("status").notNull().default("planned"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_experiments_brain_id_idx").on(table.brainId),
+    index("marketing_experiments_tag_idx").on(table.brainId, table.tag),
+  ],
+);
+
+export const marketingEvents = pgTable(
+  "marketing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    channelPostId: uuid("channel_post_id").references(() => marketingChannelPosts.id, { onDelete: "set null" }),
+    eventType: marketingEventTypeEnum("event_type").notNull(),
+    eventSource: text("event_source").notNull(),
+    eventAt: timestamp("event_at", { withTimezone: true }).notNull(),
+    description: text("description").notNull(),
+    contactName: text("contact_name"),
+    companyName: text("company_name"),
+    value: numeric("value", { precision: 12, scale: 2 }),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    attributionConfidence: marketingAttributionConfidenceEnum("attribution_confidence").notNull().default("unknown"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_events_brain_id_idx").on(table.brainId),
+    index("marketing_events_post_id_idx").on(table.channelPostId),
+    index("marketing_events_type_idx").on(table.eventType),
+    index("marketing_events_at_idx").on(table.eventAt),
+  ],
+);
+
+export const marketingWeeklyReports = pgTable(
+  "marketing_weekly_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    weekStart: timestamp("week_start", { withTimezone: true }).notNull(),
+    weekEnd: timestamp("week_end", { withTimezone: true }).notNull(),
+    publishedCount: integer("published_count").notNull().default(0),
+    qualitativeOnly: boolean("qualitative_only").notNull().default(true),
+    summary: text("summary").notNull(),
+    markdown: text("markdown").notNull(),
+    recommendedExperiments: jsonb("recommended_experiments").notNull().default([]),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_weekly_reports_brain_id_idx").on(table.brainId),
+    index("marketing_weekly_reports_week_idx").on(table.brainId, table.weekStart, table.weekEnd),
+  ],
+);
+
+export const marketingLlmUsage = pgTable(
+  "marketing_llm_usage",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    jobType: text("job_type").notNull(),
+    modelProvider: modelProviderEnum("model_provider").notNull().default("local"),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }).notNull().default("0"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_llm_usage_brain_id_idx").on(table.brainId),
+    index("marketing_llm_usage_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export type PriorityRow = typeof priorities.$inferSelect;
 export type NewPriorityRow = typeof priorities.$inferInsert;
 
@@ -649,3 +1008,19 @@ export type NotetakerMeetingRow = typeof notetakerMeetings.$inferSelect;
 export type NewNotetakerMeetingRow = typeof notetakerMeetings.$inferInsert;
 export type NotetakerEventRow = typeof notetakerEvents.$inferSelect;
 export type NewNotetakerEventRow = typeof notetakerEvents.$inferInsert;
+export type MarketingContentItemRow = typeof marketingContentItems.$inferSelect;
+export type NewMarketingContentItemRow = typeof marketingContentItems.$inferInsert;
+export type MarketingContentInsightRow = typeof marketingContentInsights.$inferSelect;
+export type NewMarketingContentInsightRow = typeof marketingContentInsights.$inferInsert;
+export type MarketingChannelPostRow = typeof marketingChannelPosts.$inferSelect;
+export type NewMarketingChannelPostRow = typeof marketingChannelPosts.$inferInsert;
+export type MarketingPostMetricRow = typeof marketingPostMetrics.$inferSelect;
+export type NewMarketingPostMetricRow = typeof marketingPostMetrics.$inferInsert;
+export type MarketingExperimentRow = typeof marketingExperiments.$inferSelect;
+export type NewMarketingExperimentRow = typeof marketingExperiments.$inferInsert;
+export type MarketingEventRow = typeof marketingEvents.$inferSelect;
+export type NewMarketingEventRow = typeof marketingEvents.$inferInsert;
+export type MarketingWeeklyReportRow = typeof marketingWeeklyReports.$inferSelect;
+export type NewMarketingWeeklyReportRow = typeof marketingWeeklyReports.$inferInsert;
+export type MarketingLlmUsageRow = typeof marketingLlmUsage.$inferSelect;
+export type NewMarketingLlmUsageRow = typeof marketingLlmUsage.$inferInsert;

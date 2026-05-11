@@ -11,6 +11,12 @@ import {
   ingestNotetakerTranscript,
   runNotetakerCalendarSync,
 } from "@/lib/notetaker/runtime";
+import {
+  runMarketingDriveSync,
+  runMarketingMetricsRefresh,
+  runMarketingSchedulerSync,
+  runMarketingWeeklyReport,
+} from "@/lib/marketing/runtime";
 import { inngest } from "../client";
 
 export const scheduledConnectorSync = inngest.createFunction(
@@ -87,6 +93,34 @@ export const notetakerTranscriptReady = inngest.createFunction(
   },
 );
 
+export const marketingDriveSync = inngest.createFunction(
+  { id: "marketing-drive-sync", name: "Marketing OS Drive sync", triggers: [{ cron: "15 */2 * * *" }] },
+  async ({ step }) => {
+    return step.run("sync marketing drive transcripts", runMarketingDriveSync);
+  },
+);
+
+export const marketingSchedulerSync = inngest.createFunction(
+  { id: "marketing-scheduler-sync", name: "Marketing OS scheduler sync", triggers: [{ cron: "*/30 * * * *" }] },
+  async ({ step }) => {
+    return step.run("sync marketing scheduler status", runMarketingSchedulerSync);
+  },
+);
+
+export const marketingMetricsRefresh = inngest.createFunction(
+  { id: "marketing-metrics-refresh", name: "Marketing OS metrics refresh", triggers: [{ cron: "0 9 * * *" }] },
+  async ({ step }) => {
+    return step.run("refresh marketing metrics", runMarketingMetricsRefresh);
+  },
+);
+
+export const marketingWeeklyReport = inngest.createFunction(
+  { id: "marketing-weekly-report", name: "Marketing OS weekly report", triggers: [{ cron: "0 17 * * 5" }] },
+  async ({ step }) => {
+    return step.run("generate marketing weekly report", runMarketingWeeklyReport);
+  },
+);
+
 export const functions = [
   scheduledConnectorSync,
   sourceIngested,
@@ -97,4 +131,8 @@ export const functions = [
   notetakerCalendarSync,
   notetakerEventReceived,
   notetakerTranscriptReady,
+  marketingDriveSync,
+  marketingSchedulerSync,
+  marketingMetricsRefresh,
+  marketingWeeklyReport,
 ];

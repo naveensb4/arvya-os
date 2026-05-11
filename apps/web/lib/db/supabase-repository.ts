@@ -2,6 +2,14 @@ import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
   AgentRun,
   Brain,
+  MarketingChannelPost,
+  MarketingContentInsight,
+  MarketingContentItem,
+  MarketingEvent,
+  MarketingExperiment,
+  MarketingLlmUsage,
+  MarketingPostMetric,
+  MarketingWeeklyReport,
   MemoryObject,
   ModelProvider,
   OpenLoop,
@@ -18,6 +26,14 @@ import {
   brains,
   connectorConfigs,
   connectorSyncRuns,
+  marketingChannelPosts,
+  marketingContentInsights,
+  marketingContentItems,
+  marketingEvents,
+  marketingExperiments,
+  marketingLlmUsage,
+  marketingPostMetrics,
+  marketingWeeklyReports,
   memoryObjects,
   notetakerCalendars,
   notetakerEvents,
@@ -33,6 +49,14 @@ import {
   type BrainRow,
   type ConnectorConfigRow,
   type ConnectorSyncRunRow,
+  type MarketingChannelPostRow,
+  type MarketingContentInsightRow,
+  type MarketingContentItemRow,
+  type MarketingEventRow,
+  type MarketingExperimentRow,
+  type MarketingLlmUsageRow,
+  type MarketingPostMetricRow,
+  type MarketingWeeklyReportRow,
   type MemoryObjectRow,
   type NotetakerCalendarRow,
   type NotetakerEventRow,
@@ -51,6 +75,14 @@ import type {
   CreateBrainData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
+  CreateMarketingChannelPostData,
+  CreateMarketingContentInsightData,
+  CreateMarketingContentItemData,
+  CreateMarketingEventData,
+  CreateMarketingExperimentData,
+  CreateMarketingLlmUsageData,
+  CreateMarketingPostMetricData,
+  CreateMarketingWeeklyReportData,
   CreateMemoryObjectData,
   CreateNotetakerCalendarData,
   CreateNotetakerEventData,
@@ -66,6 +98,9 @@ import type {
   UpdateAgentRunData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
+  UpdateMarketingChannelPostData,
+  UpdateMarketingContentInsightData,
+  UpdateMarketingContentItemData,
   UpdateMemoryObjectData,
   UpdateNotetakerCalendarData,
   UpdateNotetakerEventData,
@@ -347,6 +382,182 @@ function toNotetakerEvent(row: NotetakerEventRow) {
     eventType: row.eventType,
     payload: (row.payload ?? {}) as Record<string, unknown>,
     processedAt: isoOrNull(row.processedAt),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function toMarketingContentItem(row: MarketingContentItemRow): MarketingContentItem {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    sourceItemId: row.sourceItemId,
+    sourcePlatform: row.sourcePlatform,
+    sourceType: row.sourceType,
+    sourceUrl: row.sourceUrl,
+    sourceExternalId: row.sourceExternalId,
+    sourceOwner: row.sourceOwner,
+    sourceDate: isoOrNull(row.sourceDate),
+    sourceConfidentiality: row.sourceConfidentiality,
+    rawText: row.rawText,
+    cleanedSummary: row.cleanedSummary,
+    contentSafeSummary: row.contentSafeSummary,
+    requiresRedaction: row.requiresRedaction,
+    approvedForContent: row.approvedForContent,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toMarketingContentInsight(row: MarketingContentInsightRow): MarketingContentInsight {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    contentItemId: row.contentItemId,
+    rawInsight: row.rawInsight,
+    contentSafeInsight: row.contentSafeInsight,
+    sensitivityLevel: row.sensitivityLevel,
+    suggestedPillar: row.suggestedPillar,
+    suggestedChannels: stringArray(row.suggestedChannels) as MarketingContentInsight["suggestedChannels"],
+    approvedForContent: row.approvedForContent,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toMarketingChannelPost(row: MarketingChannelPostRow): MarketingChannelPost {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    contentItemId: row.contentItemId,
+    contentInsightId: row.contentInsightId,
+    channel: row.channel,
+    status: row.status,
+    bodyText: row.bodyText,
+    mediaType: row.mediaType,
+    mediaReference: row.mediaReference,
+    plannedPostDate: isoOrNull(row.plannedPostDate),
+    postingWindow: row.postingWindow,
+    scheduledAt: isoOrNull(row.scheduledAt),
+    publishedAt: isoOrNull(row.publishedAt),
+    liveUrl: row.liveUrl,
+    schedulerProvider: row.schedulerProvider,
+    schedulerPostId: row.schedulerPostId,
+    campaignTag: row.campaignTag,
+    pillar: row.pillar,
+    formatType: row.formatType,
+    hookType: row.hookType,
+    targetIcp: row.targetIcp,
+    funnelStage: row.funnelStage,
+    experimentTag: row.experimentTag,
+    requiresReview: row.requiresReview,
+    sensitivityLevel: row.sensitivityLevel,
+    approvedBy: row.approvedBy,
+    approvedAt: isoOrNull(row.approvedAt),
+    revisionReason: row.revisionReason,
+    safetyCheckStatus: row.safetyCheckStatus as MarketingChannelPost["safetyCheckStatus"],
+    safetyCheckReason: row.safetyCheckReason,
+    isExemplar: row.isExemplar,
+    performanceTag: row.performanceTag,
+    utmSource: row.utmSource,
+    utmMedium: row.utmMedium,
+    utmCampaign: row.utmCampaign,
+    utmContent: row.utmContent,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toMarketingPostMetric(row: MarketingPostMetricRow): MarketingPostMetric {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    channelPostId: row.channelPostId,
+    metricDate: row.metricDate.toISOString(),
+    impressions: row.impressions,
+    reactions: row.reactions,
+    comments: row.comments,
+    shares: row.shares,
+    clicks: row.clicks,
+    saves: row.saves,
+    follows: row.follows,
+    rawMetrics: (row.rawMetrics ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toMarketingExperiment(row: MarketingExperimentRow): MarketingExperiment {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    tag: row.tag,
+    title: row.title,
+    hypothesis: row.hypothesis,
+    status: row.status,
+    startedAt: isoOrNull(row.startedAt),
+    endedAt: isoOrNull(row.endedAt),
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toMarketingEvent(row: MarketingEventRow): MarketingEvent {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    channelPostId: row.channelPostId,
+    eventType: row.eventType,
+    eventSource: row.eventSource,
+    eventAt: row.eventAt.toISOString(),
+    description: row.description,
+    contactName: row.contactName,
+    companyName: row.companyName,
+    value: numberOrUndefined(row.value),
+    utmSource: row.utmSource,
+    utmMedium: row.utmMedium,
+    utmCampaign: row.utmCampaign,
+    utmContent: row.utmContent,
+    attributionConfidence: row.attributionConfidence,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toMarketingWeeklyReport(row: MarketingWeeklyReportRow): MarketingWeeklyReport {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    weekStart: row.weekStart.toISOString(),
+    weekEnd: row.weekEnd.toISOString(),
+    publishedCount: row.publishedCount,
+    qualitativeOnly: row.qualitativeOnly,
+    summary: row.summary,
+    markdown: row.markdown,
+    recommendedExperiments: (Array.isArray(row.recommendedExperiments) ? row.recommendedExperiments : []) as MarketingWeeklyReport["recommendedExperiments"],
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toMarketingLlmUsage(row: MarketingLlmUsageRow): MarketingLlmUsage {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    jobType: row.jobType,
+    modelProvider: row.modelProvider,
+    model: row.model,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    estimatedCostUsd: Number(row.estimatedCostUsd),
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -955,6 +1166,10 @@ export class SupabaseRepository implements BrainRepository {
     return toBrainAlert(row);
   }
 
+  async listBrainEvents() {
+    return [];
+  }
+
   async listNotetakerCalendars(input: { brainId?: string; status?: "connected" | "error" | "disabled" } = {}) {
     const filters = [
       input.brainId ? eq(notetakerCalendars.brainId, input.brainId) : undefined,
@@ -1115,5 +1330,261 @@ export class SupabaseRepository implements BrainRepository {
       .where(eq(notetakerEvents.id, eventId))
       .returning();
     return row ? toNotetakerEvent(row) : null;
+  }
+
+  async createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem> {
+    const [row] = await this.db.insert(marketingContentItems).values({
+      brainId: input.brainId,
+      sourceItemId: input.sourceItemId ?? null,
+      sourcePlatform: input.sourcePlatform,
+      sourceType: input.sourceType,
+      sourceUrl: input.sourceUrl ?? null,
+      sourceExternalId: input.sourceExternalId ?? null,
+      sourceOwner: input.sourceOwner ?? null,
+      sourceDate: dateOrNull(input.sourceDate),
+      sourceConfidentiality: input.sourceConfidentiality ?? "internal",
+      rawText: input.rawText,
+      cleanedSummary: input.cleanedSummary ?? null,
+      contentSafeSummary: input.contentSafeSummary ?? null,
+      requiresRedaction: input.requiresRedaction ?? true,
+      approvedForContent: input.approvedForContent ?? false,
+      metadata: input.metadata ?? {},
+    }).returning();
+    return toMarketingContentItem(row);
+  }
+
+  async updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData): Promise<MarketingContentItem | null> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (update.cleanedSummary !== undefined) set.cleanedSummary = update.cleanedSummary;
+    if (update.contentSafeSummary !== undefined) set.contentSafeSummary = update.contentSafeSummary;
+    if (update.sourceConfidentiality !== undefined) set.sourceConfidentiality = update.sourceConfidentiality;
+    if (update.requiresRedaction !== undefined) set.requiresRedaction = update.requiresRedaction;
+    if (update.approvedForContent !== undefined) set.approvedForContent = update.approvedForContent;
+    if (update.metadata !== undefined) set.metadata = update.metadata;
+    const [row] = await this.db.update(marketingContentItems).set(set).where(eq(marketingContentItems.id, contentItemId)).returning();
+    return row ? toMarketingContentItem(row) : null;
+  }
+
+  async listMarketingContentItems(brainId: string, options: ListOptions = {}): Promise<MarketingContentItem[]> {
+    return (await this.db.select().from(marketingContentItems).where(eq(marketingContentItems.brainId, brainId)).orderBy(desc(marketingContentItems.createdAt)).limit(options.limit ?? 100)).map(toMarketingContentItem);
+  }
+
+  async getMarketingContentItem(contentItemId: string): Promise<MarketingContentItem | null> {
+    const [row] = await this.db.select().from(marketingContentItems).where(eq(marketingContentItems.id, contentItemId)).limit(1);
+    return row ? toMarketingContentItem(row) : null;
+  }
+
+  async createMarketingContentInsights(items: CreateMarketingContentInsightData[]): Promise<MarketingContentInsight[]> {
+    if (items.length === 0) return [];
+    const rows = await this.db.insert(marketingContentInsights).values(items.map((item) => ({
+      brainId: item.brainId,
+      contentItemId: item.contentItemId,
+      rawInsight: item.rawInsight,
+      contentSafeInsight: item.contentSafeInsight,
+      sensitivityLevel: item.sensitivityLevel ?? "medium",
+      suggestedPillar: item.suggestedPillar ?? null,
+      suggestedChannels: item.suggestedChannels ?? [],
+      approvedForContent: item.approvedForContent ?? false,
+      metadata: item.metadata ?? {},
+    }))).returning();
+    return rows.map(toMarketingContentInsight);
+  }
+
+  async updateMarketingContentInsight(insightId: string, update: UpdateMarketingContentInsightData): Promise<MarketingContentInsight | null> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (update.contentSafeInsight !== undefined) set.contentSafeInsight = update.contentSafeInsight;
+    if (update.sensitivityLevel !== undefined) set.sensitivityLevel = update.sensitivityLevel;
+    if (update.suggestedPillar !== undefined) set.suggestedPillar = update.suggestedPillar;
+    if (update.suggestedChannels !== undefined) set.suggestedChannels = update.suggestedChannels;
+    if (update.approvedForContent !== undefined) set.approvedForContent = update.approvedForContent;
+    if (update.metadata !== undefined) set.metadata = update.metadata;
+    const [row] = await this.db.update(marketingContentInsights).set(set).where(eq(marketingContentInsights.id, insightId)).returning();
+    return row ? toMarketingContentInsight(row) : null;
+  }
+
+  async listMarketingContentInsights(brainId: string, options: ListOptions & { approvedOnly?: boolean } = {}): Promise<MarketingContentInsight[]> {
+    const conditions = [eq(marketingContentInsights.brainId, brainId)];
+    if (options.approvedOnly) conditions.push(eq(marketingContentInsights.approvedForContent, true));
+    return (await this.db.select().from(marketingContentInsights).where(and(...conditions)).orderBy(desc(marketingContentInsights.createdAt)).limit(options.limit ?? 100)).map(toMarketingContentInsight);
+  }
+
+  async getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null> {
+    const [row] = await this.db.select().from(marketingContentInsights).where(eq(marketingContentInsights.id, insightId)).limit(1);
+    return row ? toMarketingContentInsight(row) : null;
+  }
+
+  async createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]> {
+    if (items.length === 0) return [];
+    const rows = await this.db.insert(marketingChannelPosts).values(items.map((item) => ({
+      brainId: item.brainId,
+      contentItemId: item.contentItemId ?? null,
+      contentInsightId: item.contentInsightId ?? null,
+      channel: item.channel,
+      status: item.status ?? "draft",
+      bodyText: item.bodyText,
+      plannedPostDate: dateOrNull(item.plannedPostDate),
+      postingWindow: item.postingWindow ?? null,
+      scheduledAt: dateOrNull(item.scheduledAt),
+      publishedAt: dateOrNull(item.publishedAt),
+      liveUrl: item.liveUrl ?? null,
+      schedulerProvider: item.schedulerProvider ?? null,
+      schedulerPostId: item.schedulerPostId ?? null,
+      campaignTag: item.campaignTag ?? null,
+      pillar: item.pillar ?? null,
+      formatType: item.formatType ?? null,
+      hookType: item.hookType ?? null,
+      targetIcp: item.targetIcp ?? null,
+      funnelStage: item.funnelStage ?? null,
+      experimentTag: item.experimentTag ?? null,
+      requiresReview: item.requiresReview ?? true,
+      sensitivityLevel: item.sensitivityLevel ?? "medium",
+      approvedBy: item.approvedBy ?? null,
+      approvedAt: dateOrNull(item.approvedAt),
+      revisionReason: item.revisionReason ?? null,
+      safetyCheckStatus: item.safetyCheckStatus ?? "not_run",
+      safetyCheckReason: item.safetyCheckReason ?? null,
+      isExemplar: item.isExemplar ?? false,
+      performanceTag: item.performanceTag ?? null,
+      utmSource: item.utmSource ?? null,
+      utmMedium: item.utmMedium ?? null,
+      utmCampaign: item.utmCampaign ?? null,
+      utmContent: item.utmContent ?? null,
+      metadata: item.metadata ?? {},
+    }))).returning();
+    return rows.map(toMarketingChannelPost);
+  }
+
+  async updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    const copy = (key: keyof UpdateMarketingChannelPostData, column = key) => {
+      if (update[key] !== undefined) set[column] = update[key];
+    };
+    copy("status"); copy("bodyText"); copy("plannedPostDate"); copy("postingWindow"); copy("scheduledAt"); copy("publishedAt");
+    copy("liveUrl"); copy("schedulerProvider"); copy("schedulerPostId"); copy("campaignTag"); copy("pillar"); copy("formatType");
+    copy("hookType"); copy("targetIcp"); copy("funnelStage"); copy("experimentTag"); copy("requiresReview"); copy("sensitivityLevel");
+    copy("approvedBy"); copy("revisionReason"); copy("safetyCheckStatus"); copy("safetyCheckReason"); copy("isExemplar");
+    copy("performanceTag"); copy("utmSource"); copy("utmMedium"); copy("utmCampaign"); copy("utmContent"); copy("metadata");
+    if (update.approvedAt !== undefined) set.approvedAt = dateOrNull(update.approvedAt);
+    if (update.plannedPostDate !== undefined) set.plannedPostDate = dateOrNull(update.plannedPostDate);
+    if (update.scheduledAt !== undefined) set.scheduledAt = dateOrNull(update.scheduledAt);
+    if (update.publishedAt !== undefined) set.publishedAt = dateOrNull(update.publishedAt);
+    const [row] = await this.db.update(marketingChannelPosts).set(set).where(eq(marketingChannelPosts.id, postId)).returning();
+    return row ? toMarketingChannelPost(row) : null;
+  }
+
+  async listMarketingChannelPosts(brainId: string, options: ListOptions & { status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}): Promise<MarketingChannelPost[]> {
+    const conditions = [eq(marketingChannelPosts.brainId, brainId)];
+    if (options.status) {
+      const statuses = Array.isArray(options.status) ? options.status : [options.status];
+      conditions.push(statuses.length === 1 ? eq(marketingChannelPosts.status, statuses[0]) : inArray(marketingChannelPosts.status, statuses));
+    }
+    if (options.exemplarOnly) conditions.push(eq(marketingChannelPosts.isExemplar, true));
+    return (await this.db.select().from(marketingChannelPosts).where(and(...conditions)).orderBy(desc(marketingChannelPosts.createdAt)).limit(options.limit ?? 100)).map(toMarketingChannelPost);
+  }
+
+  async getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null> {
+    const [row] = await this.db.select().from(marketingChannelPosts).where(eq(marketingChannelPosts.id, postId)).limit(1);
+    return row ? toMarketingChannelPost(row) : null;
+  }
+
+  async createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric> {
+    const [row] = await this.db.insert(marketingPostMetrics).values({
+      brainId: input.brainId,
+      channelPostId: input.channelPostId,
+      metricDate: dateOrNull(input.metricDate) ?? new Date(input.metricDate),
+      impressions: input.impressions ?? 0,
+      reactions: input.reactions ?? 0,
+      comments: input.comments ?? 0,
+      shares: input.shares ?? 0,
+      clicks: input.clicks ?? 0,
+      saves: input.saves ?? 0,
+      follows: input.follows ?? 0,
+      rawMetrics: input.rawMetrics ?? {},
+    }).returning();
+    return toMarketingPostMetric(row);
+  }
+
+  async listMarketingPostMetrics(brainId: string, options: ListOptions = {}): Promise<MarketingPostMetric[]> {
+    return (await this.db.select().from(marketingPostMetrics).where(eq(marketingPostMetrics.brainId, brainId)).orderBy(desc(marketingPostMetrics.metricDate)).limit(options.limit ?? 500)).map(toMarketingPostMetric);
+  }
+
+  async createMarketingEvent(input: CreateMarketingEventData): Promise<MarketingEvent> {
+    const [row] = await this.db.insert(marketingEvents).values({
+      brainId: input.brainId,
+      channelPostId: input.channelPostId ?? null,
+      eventType: input.eventType,
+      eventSource: input.eventSource,
+      eventAt: dateOrNull(input.eventAt) ?? new Date(),
+      description: input.description,
+      contactName: input.contactName ?? null,
+      companyName: input.companyName ?? null,
+      value: input.value === undefined || input.value === null ? null : input.value.toFixed(2),
+      utmSource: input.utmSource ?? null,
+      utmMedium: input.utmMedium ?? null,
+      utmCampaign: input.utmCampaign ?? null,
+      utmContent: input.utmContent ?? null,
+      attributionConfidence: input.attributionConfidence ?? "unknown",
+      metadata: input.metadata ?? {},
+    }).returning();
+    return toMarketingEvent(row);
+  }
+
+  async listMarketingEvents(brainId: string, options: ListOptions = {}): Promise<MarketingEvent[]> {
+    return (await this.db.select().from(marketingEvents).where(eq(marketingEvents.brainId, brainId)).orderBy(desc(marketingEvents.eventAt)).limit(options.limit ?? 200)).map(toMarketingEvent);
+  }
+
+  async createMarketingExperiment(input: CreateMarketingExperimentData): Promise<MarketingExperiment> {
+    const [row] = await this.db.insert(marketingExperiments).values({
+      brainId: input.brainId,
+      tag: input.tag,
+      title: input.title,
+      hypothesis: input.hypothesis,
+      status: input.status ?? "planned",
+      startedAt: dateOrNull(input.startedAt),
+      endedAt: dateOrNull(input.endedAt),
+      metadata: input.metadata ?? {},
+    }).returning();
+    return toMarketingExperiment(row);
+  }
+
+  async listMarketingExperiments(brainId: string, options: ListOptions = {}): Promise<MarketingExperiment[]> {
+    return (await this.db.select().from(marketingExperiments).where(eq(marketingExperiments.brainId, brainId)).orderBy(desc(marketingExperiments.createdAt)).limit(options.limit ?? 100)).map(toMarketingExperiment);
+  }
+
+  async createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData): Promise<MarketingWeeklyReport> {
+    const [row] = await this.db.insert(marketingWeeklyReports).values({
+      brainId: input.brainId,
+      weekStart: dateOrNull(input.weekStart) ?? new Date(input.weekStart),
+      weekEnd: dateOrNull(input.weekEnd) ?? new Date(input.weekEnd),
+      publishedCount: input.publishedCount,
+      qualitativeOnly: input.qualitativeOnly,
+      summary: input.summary,
+      markdown: input.markdown,
+      recommendedExperiments: input.recommendedExperiments ?? [],
+      metadata: input.metadata ?? {},
+    }).returning();
+    return toMarketingWeeklyReport(row);
+  }
+
+  async listMarketingWeeklyReports(brainId: string, options: ListOptions = {}): Promise<MarketingWeeklyReport[]> {
+    return (await this.db.select().from(marketingWeeklyReports).where(eq(marketingWeeklyReports.brainId, brainId)).orderBy(desc(marketingWeeklyReports.weekStart)).limit(options.limit ?? 50)).map(toMarketingWeeklyReport);
+  }
+
+  async createMarketingLlmUsage(input: CreateMarketingLlmUsageData): Promise<MarketingLlmUsage> {
+    const [row] = await this.db.insert(marketingLlmUsage).values({
+      brainId: input.brainId,
+      jobType: input.jobType,
+      modelProvider: input.modelProvider,
+      model: input.model,
+      inputTokens: input.inputTokens ?? 0,
+      outputTokens: input.outputTokens ?? 0,
+      estimatedCostUsd: (input.estimatedCostUsd ?? 0).toFixed(4),
+      metadata: input.metadata ?? {},
+    }).returning();
+    return toMarketingLlmUsage(row);
+  }
+
+  async listMarketingLlmUsage(brainId: string, options: ListOptions = {}): Promise<MarketingLlmUsage[]> {
+    return (await this.db.select().from(marketingLlmUsage).where(eq(marketingLlmUsage.brainId, brainId)).orderBy(desc(marketingLlmUsage.createdAt)).limit(options.limit ?? 500)).map(toMarketingLlmUsage);
   }
 }

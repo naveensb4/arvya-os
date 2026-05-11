@@ -2,6 +2,14 @@ import { nanoid } from "nanoid";
 import type {
   AgentRun,
   Brain,
+  MarketingChannelPost,
+  MarketingContentInsight,
+  MarketingContentItem,
+  MarketingEvent,
+  MarketingExperiment,
+  MarketingLlmUsage,
+  MarketingPostMetric,
+  MarketingWeeklyReport,
   MemoryObject,
   OpenLoop,
   Priority,
@@ -13,6 +21,7 @@ import type {
 import type {
   BrainRepository,
   BrainAlert,
+  BrainEvent,
   ConnectorConfig,
   ConnectorSyncRun,
   CreateAgentRunData,
@@ -20,6 +29,14 @@ import type {
   CreateBrainData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
+  CreateMarketingChannelPostData,
+  CreateMarketingContentInsightData,
+  CreateMarketingContentItemData,
+  CreateMarketingEventData,
+  CreateMarketingExperimentData,
+  CreateMarketingLlmUsageData,
+  CreateMarketingPostMetricData,
+  CreateMarketingWeeklyReportData,
   CreateMemoryObjectData,
   CreateNotetakerCalendarData,
   CreateNotetakerEventData,
@@ -37,6 +54,9 @@ import type {
   UpdateAgentRunData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
+  UpdateMarketingChannelPostData,
+  UpdateMarketingContentInsightData,
+  UpdateMarketingContentItemData,
   UpdateMemoryObjectData,
   UpdateNotetakerCalendarData,
   UpdateNotetakerEventData,
@@ -148,6 +168,14 @@ const seedNotetakerCalendars: NotetakerCalendar[] = [];
 const seedNotetakerMeetings: NotetakerMeeting[] = [];
 const seedNotetakerEvents: NotetakerEvent[] = [];
 const seedPriorities: Priority[] = [];
+const seedMarketingContentItems: MarketingContentItem[] = [];
+const seedMarketingContentInsights: MarketingContentInsight[] = [];
+const seedMarketingChannelPosts: MarketingChannelPost[] = [];
+const seedMarketingPostMetrics: MarketingPostMetric[] = [];
+const seedMarketingExperiments: MarketingExperiment[] = [];
+const seedMarketingEvents: MarketingEvent[] = [];
+const seedMarketingWeeklyReports: MarketingWeeklyReport[] = [];
+const seedMarketingLlmUsage: MarketingLlmUsage[] = [];
 
 type InMemoryState = {
   brains: Brain[];
@@ -165,6 +193,14 @@ type InMemoryState = {
   notetakerCalendars: NotetakerCalendar[];
   notetakerMeetings: NotetakerMeeting[];
   notetakerEvents: NotetakerEvent[];
+  marketingContentItems: MarketingContentItem[];
+  marketingContentInsights: MarketingContentInsight[];
+  marketingChannelPosts: MarketingChannelPost[];
+  marketingPostMetrics: MarketingPostMetric[];
+  marketingExperiments: MarketingExperiment[];
+  marketingEvents: MarketingEvent[];
+  marketingWeeklyReports: MarketingWeeklyReport[];
+  marketingLlmUsage: MarketingLlmUsage[];
 };
 
 function clone<T>(value: T): T {
@@ -220,6 +256,14 @@ function createSeedState(): InMemoryState {
     notetakerCalendars: clone(seedNotetakerCalendars),
     notetakerMeetings: clone(seedNotetakerMeetings),
     notetakerEvents: clone(seedNotetakerEvents),
+    marketingContentItems: clone(seedMarketingContentItems),
+    marketingContentInsights: clone(seedMarketingContentInsights),
+    marketingChannelPosts: clone(seedMarketingChannelPosts),
+    marketingPostMetrics: clone(seedMarketingPostMetrics),
+    marketingExperiments: clone(seedMarketingExperiments),
+    marketingEvents: clone(seedMarketingEvents),
+    marketingWeeklyReports: clone(seedMarketingWeeklyReports),
+    marketingLlmUsage: clone(seedMarketingLlmUsage),
   };
 }
 
@@ -729,6 +773,10 @@ export class InMemoryRepository implements BrainRepository {
     return clone(alert);
   }
 
+  async listBrainEvents(): Promise<BrainEvent[]> {
+    return [];
+  }
+
   async listNotetakerCalendars(
     input: { brainId?: string; status?: "connected" | "error" | "disabled" } = {},
   ): Promise<NotetakerCalendar[]> {
@@ -877,5 +925,269 @@ export class InMemoryRepository implements BrainRepository {
     if (!event) return null;
     Object.assign(event, update);
     return clone(event);
+  }
+
+  async createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem> {
+    const item: MarketingContentItem = {
+      id: nanoid(),
+      brainId: input.brainId,
+      sourceItemId: input.sourceItemId ?? null,
+      sourcePlatform: input.sourcePlatform,
+      sourceType: input.sourceType,
+      sourceUrl: input.sourceUrl ?? null,
+      sourceExternalId: input.sourceExternalId ?? null,
+      sourceOwner: input.sourceOwner ?? null,
+      sourceDate: input.sourceDate ?? null,
+      sourceConfidentiality: input.sourceConfidentiality ?? "internal",
+      rawText: input.rawText,
+      cleanedSummary: input.cleanedSummary ?? null,
+      contentSafeSummary: input.contentSafeSummary ?? null,
+      requiresRedaction: input.requiresRedaction ?? true,
+      approvedForContent: input.approvedForContent ?? false,
+      metadata: input.metadata ?? {},
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().marketingContentItems.unshift(item);
+    return clone(item);
+  }
+
+  async updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData): Promise<MarketingContentItem | null> {
+    const item = loadState().marketingContentItems.find((entry) => entry.id === contentItemId);
+    if (!item) return null;
+    Object.assign(item, update, { updatedAt: now() });
+    return clone(item);
+  }
+
+  async listMarketingContentItems(brainId: string, options: { limit?: number } = {}): Promise<MarketingContentItem[]> {
+    return clone(loadState().marketingContentItems.filter((item) => item.brainId === brainId).slice(0, options.limit ?? 100));
+  }
+
+  async getMarketingContentItem(contentItemId: string): Promise<MarketingContentItem | null> {
+    const item = loadState().marketingContentItems.find((entry) => entry.id === contentItemId);
+    return item ? clone(item) : null;
+  }
+
+  async createMarketingContentInsights(items: CreateMarketingContentInsightData[]): Promise<MarketingContentInsight[]> {
+    const created = items.map((item) => ({
+      id: nanoid(),
+      brainId: item.brainId,
+      contentItemId: item.contentItemId,
+      rawInsight: item.rawInsight,
+      contentSafeInsight: item.contentSafeInsight,
+      sensitivityLevel: item.sensitivityLevel ?? "medium",
+      suggestedPillar: item.suggestedPillar ?? null,
+      suggestedChannels: item.suggestedChannels ?? [],
+      approvedForContent: item.approvedForContent ?? false,
+      metadata: item.metadata ?? {},
+      createdAt: now(),
+      updatedAt: now(),
+    }));
+    loadState().marketingContentInsights.unshift(...created);
+    return clone(created);
+  }
+
+  async updateMarketingContentInsight(insightId: string, update: UpdateMarketingContentInsightData): Promise<MarketingContentInsight | null> {
+    const insight = loadState().marketingContentInsights.find((entry) => entry.id === insightId);
+    if (!insight) return null;
+    Object.assign(insight, update, { updatedAt: now() });
+    return clone(insight);
+  }
+
+  async listMarketingContentInsights(brainId: string, options: { limit?: number; approvedOnly?: boolean } = {}): Promise<MarketingContentInsight[]> {
+    return clone(loadState().marketingContentInsights
+      .filter((item) => item.brainId === brainId)
+      .filter((item) => (options.approvedOnly ? item.approvedForContent : true))
+      .slice(0, options.limit ?? 100));
+  }
+
+  async getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null> {
+    const insight = loadState().marketingContentInsights.find((entry) => entry.id === insightId);
+    return insight ? clone(insight) : null;
+  }
+
+  async createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]> {
+    const created = items.map((item) => ({
+      id: nanoid(),
+      brainId: item.brainId,
+      contentItemId: item.contentItemId ?? null,
+      contentInsightId: item.contentInsightId ?? null,
+      channel: item.channel,
+      status: item.status ?? "draft",
+      bodyText: item.bodyText,
+      mediaType: null,
+      mediaReference: null,
+      plannedPostDate: item.plannedPostDate ?? null,
+      postingWindow: item.postingWindow ?? null,
+      scheduledAt: item.scheduledAt ?? null,
+      publishedAt: item.publishedAt ?? null,
+      liveUrl: item.liveUrl ?? null,
+      schedulerProvider: item.schedulerProvider ?? null,
+      schedulerPostId: item.schedulerPostId ?? null,
+      campaignTag: item.campaignTag ?? null,
+      pillar: item.pillar ?? null,
+      formatType: item.formatType ?? null,
+      hookType: item.hookType ?? null,
+      targetIcp: item.targetIcp ?? null,
+      funnelStage: item.funnelStage ?? null,
+      experimentTag: item.experimentTag ?? null,
+      requiresReview: item.requiresReview ?? true,
+      sensitivityLevel: item.sensitivityLevel ?? "medium",
+      approvedBy: item.approvedBy ?? null,
+      approvedAt: item.approvedAt ?? null,
+      revisionReason: item.revisionReason ?? null,
+      safetyCheckStatus: item.safetyCheckStatus ?? "not_run",
+      safetyCheckReason: item.safetyCheckReason ?? null,
+      isExemplar: item.isExemplar ?? false,
+      performanceTag: item.performanceTag ?? null,
+      utmSource: item.utmSource ?? null,
+      utmMedium: item.utmMedium ?? null,
+      utmCampaign: item.utmCampaign ?? null,
+      utmContent: item.utmContent ?? null,
+      metadata: item.metadata ?? {},
+      createdAt: now(),
+      updatedAt: now(),
+    }));
+    loadState().marketingChannelPosts.unshift(...created);
+    return clone(created);
+  }
+
+  async updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null> {
+    const post = loadState().marketingChannelPosts.find((entry) => entry.id === postId);
+    if (!post) return null;
+    Object.assign(post, update, { updatedAt: now() });
+    return clone(post);
+  }
+
+  async listMarketingChannelPosts(brainId: string, options: { limit?: number; status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}): Promise<MarketingChannelPost[]> {
+    const statuses = options.status ? (Array.isArray(options.status) ? options.status : [options.status]) : null;
+    return clone(loadState().marketingChannelPosts
+      .filter((post) => post.brainId === brainId)
+      .filter((post) => (statuses ? statuses.includes(post.status) : true))
+      .filter((post) => (options.exemplarOnly ? post.isExemplar : true))
+      .slice(0, options.limit ?? 100));
+  }
+
+  async getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null> {
+    const post = loadState().marketingChannelPosts.find((entry) => entry.id === postId);
+    return post ? clone(post) : null;
+  }
+
+  async createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric> {
+    const metric: MarketingPostMetric = {
+      id: nanoid(),
+      brainId: input.brainId,
+      channelPostId: input.channelPostId,
+      metricDate: input.metricDate,
+      impressions: input.impressions ?? 0,
+      reactions: input.reactions ?? 0,
+      comments: input.comments ?? 0,
+      shares: input.shares ?? 0,
+      clicks: input.clicks ?? 0,
+      saves: input.saves ?? 0,
+      follows: input.follows ?? 0,
+      rawMetrics: input.rawMetrics ?? {},
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().marketingPostMetrics.unshift(metric);
+    return clone(metric);
+  }
+
+  async listMarketingPostMetrics(brainId: string, options: { limit?: number } = {}): Promise<MarketingPostMetric[]> {
+    return clone(loadState().marketingPostMetrics.filter((metric) => metric.brainId === brainId).slice(0, options.limit ?? 500));
+  }
+
+  async createMarketingEvent(input: CreateMarketingEventData): Promise<MarketingEvent> {
+    const event: MarketingEvent = {
+      id: nanoid(),
+      brainId: input.brainId,
+      channelPostId: input.channelPostId ?? null,
+      eventType: input.eventType,
+      eventSource: input.eventSource,
+      eventAt: input.eventAt ?? now(),
+      description: input.description,
+      contactName: input.contactName ?? null,
+      companyName: input.companyName ?? null,
+      value: input.value ?? null,
+      utmSource: input.utmSource ?? null,
+      utmMedium: input.utmMedium ?? null,
+      utmCampaign: input.utmCampaign ?? null,
+      utmContent: input.utmContent ?? null,
+      attributionConfidence: input.attributionConfidence ?? "unknown",
+      metadata: input.metadata ?? {},
+      createdAt: now(),
+    };
+    loadState().marketingEvents.unshift(event);
+    return clone(event);
+  }
+
+  async listMarketingEvents(brainId: string, options: { limit?: number } = {}): Promise<MarketingEvent[]> {
+    return clone(loadState().marketingEvents.filter((event) => event.brainId === brainId).slice(0, options.limit ?? 200));
+  }
+
+  async createMarketingExperiment(input: CreateMarketingExperimentData): Promise<MarketingExperiment> {
+    const experiment: MarketingExperiment = {
+      id: nanoid(),
+      brainId: input.brainId,
+      tag: input.tag,
+      title: input.title,
+      hypothesis: input.hypothesis,
+      status: input.status ?? "planned",
+      startedAt: input.startedAt ?? null,
+      endedAt: input.endedAt ?? null,
+      metadata: input.metadata ?? {},
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().marketingExperiments.unshift(experiment);
+    return clone(experiment);
+  }
+
+  async listMarketingExperiments(brainId: string, options: { limit?: number } = {}): Promise<MarketingExperiment[]> {
+    return clone(loadState().marketingExperiments.filter((experiment) => experiment.brainId === brainId).slice(0, options.limit ?? 100));
+  }
+
+  async createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData): Promise<MarketingWeeklyReport> {
+    const report: MarketingWeeklyReport = {
+      id: nanoid(),
+      brainId: input.brainId,
+      weekStart: input.weekStart,
+      weekEnd: input.weekEnd,
+      publishedCount: input.publishedCount,
+      qualitativeOnly: input.qualitativeOnly,
+      summary: input.summary,
+      markdown: input.markdown,
+      recommendedExperiments: input.recommendedExperiments ?? [],
+      metadata: input.metadata ?? {},
+      createdAt: now(),
+    };
+    loadState().marketingWeeklyReports.unshift(report);
+    return clone(report);
+  }
+
+  async listMarketingWeeklyReports(brainId: string, options: { limit?: number } = {}): Promise<MarketingWeeklyReport[]> {
+    return clone(loadState().marketingWeeklyReports.filter((report) => report.brainId === brainId).slice(0, options.limit ?? 50));
+  }
+
+  async createMarketingLlmUsage(input: CreateMarketingLlmUsageData): Promise<MarketingLlmUsage> {
+    const usage: MarketingLlmUsage = {
+      id: nanoid(),
+      brainId: input.brainId,
+      jobType: input.jobType,
+      modelProvider: input.modelProvider,
+      model: input.model,
+      inputTokens: input.inputTokens ?? 0,
+      outputTokens: input.outputTokens ?? 0,
+      estimatedCostUsd: input.estimatedCostUsd ?? 0,
+      metadata: input.metadata ?? {},
+      createdAt: now(),
+    };
+    loadState().marketingLlmUsage.unshift(usage);
+    return clone(usage);
+  }
+
+  async listMarketingLlmUsage(brainId: string, options: { limit?: number } = {}): Promise<MarketingLlmUsage[]> {
+    return clone(loadState().marketingLlmUsage.filter((usage) => usage.brainId === brainId).slice(0, options.limit ?? 500));
   }
 }

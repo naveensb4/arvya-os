@@ -9,6 +9,7 @@
     "./daily-brief": "./src/daily-brief.ts",
     "./drift-review": "./src/drift-review.ts",
     "./follow-up": "./src/follow-up.ts",
+    "./marketing": "./src/marketing.ts",
     ".": "./src/index.ts"
   }
 }

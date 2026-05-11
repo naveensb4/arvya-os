@@ -57,6 +57,13 @@
       "when": 1777365600000,
       "tag": "0006_priorities",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778447436441,
+      "tag": "0008_ancient_bucky",
+      "breakpoints": true
     }
   ]
 }

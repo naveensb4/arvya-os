@@ -6,6 +6,25 @@ import type {
   MemoryObject,
   MemoryObjectStatus,
   MemoryObjectType,
+  MarketingChannel,
+  MarketingChannelPost,
+  MarketingConfidentiality,
+  MarketingContentInsight,
+  MarketingContentItem,
+  MarketingEvent,
+  MarketingEventType,
+  MarketingExperiment,
+  MarketingFormatType,
+  MarketingFunnelStage,
+  MarketingHookType,
+  MarketingLlmUsage,
+  MarketingPostMetric,
+  MarketingPostStatus,
+  MarketingSensitivityLevel,
+  MarketingSourcePlatform,
+  MarketingSourceType,
+  MarketingTargetIcp,
+  MarketingWeeklyReport,
   ModelProvider,
   OpenLoop,
   OpenLoopPriority,
@@ -247,6 +266,15 @@ export type BrainAlert = {
   createdAt: string;
 };
 
+export type BrainEvent = {
+  id: string;
+  brainId: string;
+  eventType: string;
+  sourceSystem?: string;
+  payload?: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type NotetakerCalendar = {
   id: string;
   brainId: string;
@@ -424,6 +452,159 @@ export type UpdateNotetakerEventData = Partial<{
   processedAt: string | null;
 }>;
 
+export type CreateMarketingContentItemData = {
+  brainId: string;
+  sourceItemId?: string | null;
+  sourcePlatform: MarketingSourcePlatform;
+  sourceType: MarketingSourceType;
+  sourceUrl?: string | null;
+  sourceExternalId?: string | null;
+  sourceOwner?: string | null;
+  sourceDate?: string | null;
+  sourceConfidentiality?: MarketingConfidentiality;
+  rawText: string;
+  cleanedSummary?: string | null;
+  contentSafeSummary?: string | null;
+  requiresRedaction?: boolean;
+  approvedForContent?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateMarketingContentItemData = Partial<{
+  cleanedSummary: string | null;
+  contentSafeSummary: string | null;
+  sourceConfidentiality: MarketingConfidentiality;
+  requiresRedaction: boolean;
+  approvedForContent: boolean;
+  metadata: Record<string, unknown>;
+}>;
+
+export type CreateMarketingContentInsightData = {
+  brainId: string;
+  contentItemId: string;
+  rawInsight: string;
+  contentSafeInsight: string;
+  sensitivityLevel?: MarketingSensitivityLevel;
+  suggestedPillar?: string | null;
+  suggestedChannels?: MarketingChannel[];
+  approvedForContent?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateMarketingContentInsightData = Partial<{
+  contentSafeInsight: string;
+  sensitivityLevel: MarketingSensitivityLevel;
+  suggestedPillar: string | null;
+  suggestedChannels: MarketingChannel[];
+  approvedForContent: boolean;
+  metadata: Record<string, unknown>;
+}>;
+
+export type CreateMarketingChannelPostData = {
+  brainId: string;
+  contentItemId?: string | null;
+  contentInsightId?: string | null;
+  channel: MarketingChannel;
+  status?: MarketingPostStatus;
+  bodyText: string;
+  plannedPostDate?: string | null;
+  postingWindow?: string | null;
+  scheduledAt?: string | null;
+  publishedAt?: string | null;
+  liveUrl?: string | null;
+  schedulerProvider?: string | null;
+  schedulerPostId?: string | null;
+  campaignTag?: string | null;
+  pillar?: string | null;
+  formatType?: MarketingFormatType | null;
+  hookType?: MarketingHookType | null;
+  targetIcp?: MarketingTargetIcp | null;
+  funnelStage?: MarketingFunnelStage | null;
+  experimentTag?: string | null;
+  requiresReview?: boolean;
+  sensitivityLevel?: MarketingSensitivityLevel;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  revisionReason?: string | null;
+  safetyCheckStatus?: "not_run" | "passed" | "failed";
+  safetyCheckReason?: string | null;
+  isExemplar?: boolean;
+  performanceTag?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateMarketingChannelPostData = Partial<Omit<CreateMarketingChannelPostData, "brainId" | "contentItemId" | "contentInsightId" | "channel">>;
+
+export type CreateMarketingPostMetricData = {
+  brainId: string;
+  channelPostId: string;
+  metricDate: string;
+  impressions?: number;
+  reactions?: number;
+  comments?: number;
+  shares?: number;
+  clicks?: number;
+  saves?: number;
+  follows?: number;
+  rawMetrics?: Record<string, unknown>;
+};
+
+export type CreateMarketingEventData = {
+  brainId: string;
+  channelPostId?: string | null;
+  eventType: MarketingEventType;
+  eventSource: string;
+  eventAt?: string;
+  description: string;
+  contactName?: string | null;
+  companyName?: string | null;
+  value?: number | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  attributionConfidence?: "direct" | "assisted" | "manual" | "unknown";
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateMarketingExperimentData = {
+  brainId: string;
+  tag: string;
+  title: string;
+  hypothesis: string;
+  status?: MarketingExperiment["status"];
+  startedAt?: string | null;
+  endedAt?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateMarketingWeeklyReportData = {
+  brainId: string;
+  weekStart: string;
+  weekEnd: string;
+  publishedCount: number;
+  qualitativeOnly: boolean;
+  summary: string;
+  markdown: string;
+  recommendedExperiments?: Array<{ title: string; rationale: string; tag?: string }>;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateMarketingLlmUsageData = {
+  brainId: string;
+  jobType: string;
+  modelProvider: ModelProvider;
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+  metadata?: Record<string, unknown>;
+};
+
 export interface BrainRepository {
   readonly mode: "in_memory" | "supabase";
 
@@ -475,6 +656,7 @@ export interface BrainRepository {
   updateConnectorSyncRun(runId: string, update: UpdateConnectorSyncRunData): Promise<ConnectorSyncRun | null>;
   listBrainAlerts(input?: { brainId?: string; status?: BrainAlertStatus; limit?: number }): Promise<BrainAlert[]>;
   createBrainAlert(input: CreateBrainAlertData): Promise<BrainAlert>;
+  listBrainEvents(brainId: string, options?: ListOptions): Promise<BrainEvent[]>;
 
   listNotetakerCalendars(input?: { brainId?: string; status?: NotetakerCalendarStatus }): Promise<NotetakerCalendar[]>;
   createNotetakerCalendar(input: CreateNotetakerCalendarData): Promise<NotetakerCalendar>;
@@ -486,6 +668,29 @@ export interface BrainRepository {
   listNotetakerEvents(input?: { brainId?: string; providerEventId?: string; limit?: number }): Promise<NotetakerEvent[]>;
   createNotetakerEvent(input: CreateNotetakerEventData): Promise<NotetakerEvent>;
   updateNotetakerEvent(eventId: string, update: UpdateNotetakerEventData): Promise<NotetakerEvent | null>;
+
+  createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem>;
+  updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData): Promise<MarketingContentItem | null>;
+  listMarketingContentItems(brainId: string, options?: ListOptions): Promise<MarketingContentItem[]>;
+  getMarketingContentItem(contentItemId: string): Promise<MarketingContentItem | null>;
+  createMarketingContentInsights(items: CreateMarketingContentInsightData[]): Promise<MarketingContentInsight[]>;
+  updateMarketingContentInsight(insightId: string, update: UpdateMarketingContentInsightData): Promise<MarketingContentInsight | null>;
+  listMarketingContentInsights(brainId: string, options?: ListOptions & { approvedOnly?: boolean }): Promise<MarketingContentInsight[]>;
+  getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null>;
+  createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]>;
+  updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null>;
+  listMarketingChannelPosts(brainId: string, options?: ListOptions & { status?: MarketingPostStatus | MarketingPostStatus[]; exemplarOnly?: boolean }): Promise<MarketingChannelPost[]>;
+  getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null>;
+  createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric>;
+  listMarketingPostMetrics(brainId: string, options?: ListOptions): Promise<MarketingPostMetric[]>;
+  createMarketingEvent(input: CreateMarketingEventData): Promise<MarketingEvent>;
+  listMarketingEvents(brainId: string, options?: ListOptions): Promise<MarketingEvent[]>;
+  createMarketingExperiment(input: CreateMarketingExperimentData): Promise<MarketingExperiment>;
+  listMarketingExperiments(brainId: string, options?: ListOptions): Promise<MarketingExperiment[]>;
+  createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData): Promise<MarketingWeeklyReport>;
+  listMarketingWeeklyReports(brainId: string, options?: ListOptions): Promise<MarketingWeeklyReport[]>;
+  createMarketingLlmUsage(input: CreateMarketingLlmUsageData): Promise<MarketingLlmUsage>;
+  listMarketingLlmUsage(brainId: string, options?: ListOptions): Promise<MarketingLlmUsage[]>;
 }
 
 let cached: BrainRepository | null = null;

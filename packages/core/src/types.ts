@@ -366,6 +366,276 @@ export type FollowUpDraft = {
   rationale: string;
 };
 
+export type MarketingSourcePlatform =
+  | "google_drive"
+  | "manual"
+  | "slack"
+  | "gmail"
+  | "outlook"
+  | "voice"
+  | "blog";
+
+export type MarketingSourceType =
+  | "google_drive_transcript"
+  | "manual_note"
+  | "voice_note"
+  | "slack_thread"
+  | "gmail_email"
+  | "outlook_email"
+  | "blog"
+  | "demo_form"
+  | "investor_question"
+  | "customer_objection"
+  | "product_update";
+
+export type MarketingConfidentiality =
+  | "public"
+  | "internal"
+  | "customer_sensitive"
+  | "investor_sensitive"
+  | "confidential";
+
+export type MarketingSensitivityLevel = "low" | "medium" | "high" | "blocked";
+
+export type MarketingChannel =
+  | "linkedin_company"
+  | "x"
+  | "linkedin_founder"
+  | "linkedin_pb";
+
+export type MarketingPostStatus =
+  | "draft"
+  | "needs_revision"
+  | "approved"
+  | "scheduled"
+  | "published"
+  | "archived"
+  | "failed_schedule";
+
+export type MarketingFormatType =
+  | "teardown"
+  | "founder_story"
+  | "list"
+  | "contrarian"
+  | "product_pov"
+  | "case_study"
+  | "memo"
+  | "other";
+
+export type MarketingHookType =
+  | "pain"
+  | "insight"
+  | "mistake"
+  | "lesson"
+  | "workflow"
+  | "future_of_work"
+  | "other";
+
+export type MarketingTargetIcp = "ib" | "pe" | "hf" | "investor" | "founder" | "operator" | "other";
+
+export type MarketingFunnelStage = "awareness" | "problem_aware" | "solution_aware" | "conversion";
+
+export type MarketingEventType = "demo" | "dm" | "reply" | "qualified_lead" | "website_visit" | "manual_attribution";
+
+export type MarketingContentItem = {
+  id: string;
+  brainId: string;
+  sourceItemId?: string | null;
+  sourcePlatform: MarketingSourcePlatform;
+  sourceType: MarketingSourceType;
+  sourceUrl?: string | null;
+  sourceExternalId?: string | null;
+  sourceOwner?: string | null;
+  sourceDate?: string | null;
+  sourceConfidentiality: MarketingConfidentiality;
+  rawText: string;
+  cleanedSummary?: string | null;
+  contentSafeSummary?: string | null;
+  requiresRedaction: boolean;
+  approvedForContent: boolean;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type MarketingContentInsight = {
+  id: string;
+  brainId: string;
+  contentItemId: string;
+  rawInsight: string;
+  contentSafeInsight: string;
+  sensitivityLevel: MarketingSensitivityLevel;
+  suggestedPillar?: string | null;
+  suggestedChannels: MarketingChannel[];
+  approvedForContent: boolean;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type MarketingChannelPost = {
+  id: string;
+  brainId: string;
+  contentItemId?: string | null;
+  contentInsightId?: string | null;
+  channel: MarketingChannel;
+  status: MarketingPostStatus;
+  bodyText: string;
+  mediaType?: string | null;
+  mediaReference?: string | null;
+  plannedPostDate?: string | null;
+  postingWindow?: string | null;
+  scheduledAt?: string | null;
+  publishedAt?: string | null;
+  liveUrl?: string | null;
+  schedulerProvider?: string | null;
+  schedulerPostId?: string | null;
+  campaignTag?: string | null;
+  pillar?: string | null;
+  formatType?: MarketingFormatType | null;
+  hookType?: MarketingHookType | null;
+  targetIcp?: MarketingTargetIcp | null;
+  funnelStage?: MarketingFunnelStage | null;
+  experimentTag?: string | null;
+  requiresReview: boolean;
+  sensitivityLevel: MarketingSensitivityLevel;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  revisionReason?: string | null;
+  safetyCheckStatus?: "not_run" | "passed" | "failed";
+  safetyCheckReason?: string | null;
+  isExemplar: boolean;
+  performanceTag?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type MarketingPostMetric = {
+  id: string;
+  brainId: string;
+  channelPostId: string;
+  metricDate: string;
+  impressions: number;
+  reactions: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  saves: number;
+  follows: number;
+  rawMetrics: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type MarketingExperiment = {
+  id: string;
+  brainId: string;
+  tag: string;
+  title: string;
+  hypothesis: string;
+  status: "planned" | "running" | "completed" | "paused";
+  startedAt?: string | null;
+  endedAt?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type MarketingEvent = {
+  id: string;
+  brainId: string;
+  channelPostId?: string | null;
+  eventType: MarketingEventType;
+  eventSource: string;
+  eventAt: string;
+  description: string;
+  contactName?: string | null;
+  companyName?: string | null;
+  value?: number | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  attributionConfidence: "direct" | "assisted" | "manual" | "unknown";
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type MarketingWeeklyReport = {
+  id: string;
+  brainId: string;
+  weekStart: string;
+  weekEnd: string;
+  publishedCount: number;
+  qualitativeOnly: boolean;
+  summary: string;
+  markdown: string;
+  recommendedExperiments: Array<{ title: string; rationale: string; tag?: string }>;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type MarketingLlmUsage = {
+  id: string;
+  brainId: string;
+  jobType: string;
+  modelProvider: ModelProvider;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type MarketingRedactionResult = {
+  cleanedSummary: string;
+  contentSafeSummary: string;
+  sourceConfidentiality: MarketingConfidentiality;
+  requiresRedaction: boolean;
+  approvedForContent: boolean;
+  insights: Array<{
+    rawInsight: string;
+    contentSafeInsight: string;
+    sensitivityLevel: MarketingSensitivityLevel;
+    suggestedPillar?: string;
+    suggestedChannels: MarketingChannel[];
+  }>;
+  redactionNotes: string[];
+};
+
+export type MarketingDraftResult = {
+  drafts: Array<{
+    contentInsightId: string;
+    channel: MarketingChannel;
+    bodyText: string;
+    pillar?: string;
+    formatType?: MarketingFormatType;
+    hookType?: MarketingHookType;
+    targetIcp?: MarketingTargetIcp;
+    funnelStage?: MarketingFunnelStage;
+    campaignTag?: string;
+    rationale: string;
+  }>;
+};
+
+export type MarketingSafetyCheckResult = {
+  passed: boolean;
+  reason: string;
+  flags: string[];
+};
+
+export type MarketingWeeklyAnalysisResult = {
+  summary: string;
+  markdown: string;
+  recommendedExperiments: Array<{ title: string; rationale: string; tag?: string }>;
+};
+
 export type AiCompleteInput = {
   system: string;
   prompt: string;

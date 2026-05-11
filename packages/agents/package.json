@@ -12,6 +12,7 @@
     "./daily-brief-agent": "./src/daily-brief-agent.ts",
     "./drift-review-agent": "./src/drift-review-agent.ts",
     "./follow-up-agent": "./src/follow-up-agent.ts",
+    "./marketing-agent": "./src/marketing-agent.ts",
     ".": "./src/index.ts"
   },
   "dependencies": {
