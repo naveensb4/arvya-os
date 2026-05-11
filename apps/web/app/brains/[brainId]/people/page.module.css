@@ -35,6 +35,9 @@
   cursor: pointer;
   transition: background 0.12s;
 }
+.strip > div:hover:not(.stripOn) {
+  background: var(--cream-50, #fafaf8);
+}
 .stripOn {
   background: var(--arvya-dark-900) !important;
 }

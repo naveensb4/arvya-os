@@ -14,6 +14,9 @@ import {
   runCalendarPipeline,
 } from "@/lib/notetaker/runtime";
 import { runDeadlineNudgerForAllBrains } from "@/lib/slack-bot/nudge";
+import { runResolutionSweep } from "@/lib/brain/resolution-sweep";
+import { getAiClient } from "@/lib/ai";
+import { getRepository } from "@/lib/db/repository";
 import { inngest } from "../client";
 
 export const scheduledConnectorSync = inngest.createFunction(
@@ -121,6 +124,18 @@ export const meetingPrepDeltaWatch = inngest.createFunction(
   },
 );
 
+export const resolutionSweep = inngest.createFunction(
+  { id: "resolution-sweep", name: "Resolution sweep", triggers: [{ event: "brain/resolution-sweep" }] },
+  async ({ event, step }) => {
+    const { brainId } = event.data as { brainId: string };
+    return step.run("sweep open loops", async () => {
+      const ai = getAiClient();
+      const repository = getRepository();
+      return runResolutionSweep({ brainId, ai, repository });
+    });
+  },
+);
+
 export const functions = [
   scheduledConnectorSync,
   sourceIngested,
@@ -134,4 +149,5 @@ export const functions = [
   meetingPrepBatch,
   meetingPrep30Min,
   meetingPrepDeltaWatch,
+  resolutionSweep,
 ];

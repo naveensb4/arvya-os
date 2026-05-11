@@ -211,7 +211,7 @@ function isLikelyPersonName(candidate: string): boolean {
 }
 
 const explicitActionPattern =
-  /(follow up|circle back|send (?:the |an |a )?|share (?:the |an |a )?|schedule (?:another |a )?call|set up|introduce|ask [A-Z][A-Za-z]* to follow up|next week|updated deck|demo link|send the notes|can you|can we|please)/i;
+  /(follow up|circle back|send (?:the |an |a )?(?:deck|notes|doc|proposal|contract|nda|update)|share (?:the |an |a )?(?:deck|notes|doc|update|link)|schedule (?:another |a )?call|set up (?:an? )?(?:call|meeting|intro)|introduce\s+[A-Z]|ask [A-Z][A-Za-z]* to follow up|updated deck|demo link|send the notes)/i;
 const requestPattern =
   /\b(?:asked for|asks for|requested|requests|wants|wanted|needs|needed|waiting for|expects|looking for)\b/i;
 const ownershipPattern =

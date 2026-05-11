@@ -1,8 +1,9 @@
 import { runSourceIngestionWorkflow } from "@arvya/agents/ingestion-agent";
-import type { ExtractedMemoryObject, IngestSourceInput, ModelProvider } from "@arvya/core";
+import type { ExtractedMemoryObject, ExtractedOpenLoop, IngestSourceInput, ModelProvider, SourceItem } from "@arvya/core";
 import { getAiClient } from "@/lib/ai";
 import { mergeMemoryObjectsForIngestion, mergeRelationshipsForIngestion } from "@/lib/brain/memory-quality";
 import { runOutcomeDetectionForSource } from "@/lib/brain/outcome-detector";
+import { buildOpenLoopValidationPipeline, type ValidationResult, type GateResult } from "@/lib/brain/validation-pipeline";
 import { getRepository } from "@/lib/db/repository";
 import { buildEmbeddingText } from "@/lib/retrieval";
 import type { EmailParticipant } from "@/lib/connectors/email-cleaning";
@@ -100,6 +101,43 @@ function enrichPersonsWithParticipants(
       },
     };
   });
+}
+
+export async function writeRejectedOutcomes(
+  repository: ReturnType<typeof getRepository>,
+  brainId: string,
+  sourceItemId: string,
+  rejected: ValidationResult<ExtractedOpenLoop>[],
+): Promise<number> {
+  let written = 0;
+  for (const r of rejected) {
+    const failedGate = r.results.find((g) => !g.pass);
+    if (!failedGate?.evidence) continue;
+
+    try {
+      await repository.createMemoryObjects([{
+        brainId,
+        sourceItemId,
+        objectType: "outcome",
+        name: `Outcome: ${r.item.title}`.slice(0, 120),
+        description: `Pre-resolved (${failedGate.gate} gate): ${failedGate.evidence.quote}`.slice(0, 800),
+        sourceQuote: r.item.sourceQuote,
+        confidence: failedGate.evidence.confidence,
+        properties: {
+          memory_source: "open_loop_outcome",
+          detected_by: failedGate.gate,
+          pre_resolved: true,
+          evidence_type: failedGate.evidence.type,
+          evidence_source_id: failedGate.evidence.sourceId,
+        },
+      }]);
+      written++;
+      console.log(`[KG OUTCOME WRITTEN] ${r.item.title} — ${failedGate.gate} gate evidence: ${failedGate.evidence.quote}`);
+    } catch (error) {
+      console.error(`[writeRejectedOutcome] failed for "${r.item.title}":`, error);
+    }
+  }
+  return written;
 }
 
 export type IngestSourceIntoBrainInput = IngestSourceInput & {
@@ -266,8 +304,39 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       "engineering", "deal", "diligence", "crm", "scheduling", "task",
       "investor_ask", "customer_ask", "strategic_question", "other",
     ]);
+
+    const pipeline = buildOpenLoopValidationPipeline();
+    let sentSources: SourceItem[] | undefined;
+    try {
+      const allSources = await repository.listSourceItems(brain.id);
+      sentSources = allSources.filter((s) => {
+        const meta = (s.metadata ?? {}) as Record<string, unknown>;
+        return meta.evidence_only === true;
+      });
+    } catch (error) {
+      console.error("[source-ingestion] failed to cache SENT sources:", error);
+    }
+    const validationContext = { brainId: brain.id, source: sourceItem, repository, sentSources };
+    const { passed: validatedLoops, rejected: rejectedLoops } =
+      await pipeline.validateBatch(result.openLoops, validationContext);
+
+    if (rejectedLoops.length > 0) {
+      console.log(
+        `[validation-pipeline] rejected ${rejectedLoops.length} loops for source ${sourceItem.id}:`,
+        rejectedLoops.map((r) => `${r.item.title} (${r.rejectedBy}: ${r.results.find((g) => !g.pass)?.reason})`),
+      );
+      try {
+        const outcomesWritten = await writeRejectedOutcomes(repository, brain.id, sourceItem.id, rejectedLoops);
+        if (outcomesWritten > 0) {
+          console.log(`[source-ingestion] wrote ${outcomesWritten} KG outcomes from gate-rejected loops`);
+        }
+      } catch (error) {
+        console.error("[source-ingestion] writeRejectedOutcomes failed:", error);
+      }
+    }
+
     const openLoops = await repository.createOpenLoops(
-      result.openLoops.map((loop) => ({
+      validatedLoops.map(({ item: loop }) => ({
         brainId: brain.id,
         sourceItemId: sourceItem.id,
         title: loop.title,
@@ -282,7 +351,12 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
         requiresHumanApproval: loop.requiresHumanApproval,
         sourceQuote: loop.sourceQuote,
         confidence: loop.confidence,
-        properties: loop.properties ?? {},
+        properties: {
+          ...(loop.properties ?? {}),
+          validationGates: validatedLoops
+            .find((v) => v.item === loop)
+            ?.results.map((r) => ({ gate: r.gate, reason: r.reason })),
+        },
       })),
     );
 

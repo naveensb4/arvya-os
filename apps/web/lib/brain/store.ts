@@ -570,6 +570,19 @@ export async function closeOpenLoop(
 
   await promoteOpenLoopOutcomeToMemory(repository, updated, evidenceIds);
 
+  try {
+    const { writeOutcomeToKG } = await import("@/lib/brain/kg-writeback");
+    await writeOutcomeToKG({
+      repository,
+      brainId,
+      loop: updated,
+      evidenceSourceId: evidenceIds[0] ?? null,
+      resolvedBy: "manual",
+    });
+  } catch (error) {
+    console.error("[kg-writeback] failed:", error);
+  }
+
   const memoryObjects = await repository.listMemoryObjects(brainId);
   const outcomeMemory = memoryObjects.find(
     (memory) =>
@@ -634,6 +647,16 @@ export async function updateMemoryObjectReview(
 
 export async function getOpenLoopReviewSnapshot(brainId?: string) {
   const { repository, brains, selectedBrain } = await selectedBrainOrDefault(brainId);
+
+  // Proactive calendar resolver: auto-close meeting loops where the event
+  // already happened. Runs on page visit, 5-min staleness window.
+  try {
+    const { runProactiveResolver } = await import("@/lib/brain/proactive-resolver");
+    await runProactiveResolver({ brainId: selectedBrain.id, repository });
+  } catch (error) {
+    console.error("[proactive-resolver] failed:", error);
+  }
+
   const [sourceItems, openLoops] = await Promise.all([
     repository.listSourceItems(selectedBrain.id),
     repository.listOpenLoops(selectedBrain.id),

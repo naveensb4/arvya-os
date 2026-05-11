@@ -272,39 +272,10 @@ export default async function PeoplePage({ params }: PageProps) {
         <h1>Contacts.</h1>
       </header>
 
-      <div className={styles.strip}>
-        <div className={styles.stripOn}>
-          <div className={styles.lab}>All</div>
-          <div className={styles.v}>{total}</div>
-          <div className={styles.sub}>
-            extracted from your sources
-          </div>
-        </div>
-        <div>
-          <div className={styles.lab}>Owe a reply</div>
-          <div className={`${styles.v} ${styles.vWarn}`}>{oweCount}</div>
-          <div className={styles.sub}>
-            {oweCount === 0 ? "all clear" : "open loops linked to person"}
-          </div>
-        </div>
-        <div>
-          <div className={styles.lab}>Hot this week</div>
-          <div className={styles.v}>{hotCount}</div>
-          <div className={styles.sub}>touched in last 7d</div>
-        </div>
-        <div>
-          <div className={styles.lab}>Cooling</div>
-          <div className={styles.v}>{coolCount}</div>
-          <div className={styles.sub}>no touch over 30d</div>
-        </div>
-        <div>
-          <div className={styles.lab}>Investors</div>
-          <div className={styles.v}>{investorCount}</div>
-          <div className={styles.sub}>tagged as investor</div>
-        </div>
-      </div>
-
-      <PeopleTable rows={rows} />
+      <PeopleTable
+        rows={rows}
+        counts={{ total, oweCount, hotCount, coolCount, investorCount }}
+      />
 
       <span style={{ display: "none" }}>{brainId}</span>
     </div>
