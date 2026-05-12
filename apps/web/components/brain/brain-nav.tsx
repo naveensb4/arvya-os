@@ -162,7 +162,7 @@ export function BrainNav({
         { key: "ask", label: "Ask brain", href: `${base}/ask`, icon: ICONS.message },
         {
           key: "loops",
-          label: "Action items",
+          label: "Open loops",
           href: `${base}/open-loops`,
           icon: ICONS.loop,
           count: fmt(counts.loops),
