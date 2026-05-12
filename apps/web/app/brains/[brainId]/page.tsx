@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { BrainDoc } from "@arvya/core";
-import type { CalendarEvent } from "@/lib/db/repository";
+import type { BrainEvent, CalendarEvent } from "@/lib/db/repository";
 import { getRepository } from "@/lib/db/repository";
 import {
   getBrainSnapshot,
   getLatestDriftReview,
   isBrainNotFoundError,
 } from "@/lib/brain/store";
+import { buildDashboardModel } from "@/lib/brain/dashboard";
 import { runCalendarPipeline } from "@/lib/notetaker/runtime";
 import styles from "./page.module.css";
 
@@ -79,6 +80,45 @@ function formatRelativeAgo(iso: string): string {
   const days = Math.floor(hr / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+function formatDueLabel(iso: string | undefined): string {
+  if (!iso) return "No due date";
+  const due = new Date(iso);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(due);
+  dueDay.setHours(0, 0, 0, 0);
+  const diff = Math.round((dueDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  if (diff < 0) return `${Math.abs(diff)}d overdue`;
+  if (diff === 0) return "Due today";
+  if (diff === 1) return "Due tomorrow";
+  if (diff <= 7) return `Due in ${diff}d`;
+  return due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function loopStateLabel(loop: import("@arvya/core").OpenLoop): string {
+  if (loop.status === "needs_review") return "Needs founder review";
+  if (isOverdueLoop(loop)) return "Overdue";
+  if (loop.status === "waiting") return "Waiting";
+  return loop.priority === "critical" ? "Critical" : loop.priority;
+}
+
+function sourceTypeLabel(source: import("@arvya/core").SourceItem): string {
+  const domain = source.metadata?.domain_type;
+  if (typeof domain === "string") return domain.replace(/_/g, " ");
+  return source.type.replace(/_/g, " ");
+}
+
+function brainEventSummary(event: BrainEvent): string {
+  if (event.eventType === "connector_sync_completed") {
+    const payload = event.payload ?? {};
+    const ingested = typeof payload.ingested_count === "number" ? payload.ingested_count : 0;
+    const found = typeof payload.found_count === "number" ? payload.found_count : 0;
+    const source = event.sourceSystem?.replace(/_/g, " ") ?? "connector";
+    return `${source} sync completed: ${ingested} ingested, ${found} found`;
+  }
+  return event.eventType.replace(/_/g, " ");
 }
 
 function build14DaySourceHistogram(
@@ -394,7 +434,19 @@ export default async function DashboardPage({ params }: PageProps) {
   // Real meetings from the notetaker pipeline. Window: now -> +48h.
   const repository = getRepository();
   const now = new Date();
+  const currentTime = now.getTime();
   const windowEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const [connectorConfigs, syncRuns, brainEvents] = await Promise.all([
+    repository.listConnectorConfigs(selectedBrainId),
+    repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 25 }),
+    repository.listBrainEvents(selectedBrainId, { limit: 12 }),
+  ]);
+  const dashboard = buildDashboardModel({
+    snapshot,
+    syncRuns,
+    connectorConfigs,
+    currentTime,
+  });
 
   const calendars = await repository.listNotetakerCalendars({
     brainId: selectedBrainId,
@@ -429,8 +481,50 @@ export default async function DashboardPage({ params }: PageProps) {
       ? driftSignals.slice(0, 3).map((s) => ({ title: s.summary, body: s.detail }))
       : PLACEHOLDER_DRIFT_SIGNALS;
 
-  const overdueLoops = openLoops.filter(isOverdueLoop).length;
-  const topActions = openLoops.slice(0, 5);
+  const overdueLoops = dashboard.overdueLoops.length;
+  const needsAttention = [
+    ...dashboard.overdueLoops,
+    ...dashboard.reviewBacklog,
+    ...dashboard.dueSoonLoops,
+    ...dashboard.actionQueue,
+  ].filter((loop, index, arr) => arr.findIndex((item) => item.id === loop.id) === index).slice(0, 6);
+  const founderDecisionItems = [
+    ...dashboard.reviewBacklog.map((loop) => ({
+      id: loop.id,
+      title: loop.title || loop.description || "Review extracted loop",
+      body: loop.sourceQuote ?? loop.description,
+      href: `/brains/${selectedBrainId}/open-loops`,
+      label: "Review loop",
+    })),
+    ...dashboard.driftFindings.map((finding, index) => ({
+      id: `drift-${index}`,
+      title: finding.title,
+      body: finding.description,
+      href: `/brains/${selectedBrainId}/drift`,
+      label: finding.severity,
+    })),
+    ...dashboard.questions.map((question) => ({
+      id: question.id,
+      title: question.name,
+      body: question.description,
+      href: `/brains/${selectedBrainId}/memory`,
+      label: "Question",
+    })),
+  ].slice(0, 5);
+  const changeItems = [
+    ...brainEvents.map((event) => ({
+      id: event.id,
+      title: brainEventSummary(event),
+      meta: formatRelativeAgo(event.createdAt),
+      href: `/brains/${selectedBrainId}/connections`,
+    })),
+    ...dashboard.operationalSources.slice(0, 6).map((source) => ({
+      id: source.id,
+      title: source.title,
+      meta: `${sourceTypeLabel(source)} - ${formatRelativeAgo(source.createdAt)}`,
+      href: `/brains/${selectedBrainId}/sources`,
+    })),
+  ].slice(0, 6);
 
   // Real 14-day source ingestion histogram. Bucket sourceItems by their
   // createdAt date, fill empty days with 0.
@@ -507,7 +601,7 @@ export default async function DashboardPage({ params }: PageProps) {
             <b>{memoryObjects.length.toLocaleString()}</b>
           </div>
           <div className={styles.stat}>
-            Action items
+            Open loops
             <b>{openLoops.length}</b>
           </div>
           <div className={styles.stat}>
@@ -584,6 +678,81 @@ export default async function DashboardPage({ params }: PageProps) {
         </Link>
       </div>
 
+      <section className={styles.cockpit} aria-label="Today cockpit">
+        <div className={styles.cockpitPrimary}>
+          <div className={styles.cockpitHead}>
+            <div>
+              <span className={styles.eyebrow}>Needs attention now</span>
+              <h2>{dashboard.commandSummary}</h2>
+            </div>
+            <Link href={`/brains/${selectedBrainId}/open-loops`}>Open loops</Link>
+          </div>
+          {needsAttention.length === 0 ? (
+            <div className={styles.emptyPanel}>
+              No urgent loops. Add sources or run a drift review to keep the operating picture fresh.
+            </div>
+          ) : (
+            <div className={styles.focusList}>
+              {needsAttention.map((loop) => {
+                const sourceTitle = loop.sourceItemId ? sourceById.get(loop.sourceItemId)?.title : undefined;
+                return (
+                  <Link
+                    key={loop.id}
+                    href={`/brains/${selectedBrainId}/open-loops`}
+                    className={styles.focusItem}
+                  >
+                    <span className={styles.focusState}>{loopStateLabel(loop)}</span>
+                    <span className={styles.focusTitle}>{loop.title || loop.description || "Untitled loop"}</span>
+                    <span className={styles.focusMeta}>
+                      {loop.owner ? `${loop.owner} - ` : ""}
+                      {formatDueLabel(loop.dueDate)}
+                      {sourceTitle ? ` - evidence: ${sourceTitle.slice(0, 42)}` : ""}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.cockpitSide}>
+          <div className={styles.sidePanel}>
+            <div className={styles.sidePanelHead}>
+              <h3>Founder decisions</h3>
+              <span>{founderDecisionItems.length}</span>
+            </div>
+            {founderDecisionItems.length === 0 ? (
+              <p className={styles.sideEmpty}>No review items or strategic questions are waiting.</p>
+            ) : (
+              founderDecisionItems.map((item) => (
+                <Link key={item.id} href={item.href} className={styles.decisionItem}>
+                  <span>{item.label}</span>
+                  <b>{item.title}</b>
+                  <small>{item.body}</small>
+                </Link>
+              ))
+            )}
+          </div>
+
+          <div className={styles.sidePanel}>
+            <div className={styles.sidePanelHead}>
+              <h3>What changed</h3>
+              <span>{changeItems.length}</span>
+            </div>
+            {changeItems.length === 0 ? (
+              <p className={styles.sideEmpty}>No connector events or recent sources yet.</p>
+            ) : (
+              changeItems.map((item) => (
+                <Link key={item.id} href={item.href} className={styles.changeItem}>
+                  <b>{item.title}</b>
+                  <span>{item.meta}</span>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
       <div className={styles.dashGrid}>
         <div>
           <div className={styles.card} style={{ paddingBottom: 4 }}>
@@ -635,12 +804,12 @@ export default async function DashboardPage({ params }: PageProps) {
 
           <div className={`${styles.card} ${styles.actionList}`}>
             <div className={styles.cardHead}>
-              <h3>Action items</h3>
+              <h3>Suggested next actions</h3>
               <span className={styles.cardMeta}>
-                {Math.min(topActions.length, 5)} of {openLoops.length} - brain-ranked
+                {Math.min(dashboard.suggestedActions.length, 5)} of {openLoops.length} - source-backed
               </span>
             </div>
-            {topActions.length === 0 ? (
+            {dashboard.suggestedActions.length === 0 ? (
               <div
                 style={{
                   padding: "32px 20px",
@@ -649,10 +818,10 @@ export default async function DashboardPage({ params }: PageProps) {
                   color: "var(--text-tertiary)",
                 }}
               >
-                No open action items. The brain logs new ones as it reads sources.
+                No suggested actions yet. The Brain adds them as loops are approved and enriched.
               </div>
             ) : (
-              topActions.map((loop) => {
+              dashboard.suggestedActions.map((loop) => {
                 const age = ageDays(loop.dueDate ?? loop.createdAt);
                 const old = age >= 3;
                 const sourceTitle = loop.sourceItemId
