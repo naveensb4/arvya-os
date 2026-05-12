@@ -48,6 +48,7 @@ function setupFullMocks() {
       },
     ]),
     listAgentRuns: vi.fn().mockResolvedValue([]),
+    createBrainDoc: vi.fn().mockResolvedValue({ id: "doc-e2e" }),
     createAgentRun: vi.fn().mockResolvedValue({ id: "run-e2e" }),
     updateAgentRun: vi.fn().mockResolvedValue(undefined),
     listConnectorConfigs: vi.fn().mockResolvedValue([

@@ -77,23 +77,30 @@ export async function draftMarketingPosts(input: {
   const approvedInsights = input.insights.filter((insight) => insight.approvedForContent);
 
   if (input.ai?.available && approvedInsights.length > 0) {
-    const result = await input.ai.completeStructured({
-      system: marketingDraftSystemPrompt,
-      prompt: buildMarketingDraftPrompt({
-        insights: approvedInsights,
-        channels,
-        exemplars: input.exemplars ?? [],
-        variantsPerInsight: input.variantsPerInsight,
-      }),
-      schema: marketingDraftResultSchema,
-      schemaName: "marketing_draft_result",
-      schemaDescription: "Marketing channel post drafts.",
-      maxTokens: 5000,
-    });
-    const insightIds = new Set(approvedInsights.map((insight) => insight.id));
-    return {
-      drafts: result.data.drafts.filter((draft) => insightIds.has(draft.contentInsightId) && (channels as MarketingChannel[]).includes(draft.channel)),
-    };
+    try {
+      const result = await input.ai.completeStructured({
+        system: marketingDraftSystemPrompt,
+        prompt: buildMarketingDraftPrompt({
+          insights: approvedInsights,
+          channels,
+          exemplars: input.exemplars ?? [],
+          variantsPerInsight: input.variantsPerInsight,
+        }),
+        schema: marketingDraftResultSchema,
+        schemaName: "marketing_draft_result",
+        schemaDescription: "Marketing channel post drafts.",
+        maxTokens: 5000,
+      });
+      const insightIds = new Set(approvedInsights.map((insight) => insight.id));
+      return {
+        drafts: result.data.drafts.filter((draft) => insightIds.has(draft.contentInsightId) && (channels as MarketingChannel[]).includes(draft.channel)),
+      };
+    } catch (error) {
+      console.warn(
+        "[marketing-agent] draft generation fell back to deterministic templates:",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   const variants = Math.max(1, Math.min(5, input.variantsPerInsight ?? 1));

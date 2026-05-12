@@ -37,6 +37,15 @@ function readEnv(): { url: string; anonKey: string } {
 }
 
 export async function getAuthUser(): Promise<AuthUser | null> {
+  if (process.env.ARVYA_E2E_AUTH_BYPASS === "1") {
+    return {
+      id: "user-naveen",
+      email: "naveen@arvya.co",
+      user_metadata: { name: "Naveen SB" },
+      dbUser: { id: "user-naveen", email: "naveen@arvya.co" },
+    };
+  }
+
   const cookieStore = await cookies();
   const { url, anonKey } = readEnv();
 

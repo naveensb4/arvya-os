@@ -216,12 +216,19 @@ async function checkSourceIngestion(): Promise<StepResult> {
   }
 
   const marker = randomUUID();
+  let workspaceId: string | undefined;
   let brainId: string | undefined;
   try {
+    const workspace = await repository.createWorkspace({
+      name: `Deployment Verification Workspace ${marker}`,
+    });
+    workspaceId = workspace.id;
+
     const brain = await createBrain({
       name: `Replit Deployment Verification ${marker}`,
       kind: "company",
       thesis: "Temporary Brain used to verify Replit deployment ingestion.",
+      workspaceId: workspace.id,
     });
     brainId = brain.id;
 
@@ -257,6 +264,13 @@ async function checkSourceIngestion(): Promise<StepResult> {
         await getDb().delete(schema.brains).where(eq(schema.brains.id, brainId));
       } catch (cleanupError) {
         console.warn("Deployment verification cleanup skipped:", cleanupError);
+      }
+    }
+    if (workspaceId) {
+      try {
+        await getDb().delete(schema.workspaces).where(eq(schema.workspaces.id, workspaceId));
+      } catch (cleanupError) {
+        console.warn("Deployment verification workspace cleanup skipped:", cleanupError);
       }
     }
   }

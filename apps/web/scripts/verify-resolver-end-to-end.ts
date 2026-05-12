@@ -17,6 +17,7 @@
 // fresh canonical insert.
 
 import assert from "node:assert/strict";
+import { config } from "dotenv";
 import { eq } from "drizzle-orm";
 import { getAiClient } from "../lib/ai";
 import { getDb } from "../lib/db/client";
@@ -32,6 +33,9 @@ import {
 } from "../lib/db/schema";
 
 const SMOKE_NAME = "__resolver_smoke_test__";
+
+config({ path: ".env.local", override: false, quiet: true });
+config({ path: ".env", override: false, quiet: true });
 
 async function main() {
   console.log("=== Entity Resolver End-to-End Smoke Test ===\n");

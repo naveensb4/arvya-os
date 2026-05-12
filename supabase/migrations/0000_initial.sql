@@ -603,7 +603,7 @@ CREATE TABLE public.marketing_content_insights (
     content_safe_insight text NOT NULL,
     sensitivity_level text DEFAULT 'medium'::text NOT NULL,
     suggested_pillar text,
-    suggested_channels text[] DEFAULT ARRAY[]::text[] NOT NULL,
+    suggested_channels jsonb DEFAULT '[]'::jsonb NOT NULL,
     approved_for_content boolean DEFAULT false NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

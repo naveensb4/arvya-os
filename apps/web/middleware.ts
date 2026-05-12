@@ -24,6 +24,15 @@ export async function middleware(request: NextRequest) {
     request: { headers: request.headers },
   });
 
+  if (
+    process.env.ARVYA_E2E_AUTH_BYPASS === "1" &&
+    (pathname.startsWith("/brains") ||
+      pathname.startsWith("/onboarding") ||
+      pathname.startsWith("/api/"))
+  ) {
+    return response;
+  }
+
   if (pathname === "/callback") {
     return response;
   }

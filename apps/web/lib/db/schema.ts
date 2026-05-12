@@ -1038,7 +1038,7 @@ export const marketingContentInsights = pgTable(
     contentSafeInsight: text("content_safe_insight").notNull(),
     sensitivityLevel: text("sensitivity_level").notNull().default("medium"),
     suggestedPillar: text("suggested_pillar"),
-    suggestedChannels: text("suggested_channels").array().notNull().default([]),
+    suggestedChannels: jsonb("suggested_channels").notNull().default([]),
     approvedForContent: boolean("approved_for_content").notNull().default(false),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

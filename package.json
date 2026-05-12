@@ -41,10 +41,13 @@
     "verify:notetaker-calendar-mock": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-notetaker-mock.ts",
     "verify:marketing-os": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-marketing-os.ts",
     "verify:marketing-slack": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-marketing-slack.ts",
+    "verify:marketing-supabase": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-marketing-supabase.ts",
+    "verify:browser-puppeteer": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/verify-puppeteer-company-brain.ts",
     "verify:supabase": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-supabase.ts",
     "verify:deployment": "tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/verify-deployment.ts",
     "verify:live-end-to-end": "tsx --tsconfig apps/web/tsconfig.scripts.json apps/web/scripts/verify-live-end-to-end.ts",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -52,8 +55,11 @@
     "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
+    "playwright": "^1.60.0",
+    "puppeteer": "^24.43.1",
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^3.2.4"

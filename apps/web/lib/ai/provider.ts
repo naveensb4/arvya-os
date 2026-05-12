@@ -376,6 +376,10 @@ let cachedClient: AiClient | null = null;
 
 export function getAiClient(): AiClient {
   if (cachedClient) return cachedClient;
+  if (process.env.ARVYA_DISABLE_LIVE_AI === "1") {
+    cachedClient = new StubAiClient();
+    return cachedClient;
+  }
   const config = readConfig();
   const hasAnyKey = Boolean(config.anthropicKey || config.openaiKey);
   cachedClient = hasAnyKey ? new LiveAiClient(config) : new StubAiClient();

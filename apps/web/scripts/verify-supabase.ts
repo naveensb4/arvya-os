@@ -31,13 +31,20 @@ async function main() {
   assert.equal(repository.mode, "supabase");
 
   const marker = randomUUID();
+  let workspaceId: string | undefined;
   let brainId: string | undefined;
 
   try {
+    const workspace = await repository.createWorkspace({
+      name: `Supabase Verification Workspace ${marker}`,
+    });
+    workspaceId = workspace.id;
+
     const brain = await createBrain({
       name: `Supabase Persistence Verification ${marker}`,
       kind: "company",
       thesis: "Temporary Brain used to verify real Supabase persistence.",
+      workspaceId: workspace.id,
     });
     brainId = brain.id;
 
@@ -120,6 +127,13 @@ async function main() {
         await getDb().delete(schema.brains).where(eq(schema.brains.id, brainId));
       } catch (error) {
         console.warn("Supabase verification cleanup skipped:", error);
+      }
+    }
+    if (workspaceId) {
+      try {
+        await getDb().delete(schema.workspaces).where(eq(schema.workspaces.id, workspaceId));
+      } catch (error) {
+        console.warn("Supabase verification workspace cleanup skipped:", error);
       }
     }
     resetRepositoryForTests();
