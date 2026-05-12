@@ -622,6 +622,26 @@ export const brainAlerts = pgTable(
   ],
 );
 
+export const brainEvents = pgTable(
+  "brain_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    sourceSystem: text("source_system"),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("brain_events_brain_id_idx").on(table.brainId),
+    index("brain_events_type_idx").on(table.eventType),
+    index("brain_events_source_system_idx").on(table.sourceSystem),
+    index("brain_events_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const notetakerCalendars = pgTable(
   "notetaker_calendars",
   {
@@ -1002,6 +1022,8 @@ export type ConnectorSyncRunRow = typeof connectorSyncRuns.$inferSelect;
 export type NewConnectorSyncRunRow = typeof connectorSyncRuns.$inferInsert;
 export type BrainAlertRow = typeof brainAlerts.$inferSelect;
 export type NewBrainAlertRow = typeof brainAlerts.$inferInsert;
+export type BrainEventRow = typeof brainEvents.$inferSelect;
+export type NewBrainEventRow = typeof brainEvents.$inferInsert;
 export type NotetakerCalendarRow = typeof notetakerCalendars.$inferSelect;
 export type NewNotetakerCalendarRow = typeof notetakerCalendars.$inferInsert;
 export type NotetakerMeetingRow = typeof notetakerMeetings.$inferSelect;

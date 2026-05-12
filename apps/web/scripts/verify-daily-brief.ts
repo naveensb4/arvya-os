@@ -161,7 +161,7 @@ async function main() {
     status: "active",
   });
 
-  const brief = await generateDailyFounderBrief(brain.id);
+  const brief = await generateDailyFounderBrief(brain.id, { now });
 
   record("Brief returned a structured daily brief", Boolean(brief.structured));
   if (!brief.structured) {

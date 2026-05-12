@@ -466,9 +466,10 @@ export async function syncConnectorConfig(
         : config.connectorType === "gmail"
           ? await syncGmailConnector(config, options.gmailClient)
           : await syncOutlookConnector(config, options.outlookClient);
+      const completedAt = nowIso();
       await repository.updateConnectorSyncRun(run.id, {
         status: "completed",
-        completedAt: nowIso(),
+        completedAt,
         itemsFound: synced.itemsFound,
         itemsIngested: synced.itemsIngested,
         itemsSkipped: synced.itemsSkipped,
@@ -477,6 +478,24 @@ export async function syncConnectorConfig(
           itemsFailed: synced.itemsFailed,
           skippedItems: "skippedItems" in synced ? synced.skippedItems : synced.skippedFiles,
           failedItems: "failedItems" in synced ? synced.failedItems : synced.failedFiles,
+        },
+      });
+      await repository.createBrainEvent({
+        brainId: config.brainId,
+        eventType: "connector_sync_completed",
+        sourceSystem: config.connectorType,
+        payload: {
+          connector_config_id: config.id,
+          connector_type: config.connectorType,
+          sync_run_id: run.id,
+          found_count: synced.itemsFound,
+          ingested_count: synced.itemsIngested,
+          skipped_count: synced.itemsSkipped,
+          failed_count: synced.itemsFailed,
+          source_item_ids: synced.sourceItemIds,
+          sync_started_at: startedAt,
+          sync_finished_at: completedAt,
+          next_watermark: "nextWatermark" in synced ? synced.nextWatermark : undefined,
         },
       });
       const nextWatermark = "nextWatermark" in synced ? synced.nextWatermark : undefined;
@@ -514,10 +533,11 @@ export async function syncConnectorConfig(
     const itemsSkipped = created.duplicate ? 1 : 0;
     const itemsIngested = created.duplicate ? 0 : 1;
     const itemsFailed = 0;
+    const completedAt = nowIso();
 
     await repository.updateConnectorSyncRun(run.id, {
       status: "completed",
-      completedAt: nowIso(),
+      completedAt,
       itemsFound,
       itemsIngested,
       itemsSkipped,
@@ -525,6 +545,23 @@ export async function syncConnectorConfig(
         sourceItemId: created.sourceItem.id,
         duplicate: created.duplicate,
         itemsFailed,
+      },
+    });
+    await repository.createBrainEvent({
+      brainId: config.brainId,
+      eventType: "connector_sync_completed",
+      sourceSystem: config.connectorType,
+      payload: {
+        connector_config_id: config.id,
+        connector_type: config.connectorType,
+        sync_run_id: run.id,
+        found_count: itemsFound,
+        ingested_count: itemsIngested,
+        skipped_count: itemsSkipped,
+        failed_count: itemsFailed,
+        source_item_ids: [created.sourceItem.id],
+        sync_started_at: startedAt,
+        sync_finished_at: completedAt,
       },
     });
     await repository.updateConnectorConfig(config.id, {

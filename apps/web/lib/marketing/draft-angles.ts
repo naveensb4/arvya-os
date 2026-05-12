@@ -220,7 +220,7 @@ async function pullMarketContext(query: string): Promise<string> {
   }
 }
 
-async function pullChannelHistory(brainId: string): Promise<string> {
+async function pullChannelHistory(): Promise<string> {
   const channel = process.env.MARKETING_OS_SLACK_CHANNEL_ID?.trim();
   const token = process.env.SLACK_BOT_TOKEN?.trim();
   if (!channel || !token) return "";
@@ -326,7 +326,7 @@ export async function generateAngleDrafts(input: {
   const [brainContextText, marketContextText, channelHistoryText] = await Promise.all([
     pullBrainContext(input.brainId, input.userSignal),
     pullMarketContext(input.userSignal),
-    pullChannelHistory(input.brainId),
+    pullChannelHistory(),
   ]);
 
   const completion = await ai.completeStructured({

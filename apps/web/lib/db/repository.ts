@@ -275,6 +275,13 @@ export type BrainEvent = {
   createdAt: string;
 };
 
+export type CreateBrainEventData = {
+  brainId: string;
+  eventType: string;
+  sourceSystem?: string | null;
+  payload?: Record<string, unknown>;
+};
+
 export type NotetakerCalendar = {
   id: string;
   brainId: string;
@@ -657,6 +664,7 @@ export interface BrainRepository {
   listBrainAlerts(input?: { brainId?: string; status?: BrainAlertStatus; limit?: number }): Promise<BrainAlert[]>;
   createBrainAlert(input: CreateBrainAlertData): Promise<BrainAlert>;
   listBrainEvents(brainId: string, options?: ListOptions): Promise<BrainEvent[]>;
+  createBrainEvent(input: CreateBrainEventData): Promise<BrainEvent>;
 
   listNotetakerCalendars(input?: { brainId?: string; status?: NotetakerCalendarStatus }): Promise<NotetakerCalendar[]>;
   createNotetakerCalendar(input: CreateNotetakerCalendarData): Promise<NotetakerCalendar>;

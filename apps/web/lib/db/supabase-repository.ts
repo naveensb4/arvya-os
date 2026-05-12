@@ -23,6 +23,7 @@ import type { Db } from "./client";
 import {
   agentRuns,
   brainAlerts,
+  brainEvents,
   brains,
   connectorConfigs,
   connectorSyncRuns,
@@ -46,6 +47,7 @@ import {
   workflows,
   type AgentRunRow,
   type BrainAlertRow,
+  type BrainEventRow,
   type BrainRow,
   type ConnectorConfigRow,
   type ConnectorSyncRunRow,
@@ -72,6 +74,7 @@ import type {
   BrainRepository,
   CreateAgentRunData,
   CreateBrainAlertData,
+  CreateBrainEventData,
   CreateBrainData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
@@ -326,6 +329,17 @@ function toBrainAlert(row: BrainAlertRow) {
     sourceId: row.sourceId,
     openLoopId: row.openLoopId,
     status: row.status,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toBrainEvent(row: BrainEventRow) {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    eventType: row.eventType,
+    sourceSystem: row.sourceSystem ?? undefined,
+    payload: (row.payload ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -1166,8 +1180,27 @@ export class SupabaseRepository implements BrainRepository {
     return toBrainAlert(row);
   }
 
-  async listBrainEvents() {
-    return [];
+  async listBrainEvents(brainId: string, options: { limit?: number } = {}) {
+    const rows = await this.db
+      .select()
+      .from(brainEvents)
+      .where(eq(brainEvents.brainId, brainId))
+      .orderBy(desc(brainEvents.createdAt))
+      .limit(options.limit ?? 100);
+    return rows.map(toBrainEvent);
+  }
+
+  async createBrainEvent(input: CreateBrainEventData) {
+    const [row] = await this.db
+      .insert(brainEvents)
+      .values({
+        brainId: input.brainId,
+        eventType: input.eventType,
+        sourceSystem: input.sourceSystem ?? null,
+        payload: input.payload ?? {},
+      })
+      .returning();
+    return toBrainEvent(row);
   }
 
   async listNotetakerCalendars(input: { brainId?: string; status?: "connected" | "error" | "disabled" } = {}) {

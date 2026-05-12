@@ -158,7 +158,7 @@ export async function answerBrainQuestion(brainId: string, question: string) {
   }
 }
 
-export async function generateDailyFounderBrief(brainId: string) {
+export async function generateDailyFounderBrief(brainId: string, options?: { now?: Date }) {
   const repository = getRepository();
   const ai = getAiClient();
   const brain = await repository.getBrain(brainId);
@@ -173,7 +173,7 @@ export async function generateDailyFounderBrief(brainId: string) {
   });
 
   try {
-    const now = new Date();
+    const now = options?.now ?? new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const [memoryObjects, sourceItems, openLoops, activePriorities, recentRuns] = await Promise.all([
       repository.listMemoryObjects(brainId),

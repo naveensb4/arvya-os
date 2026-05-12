@@ -26,6 +26,7 @@ import type {
   ConnectorSyncRun,
   CreateAgentRunData,
   CreateBrainAlertData,
+  CreateBrainEventData,
   CreateBrainData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
@@ -164,6 +165,7 @@ const seedAgentRuns: AgentRun[] = [
 const seedConnectorConfigs: ConnectorConfig[] = [];
 const seedConnectorSyncRuns: ConnectorSyncRun[] = [];
 const seedBrainAlerts: BrainAlert[] = [];
+const seedBrainEvents: BrainEvent[] = [];
 const seedNotetakerCalendars: NotetakerCalendar[] = [];
 const seedNotetakerMeetings: NotetakerMeeting[] = [];
 const seedNotetakerEvents: NotetakerEvent[] = [];
@@ -190,6 +192,7 @@ type InMemoryState = {
   connectorConfigs: ConnectorConfig[];
   connectorSyncRuns: ConnectorSyncRun[];
   brainAlerts: BrainAlert[];
+  brainEvents: BrainEvent[];
   notetakerCalendars: NotetakerCalendar[];
   notetakerMeetings: NotetakerMeeting[];
   notetakerEvents: NotetakerEvent[];
@@ -253,6 +256,7 @@ function createSeedState(): InMemoryState {
     connectorConfigs: clone(seedConnectorConfigs),
     connectorSyncRuns: clone(seedConnectorSyncRuns),
     brainAlerts: clone(seedBrainAlerts),
+    brainEvents: clone(seedBrainEvents),
     notetakerCalendars: clone(seedNotetakerCalendars),
     notetakerMeetings: clone(seedNotetakerMeetings),
     notetakerEvents: clone(seedNotetakerEvents),
@@ -773,8 +777,26 @@ export class InMemoryRepository implements BrainRepository {
     return clone(alert);
   }
 
-  async listBrainEvents(): Promise<BrainEvent[]> {
-    return [];
+  async listBrainEvents(brainId: string, options: { limit?: number } = {}): Promise<BrainEvent[]> {
+    return clone(
+      loadState()
+        .brainEvents.filter((event) => event.brainId === brainId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, options.limit ?? 100),
+    );
+  }
+
+  async createBrainEvent(input: CreateBrainEventData): Promise<BrainEvent> {
+    const event: BrainEvent = {
+      id: nanoid(),
+      brainId: input.brainId,
+      eventType: input.eventType,
+      sourceSystem: input.sourceSystem ?? undefined,
+      payload: input.payload ?? {},
+      createdAt: now(),
+    };
+    loadState().brainEvents.unshift(event);
+    return clone(event);
   }
 
   async listNotetakerCalendars(
