@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Roboto_Slab, Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import { Suspense } from "react";
+import { LocalTelemetry } from "@/components/telemetry/local-telemetry";
 import "./globals.css";
 
 const robotoSlab = Roboto_Slab({
@@ -36,7 +38,12 @@ export default function RootLayout({
   const fontVariables = `${robotoSlab.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`;
   return (
     <html lang="en" className={`${fontVariables} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Suspense fallback={null}>
+          <LocalTelemetry />
+        </Suspense>
+        {children}
+      </body>
     </html>
   );
 }
