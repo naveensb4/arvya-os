@@ -77,7 +77,7 @@ function expect(name: string, condition: boolean, detail?: string) {
   const summaries = await runNotetakerCalendarSync({ client: new MockRecallClient() });
   const summary = summaries.find((s) => s.calendarId === calendar.id);
   expect("sync ran for our calendar", Boolean(summary));
-  expect("sync found one event", summary?.itemsFound === 1, JSON.stringify(summary));
+  expect("sync found one event", summary?.synced === 1, JSON.stringify(summary));
   expect("sync scheduled one bot", summary?.scheduled === 1, JSON.stringify(summary));
 
   const meetings = await repo.listNotetakerMeetings({ calendarId: calendar.id });

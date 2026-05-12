@@ -13,6 +13,12 @@
     "./drift-review-agent": "./src/drift-review-agent.ts",
     "./follow-up-agent": "./src/follow-up-agent.ts",
     "./marketing-agent": "./src/marketing-agent.ts",
+    "./entity-resolver-agent": "./src/entity-resolver-agent.ts",
+    "./outcome-detector-agent": "./src/outcome-detector-agent.ts",
+    "./tools/retrieve-brain-context": "./src/tools/retrieve-brain-context.ts",
+    "./tools/linkedin-enrich": "./src/tools/linkedin-enrich.ts",
+    "./tools/tone-analyze": "./src/tools/tone-analyze.ts",
+    "./meeting-prep-agent": "./src/meeting-prep-agent.ts",
     ".": "./src/index.ts"
   },
   "dependencies": {

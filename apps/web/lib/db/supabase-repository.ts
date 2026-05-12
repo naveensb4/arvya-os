@@ -2,6 +2,8 @@ import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
   AgentRun,
   Brain,
+  BrainDoc,
+  BrainDocFeedback,
   MarketingChannelPost,
   MarketingContentInsight,
   MarketingContentItem,
@@ -17,12 +19,18 @@ import type {
   Relationship,
   SourceEmbedding,
   SourceItem,
+  SourceType,
+  User,
+  Workspace,
+  WorkspaceInvite,
+  WorkspaceMember,
   Workflow,
 } from "@arvya/core";
 import type { Db } from "./client";
 import {
   agentRuns,
   brainAlerts,
+  brainDocs,
   brainEvents,
   brains,
   connectorConfigs,
@@ -44,10 +52,13 @@ import {
   relationships,
   sourceEmbeddings,
   sourceItems,
+  users,
+  workspaceMembers,
+  workspaces,
   workflows,
   type AgentRunRow,
   type BrainAlertRow,
-  type BrainEventRow,
+  type BrainDocRow,
   type BrainRow,
   type ConnectorConfigRow,
   type ConnectorSyncRunRow,
@@ -68,14 +79,19 @@ import {
   type RelationshipRow,
   type SourceEmbeddingRow,
   type SourceItemRow,
+  type UserRow,
   type WorkflowRow,
+  type WorkspaceMemberRow,
+  type WorkspaceRow,
 } from "./schema";
 import type {
   BrainRepository,
+  ConnectorType,
   CreateAgentRunData,
   CreateBrainAlertData,
   CreateBrainEventData,
   CreateBrainData,
+  CreateBrainDocData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
   CreateMarketingChannelPostData,
@@ -95,11 +111,16 @@ import type {
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
+  CreateUserData,
   CreateWorkflowData,
+  CreateWorkspaceData,
+  CreateWorkspaceMemberData,
+  ListBrainDocsOptions,
   ListOptions,
   ListPrioritiesOptions,
   UpdateAgentRunData,
   UpdateConnectorConfigData,
+  UpdateBrainDocFeedbackData,
   UpdateConnectorSyncRunData,
   UpdateMarketingChannelPostData,
   UpdateMarketingContentInsightData,
@@ -133,12 +154,43 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function toUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toWorkspace(row: WorkspaceRow): Workspace {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toWorkspaceMember(row: WorkspaceMemberRow): WorkspaceMember {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    role: row.role,
+    joinedAt: row.joinedAt.toISOString(),
+  };
+}
+
 function toBrain(row: BrainRow): Brain {
   return {
     id: row.id,
     name: row.name,
     kind: row.kind,
     thesis: row.thesis,
+    workspaceId: row.workspaceId ?? null,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -150,7 +202,7 @@ function toSourceItem(row: SourceItemRow): SourceItem {
     id: row.id,
     brainId: row.brainId,
     title: row.title,
-    type: row.type,
+    type: row.type as SourceType,
     content: row.content,
     externalUri: row.externalUri ?? undefined,
     storagePath: row.storagePath ?? undefined,
@@ -283,11 +335,30 @@ function toAgentRun(row: AgentRunRow): AgentRun {
   };
 }
 
+function toBrainDoc(row: BrainDocRow): BrainDoc {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    docType: row.docType as BrainDoc["docType"],
+    title: row.title,
+    content: (row.content ?? {}) as Record<string, unknown>,
+    contentText: row.contentText ?? undefined,
+    feedback: (row.feedback as BrainDocFeedback) ?? null,
+    feedbackAt: isoOrNull(row.feedbackAt),
+    agentRunId: row.agentRunId ?? undefined,
+    externalEventId: row.externalEventId ?? undefined,
+    meetingId: row.meetingId ?? undefined,
+    metadata: (row.metadata ?? undefined) as Record<string, unknown> | undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 function toConnectorConfig(row: ConnectorConfigRow) {
   return {
     id: row.id,
     brainId: row.brainId,
-    connectorType: row.connectorType,
+    connectorType: row.connectorType as ConnectorType,
     status: row.status,
     config: (row.config ?? {}) as Record<string, unknown>,
     credentials: (row.credentials ?? null) as Record<string, unknown> | null,
@@ -306,7 +377,7 @@ function toConnectorSyncRun(row: ConnectorSyncRunRow) {
     id: row.id,
     brainId: row.brainId,
     connectorConfigId: row.connectorConfigId,
-    connectorType: row.connectorType,
+    connectorType: row.connectorType as ConnectorType,
     status: row.status,
     startedAt: row.startedAt.toISOString(),
     completedAt: isoOrNull(row.completedAt),
@@ -333,17 +404,6 @@ function toBrainAlert(row: BrainAlertRow) {
   };
 }
 
-function toBrainEvent(row: BrainEventRow) {
-  return {
-    id: row.id,
-    brainId: row.brainId,
-    eventType: row.eventType,
-    sourceSystem: row.sourceSystem ?? undefined,
-    payload: (row.payload ?? {}) as Record<string, unknown>,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
-
 function toNotetakerCalendar(row: NotetakerCalendarRow) {
   return {
     id: row.id,
@@ -363,7 +423,7 @@ function toNotetakerCalendar(row: NotetakerCalendarRow) {
   };
 }
 
-function toNotetakerMeeting(row: NotetakerMeetingRow) {
+function toCalendarEvent(row: NotetakerMeetingRow) {
   return {
     id: row.id,
     brainId: row.brainId,
@@ -374,18 +434,22 @@ function toNotetakerMeeting(row: NotetakerMeetingRow) {
     provider: row.provider,
     title: row.title,
     meetingUrl: row.meetingUrl,
+    location: row.location,
     startTime: row.startTime.toISOString(),
     endTime: row.endTime.toISOString(),
     participants: (row.participants ?? []) as unknown[],
     autoJoinDecision: row.autoJoinDecision,
     autoJoinReason: row.autoJoinReason ?? undefined,
     botStatus: row.botStatus,
+    eventStatus: row.eventStatus,
+    eventType: row.eventType,
     sourceItemId: row.sourceItemId,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+const toNotetakerMeeting = toCalendarEvent;
 
 function toNotetakerEvent(row: NotetakerEventRow) {
   return {
@@ -400,22 +464,18 @@ function toNotetakerEvent(row: NotetakerEventRow) {
   };
 }
 
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
 function toMarketingContentItem(row: MarketingContentItemRow): MarketingContentItem {
   return {
     id: row.id,
     brainId: row.brainId,
     sourceItemId: row.sourceItemId,
-    sourcePlatform: row.sourcePlatform,
-    sourceType: row.sourceType,
+    sourcePlatform: row.sourcePlatform as MarketingContentItem["sourcePlatform"],
+    sourceType: row.sourceType as MarketingContentItem["sourceType"],
     sourceUrl: row.sourceUrl,
     sourceExternalId: row.sourceExternalId,
     sourceOwner: row.sourceOwner,
     sourceDate: isoOrNull(row.sourceDate),
-    sourceConfidentiality: row.sourceConfidentiality,
+    sourceConfidentiality: row.sourceConfidentiality as MarketingContentItem["sourceConfidentiality"],
     rawText: row.rawText,
     cleanedSummary: row.cleanedSummary,
     contentSafeSummary: row.contentSafeSummary,
@@ -434,9 +494,9 @@ function toMarketingContentInsight(row: MarketingContentInsightRow): MarketingCo
     contentItemId: row.contentItemId,
     rawInsight: row.rawInsight,
     contentSafeInsight: row.contentSafeInsight,
-    sensitivityLevel: row.sensitivityLevel,
+    sensitivityLevel: row.sensitivityLevel as MarketingContentInsight["sensitivityLevel"],
     suggestedPillar: row.suggestedPillar,
-    suggestedChannels: stringArray(row.suggestedChannels) as MarketingContentInsight["suggestedChannels"],
+    suggestedChannels: (row.suggestedChannels ?? []) as MarketingContentInsight["suggestedChannels"],
     approvedForContent: row.approvedForContent,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
@@ -450,8 +510,8 @@ function toMarketingChannelPost(row: MarketingChannelPostRow): MarketingChannelP
     brainId: row.brainId,
     contentItemId: row.contentItemId,
     contentInsightId: row.contentInsightId,
-    channel: row.channel,
-    status: row.status,
+    channel: row.channel as MarketingChannelPost["channel"],
+    status: row.status as MarketingChannelPost["status"],
     bodyText: row.bodyText,
     mediaType: row.mediaType,
     mediaReference: row.mediaReference,
@@ -464,13 +524,13 @@ function toMarketingChannelPost(row: MarketingChannelPostRow): MarketingChannelP
     schedulerPostId: row.schedulerPostId,
     campaignTag: row.campaignTag,
     pillar: row.pillar,
-    formatType: row.formatType,
-    hookType: row.hookType,
-    targetIcp: row.targetIcp,
-    funnelStage: row.funnelStage,
+    formatType: row.formatType as MarketingChannelPost["formatType"],
+    hookType: row.hookType as MarketingChannelPost["hookType"],
+    targetIcp: row.targetIcp as MarketingChannelPost["targetIcp"],
+    funnelStage: row.funnelStage as MarketingChannelPost["funnelStage"],
     experimentTag: row.experimentTag,
     requiresReview: row.requiresReview,
-    sensitivityLevel: row.sensitivityLevel,
+    sensitivityLevel: row.sensitivityLevel as MarketingChannelPost["sensitivityLevel"],
     approvedBy: row.approvedBy,
     approvedAt: isoOrNull(row.approvedAt),
     revisionReason: row.revisionReason,
@@ -507,6 +567,28 @@ function toMarketingPostMetric(row: MarketingPostMetricRow): MarketingPostMetric
   };
 }
 
+function toMarketingEvent(row: MarketingEventRow): MarketingEvent {
+  return {
+    id: row.id,
+    brainId: row.brainId,
+    channelPostId: row.channelPostId,
+    eventType: row.eventType as MarketingEvent["eventType"],
+    eventSource: row.eventSource,
+    eventAt: row.eventAt.toISOString(),
+    description: row.description,
+    contactName: row.contactName,
+    companyName: row.companyName,
+    value: numberOrUndefined(row.value) ?? null,
+    utmSource: row.utmSource,
+    utmMedium: row.utmMedium,
+    utmCampaign: row.utmCampaign,
+    utmContent: row.utmContent,
+    attributionConfidence: row.attributionConfidence as MarketingEvent["attributionConfidence"],
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 function toMarketingExperiment(row: MarketingExperimentRow): MarketingExperiment {
   return {
     id: row.id,
@@ -514,34 +596,12 @@ function toMarketingExperiment(row: MarketingExperimentRow): MarketingExperiment
     tag: row.tag,
     title: row.title,
     hypothesis: row.hypothesis,
-    status: row.status,
+    status: row.status as MarketingExperiment["status"],
     startedAt: isoOrNull(row.startedAt),
     endedAt: isoOrNull(row.endedAt),
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-function toMarketingEvent(row: MarketingEventRow): MarketingEvent {
-  return {
-    id: row.id,
-    brainId: row.brainId,
-    channelPostId: row.channelPostId,
-    eventType: row.eventType,
-    eventSource: row.eventSource,
-    eventAt: row.eventAt.toISOString(),
-    description: row.description,
-    contactName: row.contactName,
-    companyName: row.companyName,
-    value: numberOrUndefined(row.value),
-    utmSource: row.utmSource,
-    utmMedium: row.utmMedium,
-    utmCampaign: row.utmCampaign,
-    utmContent: row.utmContent,
-    attributionConfidence: row.attributionConfidence,
-    metadata: (row.metadata ?? {}) as Record<string, unknown>,
-    createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -555,7 +615,7 @@ function toMarketingWeeklyReport(row: MarketingWeeklyReportRow): MarketingWeekly
     qualitativeOnly: row.qualitativeOnly,
     summary: row.summary,
     markdown: row.markdown,
-    recommendedExperiments: (Array.isArray(row.recommendedExperiments) ? row.recommendedExperiments : []) as MarketingWeeklyReport["recommendedExperiments"],
+    recommendedExperiments: (row.recommendedExperiments ?? []) as MarketingWeeklyReport["recommendedExperiments"],
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
   };
@@ -566,11 +626,11 @@ function toMarketingLlmUsage(row: MarketingLlmUsageRow): MarketingLlmUsage {
     id: row.id,
     brainId: row.brainId,
     jobType: row.jobType,
-    modelProvider: row.modelProvider,
+    modelProvider: row.modelProvider as MarketingLlmUsage["modelProvider"],
     model: row.model,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
-    estimatedCostUsd: Number(row.estimatedCostUsd),
+    estimatedCostUsd: numberOrUndefined(row.estimatedCostUsd) ?? 0,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
   };
@@ -579,6 +639,66 @@ function toMarketingLlmUsage(row: MarketingLlmUsageRow): MarketingLlmUsage {
 export class SupabaseRepository implements BrainRepository {
   readonly mode = "supabase" as const;
   constructor(private readonly db: Db) {}
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const [row] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+    return row ? toUser(row) : null;
+  }
+
+  async listUsers(): Promise<User[]> {
+    return (await this.db.select().from(users).orderBy(desc(users.createdAt))).map(toUser);
+  }
+
+  async createUser(input: CreateUserData): Promise<User> {
+    const [row] = await this.db
+      .insert(users)
+      .values({
+        email: input.email,
+        displayName: input.displayName,
+        avatarUrl: input.avatarUrl ?? null,
+      })
+      .returning();
+    return toUser(row);
+  }
+
+  async getWorkspace(workspaceId: string): Promise<Workspace | null> {
+    if (!isUuid(workspaceId)) return null;
+    const [row] = await this.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+    return row ? toWorkspace(row) : null;
+  }
+
+  async listWorkspaces(): Promise<Workspace[]> {
+    return (await this.db.select().from(workspaces).orderBy(desc(workspaces.createdAt))).map(toWorkspace);
+  }
+
+  async createWorkspace(input: CreateWorkspaceData): Promise<Workspace> {
+    const [row] = await this.db
+      .insert(workspaces)
+      .values({ name: input.name })
+      .returning();
+    return toWorkspace(row);
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    return (
+      await this.db
+        .select()
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.workspaceId, workspaceId))
+    ).map(toWorkspaceMember);
+  }
+
+  async createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember> {
+    const [row] = await this.db
+      .insert(workspaceMembers)
+      .values({
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        role: input.role ?? "member",
+      })
+      .returning();
+    return toWorkspaceMember(row);
+  }
 
   async listBrains(): Promise<Brain[]> {
     return (await this.db.select().from(brains).orderBy(desc(brains.createdAt))).map(toBrain);
@@ -598,9 +718,23 @@ export class SupabaseRepository implements BrainRepository {
         kind: input.kind,
         thesis: input.thesis,
         metadata: input.metadata ?? {},
-      })
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.createdByUserId ? { createdByUserId: input.createdByUserId } : {}),
+      } as typeof brains.$inferInsert)
       .returning();
     return toBrain(row);
+  }
+
+  async updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null> {
+    if (!isUuid(brainId)) return null;
+    const values: Record<string, unknown> = { updatedAt: new Date() };
+    if (update.metadata !== undefined) values.metadata = update.metadata;
+    const [row] = await this.db
+      .update(brains)
+      .set(values)
+      .where(eq(brains.id, brainId))
+      .returning();
+    return row ? toBrain(row) : null;
   }
 
   async createSourceItem(input: CreateSourceData): Promise<SourceItem> {
@@ -1059,6 +1193,71 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toAgentRun(row) : null;
   }
 
+  async createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc> {
+    const [row] = await this.db
+      .insert(brainDocs)
+      .values({
+        brainId: input.brainId,
+        docType: input.docType,
+        title: input.title,
+        content: input.content,
+        contentText: input.contentText ?? null,
+        agentRunId: input.agentRunId ?? null,
+        externalEventId: input.externalEventId ?? null,
+        meetingId: input.meetingId ?? null,
+        metadata: input.metadata ?? null,
+      })
+      .returning();
+    return toBrainDoc(row);
+  }
+
+  async getBrainDoc(docId: string): Promise<BrainDoc | null> {
+    const [row] = await this.db
+      .select()
+      .from(brainDocs)
+      .where(eq(brainDocs.id, docId))
+      .limit(1);
+    return row ? toBrainDoc(row) : null;
+  }
+
+  async listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]> {
+    const filters = [eq(brainDocs.brainId, brainId)];
+    if (opts?.meetingId) filters.push(eq(brainDocs.meetingId, opts.meetingId));
+    if (opts?.docType) filters.push(eq(brainDocs.docType, opts.docType));
+    return (
+      await this.db
+        .select()
+        .from(brainDocs)
+        .where(and(...filters))
+        .orderBy(desc(brainDocs.createdAt))
+        .limit(opts?.limit ?? 50)
+    ).map(toBrainDoc);
+  }
+
+  async updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null> {
+    const [row] = await this.db
+      .update(brainDocs)
+      .set({
+        feedback: update.feedback,
+        feedbackAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(brainDocs.id, docId))
+      .returning();
+    return row ? toBrainDoc(row) : null;
+  }
+
+  async listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]> {
+    if (meetingIds.length === 0) return [];
+    return (
+      await this.db
+        .select()
+        .from(brainDocs)
+        .where(and(eq(brainDocs.brainId, brainId), inArray(brainDocs.meetingId, meetingIds)))
+        .orderBy(desc(brainDocs.createdAt))
+    ).map(toBrainDoc);
+  }
+
   async listConnectorConfigs(brainId?: string) {
     const query = this.db.select().from(connectorConfigs);
     const rows = brainId
@@ -1180,29 +1379,6 @@ export class SupabaseRepository implements BrainRepository {
     return toBrainAlert(row);
   }
 
-  async listBrainEvents(brainId: string, options: { limit?: number } = {}) {
-    const rows = await this.db
-      .select()
-      .from(brainEvents)
-      .where(eq(brainEvents.brainId, brainId))
-      .orderBy(desc(brainEvents.createdAt))
-      .limit(options.limit ?? 100);
-    return rows.map(toBrainEvent);
-  }
-
-  async createBrainEvent(input: CreateBrainEventData) {
-    const [row] = await this.db
-      .insert(brainEvents)
-      .values({
-        brainId: input.brainId,
-        eventType: input.eventType,
-        sourceSystem: input.sourceSystem ?? null,
-        payload: input.payload ?? {},
-      })
-      .returning();
-    return toBrainEvent(row);
-  }
-
   async listNotetakerCalendars(input: { brainId?: string; status?: "connected" | "error" | "disabled" } = {}) {
     const filters = [
       input.brainId ? eq(notetakerCalendars.brainId, input.brainId) : undefined,
@@ -1261,8 +1437,8 @@ export class SupabaseRepository implements BrainRepository {
     return rows.length > 0;
   }
 
-  async listNotetakerMeetings(
-    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  async listCalendarEvents(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: string } = {},
   ) {
     const from = dateOrNull(input.from);
     const to = dateOrNull(input.to);
@@ -1271,15 +1447,22 @@ export class SupabaseRepository implements BrainRepository {
       input.calendarId ? eq(notetakerMeetings.notetakerCalendarId, input.calendarId) : undefined,
       from ? gte(notetakerMeetings.startTime, from) : undefined,
       to ? lte(notetakerMeetings.startTime, to) : undefined,
+      input.eventStatus ? eq(notetakerMeetings.eventStatus, input.eventStatus as "active" | "cancelled" | "deleted") : undefined,
     ].filter(Boolean);
     const base = this.db.select().from(notetakerMeetings);
     const rows = await (filters.length
       ? base.where(and(...filters)).orderBy(notetakerMeetings.startTime).limit(input.limit ?? 100)
       : base.orderBy(notetakerMeetings.startTime).limit(input.limit ?? 100));
-    return rows.map(toNotetakerMeeting);
+    return rows.map(toCalendarEvent);
   }
 
-  async createNotetakerMeeting(input: CreateNotetakerMeetingData) {
+  async listNotetakerMeetings(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  ) {
+    return this.listCalendarEvents(input);
+  }
+
+  async createCalendarEvent(input: CreateNotetakerMeetingData) {
     const [row] = await this.db
       .insert(notetakerMeetings)
       .values({
@@ -1291,39 +1474,53 @@ export class SupabaseRepository implements BrainRepository {
         provider: input.provider,
         title: input.title,
         meetingUrl: input.meetingUrl ?? null,
+        location: input.location ?? null,
         startTime: dateOrNull(input.startTime) ?? new Date(input.startTime),
         endTime: dateOrNull(input.endTime) ?? new Date(input.endTime),
         participants: input.participants ?? [],
         autoJoinDecision: input.autoJoinDecision ?? "needs_review",
         autoJoinReason: input.autoJoinReason ?? null,
         botStatus: input.botStatus ?? "not_scheduled",
+        eventStatus: input.eventStatus ?? "active",
+        eventType: input.eventType ?? "unknown",
         sourceItemId: input.sourceItemId ?? null,
         metadata: input.metadata ?? {},
       })
       .returning();
-    return toNotetakerMeeting(row);
+    return toCalendarEvent(row);
   }
 
-  async updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData) {
+  async createNotetakerMeeting(input: CreateNotetakerMeetingData) {
+    return this.createCalendarEvent(input);
+  }
+
+  async updateCalendarEvent(eventId: string, update: UpdateNotetakerMeetingData) {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (update.recallCalendarEventId !== undefined) set.recallCalendarEventId = update.recallCalendarEventId;
     if (update.recallBotId !== undefined) set.recallBotId = update.recallBotId;
     if (update.title !== undefined) set.title = update.title;
     if (update.meetingUrl !== undefined) set.meetingUrl = update.meetingUrl;
+    if (update.location !== undefined) set.location = update.location;
     if (update.startTime !== undefined) set.startTime = dateOrNull(update.startTime);
     if (update.endTime !== undefined) set.endTime = dateOrNull(update.endTime);
     if (update.participants !== undefined) set.participants = update.participants;
     if (update.autoJoinDecision !== undefined) set.autoJoinDecision = update.autoJoinDecision;
     if (update.autoJoinReason !== undefined) set.autoJoinReason = update.autoJoinReason;
     if (update.botStatus !== undefined) set.botStatus = update.botStatus;
+    if (update.eventStatus !== undefined) set.eventStatus = update.eventStatus;
+    if (update.eventType !== undefined) set.eventType = update.eventType;
     if (update.sourceItemId !== undefined) set.sourceItemId = update.sourceItemId;
     if (update.metadata !== undefined) set.metadata = update.metadata;
     const [row] = await this.db
       .update(notetakerMeetings)
       .set(set)
-      .where(eq(notetakerMeetings.id, meetingId))
+      .where(eq(notetakerMeetings.id, eventId))
       .returning();
-    return row ? toNotetakerMeeting(row) : null;
+    return row ? toCalendarEvent(row) : null;
+  }
+
+  async updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData) {
+    return this.updateCalendarEvent(meetingId, update);
   }
 
   async listNotetakerEvents(input: { brainId?: string; providerEventId?: string; limit?: number } = {}) {
@@ -1365,24 +1562,111 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toNotetakerEvent(row) : null;
   }
 
+  async getSourceItemsByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    const rows = await this.db.select().from(sourceItems).where(inArray(sourceItems.id, ids));
+    return rows.map(toSourceItem);
+  }
+
+  async listBrainEvents(brainId: string, options: { limit?: number } = {}) {
+    const rows = await this.db
+      .select()
+      .from(brainEvents)
+      .where(eq(brainEvents.brainId, brainId))
+      .orderBy(desc(brainEvents.createdAt))
+      .limit(options.limit ?? 100);
+    return rows.map((row) => ({
+      id: row.id,
+      brainId: row.brainId,
+      eventType: row.eventType,
+      sourceSystem: row.sourceSystem ?? undefined,
+      payload: (row.payload ?? {}) as Record<string, unknown>,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  async createBrainEvent(input: CreateBrainEventData) {
+    const [row] = await this.db
+      .insert(brainEvents)
+      .values({
+        brainId: input.brainId,
+        eventType: input.eventType,
+        sourceSystem: input.sourceSystem ?? null,
+        payload: input.payload ?? {},
+      })
+      .returning();
+    return {
+      id: row.id,
+      brainId: row.brainId,
+      eventType: row.eventType,
+      sourceSystem: row.sourceSystem ?? undefined,
+      payload: (row.payload ?? {}) as Record<string, unknown>,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  async getWorkspaceMemberRole(workspaceId: string, userId: string) {
+    const [row] = await this.db
+      .select()
+      .from(workspaceMembers)
+      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)))
+      .limit(1);
+    return row?.role ?? null;
+  }
+
+  async updateWorkspaceMemberRole(): Promise<WorkspaceMember | null> {
+    throw new Error("Workspace role updates are not implemented for Supabase yet.");
+  }
+
+  async removeWorkspaceMember(): Promise<boolean> {
+    throw new Error("Workspace member removal is not implemented for Supabase yet.");
+  }
+
+  async getWorkspaceForUser(userId: string) {
+    const [member] = await this.db.select().from(workspaceMembers).where(eq(workspaceMembers.userId, userId)).limit(1);
+    if (!member) return null;
+    const [workspace] = await this.db.select().from(workspaces).where(eq(workspaces.id, member.workspaceId)).limit(1);
+    return workspace ? toWorkspace(workspace) : null;
+  }
+
+  async listBrainsForWorkspace(workspaceId: string) {
+    const rows = await this.db.select().from(brains).where(eq(brains.workspaceId, workspaceId)).orderBy(desc(brains.createdAt));
+    return rows.map(toBrain);
+  }
+
+  async createWorkspaceInvite(): Promise<WorkspaceInvite> {
+    throw new Error("Workspace invites are not implemented for Supabase yet.");
+  }
+
+  async getWorkspaceInviteByToken() {
+    return null;
+  }
+
+  async acceptWorkspaceInvite(): Promise<WorkspaceMember> {
+    throw new Error("Workspace invites are not implemented for Supabase yet.");
+  }
+
   async createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem> {
-    const [row] = await this.db.insert(marketingContentItems).values({
-      brainId: input.brainId,
-      sourceItemId: input.sourceItemId ?? null,
-      sourcePlatform: input.sourcePlatform,
-      sourceType: input.sourceType,
-      sourceUrl: input.sourceUrl ?? null,
-      sourceExternalId: input.sourceExternalId ?? null,
-      sourceOwner: input.sourceOwner ?? null,
-      sourceDate: dateOrNull(input.sourceDate),
-      sourceConfidentiality: input.sourceConfidentiality ?? "internal",
-      rawText: input.rawText,
-      cleanedSummary: input.cleanedSummary ?? null,
-      contentSafeSummary: input.contentSafeSummary ?? null,
-      requiresRedaction: input.requiresRedaction ?? true,
-      approvedForContent: input.approvedForContent ?? false,
-      metadata: input.metadata ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingContentItems)
+      .values({
+        brainId: input.brainId,
+        sourceItemId: input.sourceItemId ?? null,
+        sourcePlatform: input.sourcePlatform,
+        sourceType: input.sourceType,
+        sourceUrl: input.sourceUrl ?? null,
+        sourceExternalId: input.sourceExternalId ?? null,
+        sourceOwner: input.sourceOwner ?? null,
+        sourceDate: dateOrNull(input.sourceDate),
+        sourceConfidentiality: input.sourceConfidentiality ?? "internal",
+        rawText: input.rawText,
+        cleanedSummary: input.cleanedSummary ?? null,
+        contentSafeSummary: input.contentSafeSummary ?? null,
+        requiresRedaction: input.requiresRedaction ?? true,
+        approvedForContent: input.approvedForContent ?? false,
+        metadata: input.metadata ?? {},
+      })
+      .returning();
     return toMarketingContentItem(row);
   }
 
@@ -1398,8 +1682,9 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toMarketingContentItem(row) : null;
   }
 
-  async listMarketingContentItems(brainId: string, options: ListOptions = {}): Promise<MarketingContentItem[]> {
-    return (await this.db.select().from(marketingContentItems).where(eq(marketingContentItems.brainId, brainId)).orderBy(desc(marketingContentItems.createdAt)).limit(options.limit ?? 100)).map(toMarketingContentItem);
+  async listMarketingContentItems(brainId: string, options: { limit?: number } = {}): Promise<MarketingContentItem[]> {
+    const rows = await this.db.select().from(marketingContentItems).where(eq(marketingContentItems.brainId, brainId)).orderBy(desc(marketingContentItems.createdAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingContentItem);
   }
 
   async getMarketingContentItem(contentItemId: string): Promise<MarketingContentItem | null> {
@@ -1409,17 +1694,20 @@ export class SupabaseRepository implements BrainRepository {
 
   async createMarketingContentInsights(items: CreateMarketingContentInsightData[]): Promise<MarketingContentInsight[]> {
     if (items.length === 0) return [];
-    const rows = await this.db.insert(marketingContentInsights).values(items.map((item) => ({
-      brainId: item.brainId,
-      contentItemId: item.contentItemId,
-      rawInsight: item.rawInsight,
-      contentSafeInsight: item.contentSafeInsight,
-      sensitivityLevel: item.sensitivityLevel ?? "medium",
-      suggestedPillar: item.suggestedPillar ?? null,
-      suggestedChannels: item.suggestedChannels ?? [],
-      approvedForContent: item.approvedForContent ?? false,
-      metadata: item.metadata ?? {},
-    }))).returning();
+    const rows = await this.db
+      .insert(marketingContentInsights)
+      .values(items.map((item) => ({
+        brainId: item.brainId,
+        contentItemId: item.contentItemId,
+        rawInsight: item.rawInsight,
+        contentSafeInsight: item.contentSafeInsight,
+        sensitivityLevel: item.sensitivityLevel ?? "medium",
+        suggestedPillar: item.suggestedPillar ?? null,
+        suggestedChannels: item.suggestedChannels ?? [],
+        approvedForContent: item.approvedForContent ?? false,
+        metadata: item.metadata ?? {},
+      })))
+      .returning();
     return rows.map(toMarketingContentInsight);
   }
 
@@ -1435,10 +1723,12 @@ export class SupabaseRepository implements BrainRepository {
     return row ? toMarketingContentInsight(row) : null;
   }
 
-  async listMarketingContentInsights(brainId: string, options: ListOptions & { approvedOnly?: boolean } = {}): Promise<MarketingContentInsight[]> {
-    const conditions = [eq(marketingContentInsights.brainId, brainId)];
-    if (options.approvedOnly) conditions.push(eq(marketingContentInsights.approvedForContent, true));
-    return (await this.db.select().from(marketingContentInsights).where(and(...conditions)).orderBy(desc(marketingContentInsights.createdAt)).limit(options.limit ?? 100)).map(toMarketingContentInsight);
+  async listMarketingContentInsights(brainId: string, options: { limit?: number; approvedOnly?: boolean } = {}): Promise<MarketingContentInsight[]> {
+    const where = options.approvedOnly
+      ? and(eq(marketingContentInsights.brainId, brainId), eq(marketingContentInsights.approvedForContent, true))
+      : eq(marketingContentInsights.brainId, brainId);
+    const rows = await this.db.select().from(marketingContentInsights).where(where).orderBy(desc(marketingContentInsights.createdAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingContentInsight);
   }
 
   async getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null> {
@@ -1448,71 +1738,71 @@ export class SupabaseRepository implements BrainRepository {
 
   async createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]> {
     if (items.length === 0) return [];
-    const rows = await this.db.insert(marketingChannelPosts).values(items.map((item) => ({
-      brainId: item.brainId,
-      contentItemId: item.contentItemId ?? null,
-      contentInsightId: item.contentInsightId ?? null,
-      channel: item.channel,
-      status: item.status ?? "draft",
-      bodyText: item.bodyText,
-      plannedPostDate: dateOrNull(item.plannedPostDate),
-      postingWindow: item.postingWindow ?? null,
-      scheduledAt: dateOrNull(item.scheduledAt),
-      publishedAt: dateOrNull(item.publishedAt),
-      liveUrl: item.liveUrl ?? null,
-      schedulerProvider: item.schedulerProvider ?? null,
-      schedulerPostId: item.schedulerPostId ?? null,
-      campaignTag: item.campaignTag ?? null,
-      pillar: item.pillar ?? null,
-      formatType: item.formatType ?? null,
-      hookType: item.hookType ?? null,
-      targetIcp: item.targetIcp ?? null,
-      funnelStage: item.funnelStage ?? null,
-      experimentTag: item.experimentTag ?? null,
-      requiresReview: item.requiresReview ?? true,
-      sensitivityLevel: item.sensitivityLevel ?? "medium",
-      approvedBy: item.approvedBy ?? null,
-      approvedAt: dateOrNull(item.approvedAt),
-      revisionReason: item.revisionReason ?? null,
-      safetyCheckStatus: item.safetyCheckStatus ?? "not_run",
-      safetyCheckReason: item.safetyCheckReason ?? null,
-      isExemplar: item.isExemplar ?? false,
-      performanceTag: item.performanceTag ?? null,
-      utmSource: item.utmSource ?? null,
-      utmMedium: item.utmMedium ?? null,
-      utmCampaign: item.utmCampaign ?? null,
-      utmContent: item.utmContent ?? null,
-      metadata: item.metadata ?? {},
-    }))).returning();
+    const rows = await this.db
+      .insert(marketingChannelPosts)
+      .values(items.map((item) => ({
+        brainId: item.brainId,
+        contentItemId: item.contentItemId ?? null,
+        contentInsightId: item.contentInsightId ?? null,
+        channel: item.channel,
+        status: item.status ?? "draft",
+        bodyText: item.bodyText,
+        plannedPostDate: dateOrNull(item.plannedPostDate),
+        postingWindow: item.postingWindow ?? null,
+        scheduledAt: dateOrNull(item.scheduledAt),
+        publishedAt: dateOrNull(item.publishedAt),
+        liveUrl: item.liveUrl ?? null,
+        schedulerProvider: item.schedulerProvider ?? null,
+        schedulerPostId: item.schedulerPostId ?? null,
+        campaignTag: item.campaignTag ?? null,
+        pillar: item.pillar ?? null,
+        formatType: item.formatType ?? null,
+        hookType: item.hookType ?? null,
+        targetIcp: item.targetIcp ?? null,
+        funnelStage: item.funnelStage ?? null,
+        experimentTag: item.experimentTag ?? null,
+        requiresReview: item.requiresReview ?? true,
+        sensitivityLevel: item.sensitivityLevel ?? "medium",
+        approvedBy: item.approvedBy ?? null,
+        approvedAt: dateOrNull(item.approvedAt),
+        revisionReason: item.revisionReason ?? null,
+        safetyCheckStatus: item.safetyCheckStatus ?? "not_run",
+        safetyCheckReason: item.safetyCheckReason ?? null,
+        isExemplar: item.isExemplar ?? false,
+        performanceTag: item.performanceTag ?? null,
+        utmSource: item.utmSource ?? null,
+        utmMedium: item.utmMedium ?? null,
+        utmCampaign: item.utmCampaign ?? null,
+        utmContent: item.utmContent ?? null,
+        metadata: item.metadata ?? {},
+      })))
+      .returning();
     return rows.map(toMarketingChannelPost);
   }
 
   async updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
-    const copy = (key: keyof UpdateMarketingChannelPostData, column = key) => {
-      if (update[key] !== undefined) set[column] = update[key];
-    };
-    copy("status"); copy("bodyText"); copy("plannedPostDate"); copy("postingWindow"); copy("scheduledAt"); copy("publishedAt");
-    copy("liveUrl"); copy("schedulerProvider"); copy("schedulerPostId"); copy("campaignTag"); copy("pillar"); copy("formatType");
-    copy("hookType"); copy("targetIcp"); copy("funnelStage"); copy("experimentTag"); copy("requiresReview"); copy("sensitivityLevel");
-    copy("approvedBy"); copy("revisionReason"); copy("safetyCheckStatus"); copy("safetyCheckReason"); copy("isExemplar");
-    copy("performanceTag"); copy("utmSource"); copy("utmMedium"); copy("utmCampaign"); copy("utmContent"); copy("metadata");
-    if (update.approvedAt !== undefined) set.approvedAt = dateOrNull(update.approvedAt);
-    if (update.plannedPostDate !== undefined) set.plannedPostDate = dateOrNull(update.plannedPostDate);
-    if (update.scheduledAt !== undefined) set.scheduledAt = dateOrNull(update.scheduledAt);
-    if (update.publishedAt !== undefined) set.publishedAt = dateOrNull(update.publishedAt);
+    for (const [key, value] of Object.entries(update)) {
+      if (value === undefined) continue;
+      if (["plannedPostDate", "scheduledAt", "publishedAt", "approvedAt"].includes(key)) {
+        set[key] = dateOrNull(value as string | null);
+      } else {
+        set[key] = value;
+      }
+    }
     const [row] = await this.db.update(marketingChannelPosts).set(set).where(eq(marketingChannelPosts.id, postId)).returning();
     return row ? toMarketingChannelPost(row) : null;
   }
 
-  async listMarketingChannelPosts(brainId: string, options: ListOptions & { status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}): Promise<MarketingChannelPost[]> {
-    const conditions = [eq(marketingChannelPosts.brainId, brainId)];
-    if (options.status) {
-      const statuses = Array.isArray(options.status) ? options.status : [options.status];
-      conditions.push(statuses.length === 1 ? eq(marketingChannelPosts.status, statuses[0]) : inArray(marketingChannelPosts.status, statuses));
-    }
-    if (options.exemplarOnly) conditions.push(eq(marketingChannelPosts.isExemplar, true));
-    return (await this.db.select().from(marketingChannelPosts).where(and(...conditions)).orderBy(desc(marketingChannelPosts.createdAt)).limit(options.limit ?? 100)).map(toMarketingChannelPost);
+  async listMarketingChannelPosts(brainId: string, options: { limit?: number; status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}): Promise<MarketingChannelPost[]> {
+    const statuses = Array.isArray(options.status) ? options.status : options.status ? [options.status] : null;
+    const where = and(
+      eq(marketingChannelPosts.brainId, brainId),
+      ...(statuses ? [inArray(marketingChannelPosts.status, statuses)] : []),
+      ...(options.exemplarOnly ? [eq(marketingChannelPosts.isExemplar, true)] : []),
+    );
+    const rows = await this.db.select().from(marketingChannelPosts).where(where).orderBy(desc(marketingChannelPosts.createdAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingChannelPost);
   }
 
   async getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null> {
@@ -1521,103 +1811,123 @@ export class SupabaseRepository implements BrainRepository {
   }
 
   async createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric> {
-    const [row] = await this.db.insert(marketingPostMetrics).values({
-      brainId: input.brainId,
-      channelPostId: input.channelPostId,
-      metricDate: dateOrNull(input.metricDate) ?? new Date(input.metricDate),
-      impressions: input.impressions ?? 0,
-      reactions: input.reactions ?? 0,
-      comments: input.comments ?? 0,
-      shares: input.shares ?? 0,
-      clicks: input.clicks ?? 0,
-      saves: input.saves ?? 0,
-      follows: input.follows ?? 0,
-      rawMetrics: input.rawMetrics ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingPostMetrics)
+      .values({
+        brainId: input.brainId,
+        channelPostId: input.channelPostId,
+        metricDate: dateOrNull(input.metricDate) ?? new Date(),
+        impressions: input.impressions ?? 0,
+        reactions: input.reactions ?? 0,
+        comments: input.comments ?? 0,
+        shares: input.shares ?? 0,
+        clicks: input.clicks ?? 0,
+        saves: input.saves ?? 0,
+        follows: input.follows ?? 0,
+        rawMetrics: input.rawMetrics ?? {},
+      })
+      .returning();
     return toMarketingPostMetric(row);
   }
 
-  async listMarketingPostMetrics(brainId: string, options: ListOptions = {}): Promise<MarketingPostMetric[]> {
-    return (await this.db.select().from(marketingPostMetrics).where(eq(marketingPostMetrics.brainId, brainId)).orderBy(desc(marketingPostMetrics.metricDate)).limit(options.limit ?? 500)).map(toMarketingPostMetric);
+  async listMarketingPostMetrics(brainId: string, options: { limit?: number } = {}): Promise<MarketingPostMetric[]> {
+    const rows = await this.db.select().from(marketingPostMetrics).where(eq(marketingPostMetrics.brainId, brainId)).orderBy(desc(marketingPostMetrics.metricDate)).limit(options.limit ?? 100);
+    return rows.map(toMarketingPostMetric);
   }
 
   async createMarketingEvent(input: CreateMarketingEventData): Promise<MarketingEvent> {
-    const [row] = await this.db.insert(marketingEvents).values({
-      brainId: input.brainId,
-      channelPostId: input.channelPostId ?? null,
-      eventType: input.eventType,
-      eventSource: input.eventSource,
-      eventAt: dateOrNull(input.eventAt) ?? new Date(),
-      description: input.description,
-      contactName: input.contactName ?? null,
-      companyName: input.companyName ?? null,
-      value: input.value === undefined || input.value === null ? null : input.value.toFixed(2),
-      utmSource: input.utmSource ?? null,
-      utmMedium: input.utmMedium ?? null,
-      utmCampaign: input.utmCampaign ?? null,
-      utmContent: input.utmContent ?? null,
-      attributionConfidence: input.attributionConfidence ?? "unknown",
-      metadata: input.metadata ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingEvents)
+      .values({
+        brainId: input.brainId,
+        channelPostId: input.channelPostId ?? null,
+        eventType: input.eventType,
+        eventSource: input.eventSource,
+        eventAt: dateOrNull(input.eventAt) ?? new Date(),
+        description: input.description,
+        contactName: input.contactName ?? null,
+        companyName: input.companyName ?? null,
+        value: input.value === undefined || input.value === null ? null : String(input.value),
+        utmSource: input.utmSource ?? null,
+        utmMedium: input.utmMedium ?? null,
+        utmCampaign: input.utmCampaign ?? null,
+        utmContent: input.utmContent ?? null,
+        attributionConfidence: input.attributionConfidence ?? "unknown",
+        metadata: input.metadata ?? {},
+      })
+      .returning();
     return toMarketingEvent(row);
   }
 
-  async listMarketingEvents(brainId: string, options: ListOptions = {}): Promise<MarketingEvent[]> {
-    return (await this.db.select().from(marketingEvents).where(eq(marketingEvents.brainId, brainId)).orderBy(desc(marketingEvents.eventAt)).limit(options.limit ?? 200)).map(toMarketingEvent);
+  async listMarketingEvents(brainId: string, options: { limit?: number } = {}): Promise<MarketingEvent[]> {
+    const rows = await this.db.select().from(marketingEvents).where(eq(marketingEvents.brainId, brainId)).orderBy(desc(marketingEvents.eventAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingEvent);
   }
 
   async createMarketingExperiment(input: CreateMarketingExperimentData): Promise<MarketingExperiment> {
-    const [row] = await this.db.insert(marketingExperiments).values({
-      brainId: input.brainId,
-      tag: input.tag,
-      title: input.title,
-      hypothesis: input.hypothesis,
-      status: input.status ?? "planned",
-      startedAt: dateOrNull(input.startedAt),
-      endedAt: dateOrNull(input.endedAt),
-      metadata: input.metadata ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingExperiments)
+      .values({
+        brainId: input.brainId,
+        tag: input.tag,
+        title: input.title,
+        hypothesis: input.hypothesis,
+        status: input.status ?? "planned",
+        startedAt: dateOrNull(input.startedAt),
+        endedAt: dateOrNull(input.endedAt),
+        metadata: input.metadata ?? {},
+      })
+      .returning();
     return toMarketingExperiment(row);
   }
 
-  async listMarketingExperiments(brainId: string, options: ListOptions = {}): Promise<MarketingExperiment[]> {
-    return (await this.db.select().from(marketingExperiments).where(eq(marketingExperiments.brainId, brainId)).orderBy(desc(marketingExperiments.createdAt)).limit(options.limit ?? 100)).map(toMarketingExperiment);
+  async listMarketingExperiments(brainId: string, options: { limit?: number } = {}): Promise<MarketingExperiment[]> {
+    const rows = await this.db.select().from(marketingExperiments).where(eq(marketingExperiments.brainId, brainId)).orderBy(desc(marketingExperiments.createdAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingExperiment);
   }
 
   async createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData): Promise<MarketingWeeklyReport> {
-    const [row] = await this.db.insert(marketingWeeklyReports).values({
-      brainId: input.brainId,
-      weekStart: dateOrNull(input.weekStart) ?? new Date(input.weekStart),
-      weekEnd: dateOrNull(input.weekEnd) ?? new Date(input.weekEnd),
-      publishedCount: input.publishedCount,
-      qualitativeOnly: input.qualitativeOnly,
-      summary: input.summary,
-      markdown: input.markdown,
-      recommendedExperiments: input.recommendedExperiments ?? [],
-      metadata: input.metadata ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingWeeklyReports)
+      .values({
+        brainId: input.brainId,
+        weekStart: dateOrNull(input.weekStart) ?? new Date(),
+        weekEnd: dateOrNull(input.weekEnd) ?? new Date(),
+        publishedCount: input.publishedCount,
+        qualitativeOnly: input.qualitativeOnly,
+        summary: input.summary,
+        markdown: input.markdown,
+        recommendedExperiments: input.recommendedExperiments ?? [],
+        metadata: input.metadata ?? {},
+      })
+      .returning();
     return toMarketingWeeklyReport(row);
   }
 
-  async listMarketingWeeklyReports(brainId: string, options: ListOptions = {}): Promise<MarketingWeeklyReport[]> {
-    return (await this.db.select().from(marketingWeeklyReports).where(eq(marketingWeeklyReports.brainId, brainId)).orderBy(desc(marketingWeeklyReports.weekStart)).limit(options.limit ?? 50)).map(toMarketingWeeklyReport);
+  async listMarketingWeeklyReports(brainId: string, options: { limit?: number } = {}): Promise<MarketingWeeklyReport[]> {
+    const rows = await this.db.select().from(marketingWeeklyReports).where(eq(marketingWeeklyReports.brainId, brainId)).orderBy(desc(marketingWeeklyReports.weekStart)).limit(options.limit ?? 100);
+    return rows.map(toMarketingWeeklyReport);
   }
 
   async createMarketingLlmUsage(input: CreateMarketingLlmUsageData): Promise<MarketingLlmUsage> {
-    const [row] = await this.db.insert(marketingLlmUsage).values({
-      brainId: input.brainId,
-      jobType: input.jobType,
-      modelProvider: input.modelProvider,
-      model: input.model,
-      inputTokens: input.inputTokens ?? 0,
-      outputTokens: input.outputTokens ?? 0,
-      estimatedCostUsd: (input.estimatedCostUsd ?? 0).toFixed(4),
-      metadata: input.metadata ?? {},
-    }).returning();
+    const [row] = await this.db
+      .insert(marketingLlmUsage)
+      .values({
+        brainId: input.brainId,
+        jobType: input.jobType,
+        modelProvider: input.modelProvider,
+        model: input.model,
+        inputTokens: input.inputTokens ?? 0,
+        outputTokens: input.outputTokens ?? 0,
+        estimatedCostUsd: String(input.estimatedCostUsd ?? 0),
+        metadata: input.metadata ?? {},
+      })
+      .returning();
     return toMarketingLlmUsage(row);
   }
 
-  async listMarketingLlmUsage(brainId: string, options: ListOptions = {}): Promise<MarketingLlmUsage[]> {
-    return (await this.db.select().from(marketingLlmUsage).where(eq(marketingLlmUsage.brainId, brainId)).orderBy(desc(marketingLlmUsage.createdAt)).limit(options.limit ?? 500)).map(toMarketingLlmUsage);
+  async listMarketingLlmUsage(brainId: string, options: { limit?: number } = {}): Promise<MarketingLlmUsage[]> {
+    const rows = await this.db.select().from(marketingLlmUsage).where(eq(marketingLlmUsage.brainId, brainId)).orderBy(desc(marketingLlmUsage.createdAt)).limit(options.limit ?? 100);
+    return rows.map(toMarketingLlmUsage);
   }
 }

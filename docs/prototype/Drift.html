@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Drift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* ===== HERO — quieter, single statement ===== */
+  .drift-stmt {
+    font-family: var(--font-serif); font-weight: 400;
+    font-size: 36px; line-height: 1.3; letter-spacing: -0.014em;
+    color: var(--text-primary); max-width: 920px;
+    margin: 8px 0 22px;
+  }
+  .drift-stmt b { font-weight: 500; color: var(--arvya-gold-700); }
+  .drift-meta {
+    display: flex; gap: 22px;
+    font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: .08em; color: var(--text-tertiary);
+    padding-bottom: 22px; margin-bottom: 28px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .drift-meta b { color: var(--text-primary); font-weight: 500; }
+  .drift-meta .gold b { color: var(--arvya-gold-700); }
+  .drift-meta .pip {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--arvya-gold); margin-right: 6px; vertical-align: 1px;
+  }
+
+  /* ===== Two-column compare ===== */
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    margin-bottom: 36px;
+    border: 1px solid var(--border-subtle); border-radius: 12px;
+    overflow: hidden;
+  }
+  .compare .col { padding: 22px 24px; background: #fff; }
+  .compare .col + .col { border-left: 1px solid var(--border-subtle); background: var(--cream-50); }
+  .compare h3 {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-tertiary);
+    margin: 0 0 14px;
+  }
+  .compare .col + .col h3 { color: var(--arvya-gold-700); }
+  .compare ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .compare li {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px;
+    font-size: 13.5px; line-height: 1.45; color: var(--text-primary);
+    align-items: baseline;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--cream-300);
+  }
+  .compare li:last-child { border: 0; padding-bottom: 0; }
+  .compare li b { font-weight: 500; }
+  .compare li .small { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.4; }
+  .compare li .pct {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-tertiary); letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .compare li .pct.late { color: #A83C3C; }
+  .compare li .pct.flat { color: var(--text-tertiary); }
+
+  /* ===== Patterns ===== */
+  .patterns-head {
+    font-family: var(--font-serif); font-weight: 500;
+    font-size: 22px; letter-spacing: -0.01em;
+    margin: 0 0 16px;
+  }
+  .pattern {
+    background: #fff; border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 20px 24px;
+    margin-bottom: 12px;
+  }
+  .pattern.warn { border-left: 3px solid var(--arvya-gold); padding-left: 21px; }
+  .pattern .head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; margin-bottom: 8px;
+  }
+  .pattern h3 {
+    font-family: var(--font-serif); font-weight: 500; font-size: 18px;
+    letter-spacing: -0.005em; margin: 0;
+    line-height: 1.35;
+  }
+  .pattern .conf {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-tertiary); letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .pattern .conf b { color: var(--arvya-gold-700); font-weight: 500; }
+  .pattern .body {
+    font-size: 13.5px; line-height: 1.6; color: var(--text-secondary);
+  }
+  .pattern .body b { color: var(--text-primary); font-weight: 500; }
+  .pattern .foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--cream-200);
+    flex-wrap: wrap;
+  }
+  .pattern .ev { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pattern .reco {
+    font-size: 12.5px; color: var(--text-primary);
+    line-height: 1.5; flex: 1; min-width: 200px;
+  }
+  .pattern .reco b { color: var(--arvya-gold-700); font-weight: 500; }
+  .pattern .actions {
+    display: flex; gap: 6px;
+  }
+  .pattern .actions button {
+    height: 28px; padding: 0 12px;
+    border-radius: 6px;
+    font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border-default);
+    background: #fff; color: var(--text-secondary);
+  }
+  .pattern .actions button.primary {
+    background: var(--arvya-dark-900); color: var(--cream-50); border-color: var(--arvya-dark-900);
+  }
+  .pattern .actions button:hover { border-color: var(--arvya-gold); color: var(--text-primary); }
+  .pattern .actions button.primary:hover { background: var(--arvya-dark-800); color: var(--cream-50); }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Drift review">
+
+  <div class="page-head" style="margin-bottom: 14px;">
+    <div>
+      <span class="eyebrow gold">— Drift review · weekly</span>
+      <h1>Where we said we'd be vs. where we are.</h1>
+    </div>
+    <div class="right">
+      <div style="font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); letter-spacing: .08em; text-align: right;">— Compiled this morning · 07:28<br>— Next run: Mon 5 May</div>
+    </div>
+  </div>
+
+  <!-- Single-statement headline -->
+  <p class="drift-stmt">You said you'd ship <b>Drive ingestion + a vertical-template doc</b>. The brain heard you spend <b>62%</b> of your time on <b>investor follow-ups</b> instead.</p>
+
+  <div class="drift-meta">
+    <span><span class="pip"></span><b>3</b> patterns flagged</span>
+    <span class="gold">— alignment <b>0.41</b> <span style="color:var(--text-tertiary)">(was 0.62 last month)</span></span>
+    <span>— signal <b>0.81</b></span>
+    <span style="margin-left:auto;">— from 142 meetings · 847 emails · 38 docs</span>
+  </div>
+
+  <!-- Compare -->
+  <div class="compare">
+    <div class="col">
+      <h3>— What you said · strategy doc + last board update</h3>
+      <ul>
+        <li><span><b>Ship Drive ingestion</b><span class="small">— unblocks 3 customers</span></span><span class="pct">P0</span></li>
+        <li><span><b>Hire 2 eng</b><span class="small">— back-end + applied AI</span></span><span class="pct">P0</span></li>
+        <li><span><b>Vertical-template position paper</b></span><span class="pct">P1</span></li>
+        <li><span><b>Close Series A</b></span><span class="pct">P1</span></li>
+        <li><span><b>Q3 customer roadshow</b></span><span class="pct">P2</span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>— What you actually did · last 30 days</h3>
+      <ul>
+        <li><span><b>62% — investor follow-ups</b><span class="small">Sequoia 28% · Insight 12% · 6 cold 22%</span></span><span class="pct flat">— time</span></li>
+        <li><span><b>14% — Drive ingestion eng</b><span class="small">PR open, blocked on auth scope</span></span><span class="pct late">↓ behind</span></li>
+        <li><span><b>11% — customer support</b><span class="small">Marlowe bug, Notion FAQ</span></span><span class="pct flat">— flat</span></li>
+        <li><span><b>0% — vertical-template paper</b><span class="small">Not started · ownership unclear</span></span><span class="pct late">↓ skipped</span></li>
+        <li><span><b>0% — hiring</b><span class="small">Last interview 22d ago · pipeline 4 → 1</span></span><span class="pct late">↓ stalled</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Patterns -->
+  <h2 class="patterns-head">— 3 patterns worth a conversation.</h2>
+
+  <div class="pattern warn">
+    <div class="head">
+      <h3>The pitch is no longer matching who buys.</h3>
+      <span class="conf">— confidence <b>0.82</b></span>
+    </div>
+    <div class="body">
+      Of the last <b>6 meaningful customer conversations</b>, <b>4 were VC firms</b> and <b>Sequoia + Insight cited "Deal Brain" by name</b> as why they took the call. The deck still leads with consulting use cases — the story you tell externally is diverging from the story your buyers tell back.
+    </div>
+    <div class="foot">
+      <div class="ev">
+        <span class="cite">⌕ Sequoia · Apr 23</span>
+        <span class="cite">⌕ Insight · Apr 12</span>
+        <span class="cite">⌕ BlackRock · Apr 28</span>
+        <span class="cite">⌕ deck v9</span>
+      </div>
+      <div class="reco"><b>— Recommend:</b> swap slide 2 before today's 14:00 with Insight. Draft ready.</div>
+      <div class="actions">
+        <button>Snooze</button>
+        <button class="primary">Review draft →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pattern warn">
+    <div class="head">
+      <h3>Hiring has stalled silently.</h3>
+      <span class="conf">— confidence <b>0.91</b></span>
+    </div>
+    <div class="body">
+      Strategy says <b>"P0: hire 2 eng by end of Q2"</b>. Activity says: <b>last interview 22 days ago</b>, recruiter pipeline 4 → 1, no offers, JDs untouched since Mar 17. Zero of the last four standups mentioned hiring.
+    </div>
+    <div class="foot">
+      <div class="ev">
+        <span class="cite">⌕ JD log</span>
+        <span class="cite">⌕ recruiter pipeline</span>
+        <span class="cite">⌕ standups (4)</span>
+        <span class="cite">⌕ board update Apr</span>
+      </div>
+      <div class="reco"><b>— Recommend:</b> 30-min unblock with PB tomorrow. 3 lapsed candidates surfaced.</div>
+      <div class="actions">
+        <button>Snooze</button>
+        <button class="primary">Open unblock →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pattern">
+    <div class="head">
+      <h3>Same FAQ question, three customers, this week.</h3>
+      <span class="conf">— confidence <b>0.96</b></span>
+    </div>
+    <div class="body">
+      "Where does my data live?" came up from <b>Notion (Mon)</b>, <b>Atlassian (Tue)</b>, <b>Marlowe (Thu)</b>. Answered three different ways across four reps. No canonical doc exists.
+    </div>
+    <div class="foot">
+      <div class="ev">
+        <span class="cite">⌕ Notion ticket</span>
+        <span class="cite">⌕ Atlassian email</span>
+        <span class="cite">⌕ Marlowe call</span>
+      </div>
+      <div class="reco"><b>— Recommend:</b> publish single FAQ entry. Brain drafted 4 sentences.</div>
+      <div class="actions">
+        <button>Dismiss</button>
+        <button class="primary">Publish →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'drift', crumbs: ['Arvya Co.', 'Drift review', 'Week 26'] });
+</script>
+</body>
+</html>

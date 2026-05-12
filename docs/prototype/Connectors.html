@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Connectors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* HEADER */
+  .cn-hero h1 { font-size: 36px; font-weight: 500; letter-spacing: -0.02em; }
+  .cn-hero p { font-size: 15px; color: var(--text-secondary); margin: 8px 0 0; max-width: 64ch; line-height: 1.5; }
+
+  /* SUMMARY ROW */
+  .summary {
+    background: var(--cream-100);
+    border: 1px solid var(--cream-300);
+    border-radius: 12px;
+    padding: 14px 22px;
+    margin: 36px 0 24px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .summary b { font-family: var(--font-serif); font-weight: 600; color: var(--text-primary); font-size: 15px; }
+  .summary .grow { flex: 1; }
+  .summary .search {
+    height: 34px; padding: 0 14px;
+    background: #fff; border: 1px solid var(--border-default);
+    border-radius: 8px;
+    font-size: 13px; color: var(--text-tertiary);
+    width: 240px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* INTEGRATION GRID */
+  .group-lab {
+    font: 10.5px var(--font-mono); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-tertiary);
+    margin: 28px 0 12px;
+  }
+  .ig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+  .ig {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex; align-items: center; gap: 14px;
+    transition: border-color .14s, transform .14s, box-shadow .14s;
+    cursor: pointer;
+  }
+  .ig:hover { transform: translateY(-1px); border-color: var(--cream-400); box-shadow: var(--shadow-xs); }
+  .ig .lg { width: 36px; height: 36px; display: grid; place-items: center; flex-shrink: 0; }
+  .ig .lg img { width: 32px; height: 32px; object-fit: contain; }
+  .ig .lg svg { width: 32px; height: 32px; }
+  .ig.arvya { background: var(--arvya-dark-900); border-color: var(--arvya-dark-900); }
+  .ig.arvya .nm { color: var(--cream-50); }
+  .ig.arvya .ac { color: var(--arvya-gold); }
+  .ig.arvya .pill { color: #0E1726; background: var(--arvya-gold); }
+  .ig.arvya .pill .dot { background: #0E1726; }
+  .ig .nm-block { flex: 1; }
+  .ig .nm { font-size: 14.5px; font-weight: 500; color: var(--text-primary); }
+  .ig .ac { font: 10.5px var(--font-mono); color: var(--text-tertiary); margin-top: 2px; letter-spacing: .04em; }
+  .ig .pill {
+    font: 10px var(--font-mono); letter-spacing: .08em;
+    color: #2A6F45; padding: 4px 10px;
+    border-radius: 999px; background: #DDEFE2;
+    font-weight: 500;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .ig .pill .dot { width: 5px; height: 5px; border-radius: 50%; background: #2EA968; }
+  .ig .pill.warn { color: #A83C3C; background: #F9DCDC; }
+  .ig .pill.warn .dot { background: #C75050; }
+  .ig .pill.gold { color: var(--arvya-gold-700); background: var(--arvya-gold-bg); }
+  .ig .pill.gold .dot { background: var(--arvya-gold); }
+  .ig .pill.avail { color: var(--text-tertiary); background: var(--cream-200); }
+  .ig .pill.avail .dot { background: var(--cream-400); }
+
+
+
+  /* PRIVACY */
+  .privacy {
+    background: #fff; border: 1px solid var(--border-subtle); border-radius: 14px;
+    padding: 22px 26px;
+    margin-top: 36px;
+  }
+  .privacy h3 { font-family: var(--font-serif); font-weight: 500; font-size: 17px; margin: 0 0 14px; letter-spacing: -0.005em; }
+  .privacy .row { display: grid; grid-template-columns: 1fr auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--cream-200); align-items: center; }
+  .privacy .row:first-of-type { border-top: 0; padding-top: 4px; }
+  .privacy .row .lab { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .privacy .row .lab .desc { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.5; font-weight: 400; }
+  .toggle { width: 36px; height: 20px; background: var(--cream-300); border-radius: 999px; position: relative; cursor: pointer; flex-shrink: 0; }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .toggle.on { background: var(--arvya-dark-900); }
+  .toggle.on::after { left: 18px; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Connectors">
+
+  <header class="cn-hero" style="padding: 8px 0 24px; border-bottom: 1px solid var(--cream-200);">
+    <span class="eyebrow gold">— Source health</span>
+    <h1>Connectors.</h1>
+    <p>Where the brain learns from. Anything you connect, the brain reads in real time and writes into entity pages, the graph, and open loops. Anything you disconnect, it forgets — with a 30-day grace.</p>
+  </header>
+
+  <div class="summary">
+    <b>6 connected</b>
+    <span style="color:var(--text-tertiary);">— 1 needs reauth · 142 sources today · last sync 6s ago</span>
+    <span class="grow"></span>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search…</span>
+    </div>
+  </div>
+
+  <!-- ==== All connectors, equal cards ==== -->
+  <div class="group-lab">— Active connectors</div>
+  <div class="ig-grid">
+
+    <!-- Arvya Notetaker — same size, branded fill -->
+    <div class="ig arvya">
+      <span class="lg arvya-lg">
+        <svg viewBox="0 0 32 32" width="32" height="32">
+          <rect width="32" height="32" rx="7" fill="#0E1726"/>
+          <circle cx="16" cy="13.5" r="3.5" fill="#D89A3F"/>
+          <rect x="14" y="17" width="4" height="6" rx="1.5" fill="#D89A3F"/>
+          <rect x="11" y="20.5" width="10" height="1.6" rx=".8" fill="#D89A3F"/>
+        </svg>
+      </span>
+      <div class="nm-block">
+        <div class="nm">Arvya Notetaker</div>
+        <div class="ac">— First-party · joins your meetings</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg"><img src="assets/logos/gmail.png" alt="Gmail"></span>
+      <div class="nm-block">
+        <div class="nm">Gmail</div>
+        <div class="ac">— naveen@arvya.co · 847 / 90d</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg"><img src="assets/logos/slack.png" alt="Slack"></span>
+      <div class="nm-block">
+        <div class="nm">Slack</div>
+        <div class="ac">— arvya.slack · 12 channels · 98 threads</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg"><img src="assets/logos/gdrive.png" alt="Google Drive"></span>
+      <div class="nm-block">
+        <div class="nm">Google Drive</div>
+        <div class="ac">— 4 shared drives · 22 docs indexed</div>
+      </div>
+      <span class="pill warn"><span class="dot"></span>Reauth</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg gcal">
+        <svg viewBox="0 0 24 24" width="32" height="32"><rect x="2" y="3" width="20" height="19" rx="3" fill="#fff" stroke="#DADCE0" stroke-width="1"/><path d="M2 7h20" stroke="#DADCE0" stroke-width="1"/><text x="12" y="17.5" text-anchor="middle" font-family="Roboto, Arial" font-size="9.5" fill="#1A73E8" font-weight="700">7</text><rect x="6" y="1.5" width="2" height="4" rx=".7" fill="#5F6368"/><rect x="16" y="1.5" width="2" height="4" rx=".7" fill="#5F6368"/></svg>
+      </span>
+      <div class="nm-block">
+        <div class="nm">Google Calendar</div>
+        <div class="ac">— 142 meetings · 6 today</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg notion">
+        <svg viewBox="0 0 24 24" width="28" height="28"><rect width="24" height="24" rx="5" fill="#fff" stroke="#E5E2DC" stroke-width="1"/><path d="M6 7v11h2V11.5l5 6.5h2V7h-2v6.5L8 7H6z" fill="#000"/></svg>
+      </span>
+      <div class="nm-block">
+        <div class="nm">Notion</div>
+        <div class="ac">— /strategy, /board · 86 docs</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+
+    <div class="ig">
+      <span class="lg hub">
+        <svg viewBox="0 0 24 24" width="32" height="32"><circle cx="12" cy="12" r="11" fill="#FF7A59"/><path d="M16 9V6.5a1.5 1.5 0 1 0-1.5 1.5h.2v1A4 4 0 0 0 12 9.7L8.4 7.3a2 2 0 1 0-1 1.6L11 11.3a4 4 0 1 0 5-2.3z" fill="#fff"/></svg>
+      </span>
+      <div class="nm-block">
+        <div class="nm">HubSpot</div>
+        <div class="ac">— 184 contacts · 22 deals</div>
+      </div>
+      <span class="pill"><span class="dot"></span>Live</span>
+    </div>
+  </div>
+
+  <!-- ==== PRIVACY ==== -->
+  <div class="privacy">
+    <h3>— Boundaries the brain respects.</h3>
+
+    <div class="row">
+      <div class="lab">Forget on disconnect<div class="desc">When a source is disconnected, all derived memories, edges, and entity-page sections are removed within 30 days. You can also force-purge instantly.</div></div>
+      <div class="toggle on"></div>
+    </div>
+
+    <div class="row">
+      <div class="lab">Personal label = invisible<div class="desc">Any source labelled "personal" (Gmail label, Calendar private, Slack DM) is excluded entirely. The brain never sees, indexes, or surfaces it.</div></div>
+      <div class="toggle on"></div>
+    </div>
+
+    <div class="row">
+      <div class="lab">Reads, never writes<div class="desc">By default the brain only reads. To draft replies, send messages, or update tickets, you must enable per-connector write scopes.</div></div>
+      <div class="toggle on"></div>
+    </div>
+
+    <div class="row">
+      <div class="lab">Audit log of every read<div class="desc">Every fetch, every entity touched, every model call is in <a class="cite" href="Agents.html">⌕ Agent runs</a> with timestamps and source citations.</div></div>
+      <div class="toggle on"></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'connectors', crumbs: ['Arvya Co.', 'Connectors'] });
+  document.querySelectorAll('.toggle').forEach(t => {
+    t.addEventListener('click', () => t.classList.toggle('on'));
+  });
+</script>
+</body>
+</html>

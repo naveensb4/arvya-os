@@ -10,6 +10,7 @@
     "./drift-review": "./src/drift-review.ts",
     "./follow-up": "./src/follow-up.ts",
     "./marketing": "./src/marketing.ts",
+    "./meeting-prep": "./src/meeting-prep.ts",
     ".": "./src/index.ts"
   }
 }

@@ -4,3 +4,4 @@ export * from "./daily-brief";
 export * from "./drift-review";
 export * from "./follow-up";
 export * from "./marketing";
+export * from "./meeting-prep";

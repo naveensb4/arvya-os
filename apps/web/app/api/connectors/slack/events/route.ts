@@ -1,27 +1,54 @@
-import { NextResponse } from "next/server";
-import { handleSlackMarketingEvent, verifySlackRequest } from "@/lib/marketing/slack";
+import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
+import { handleSlackMention } from "@/lib/slack-bot/handler";
 
-export async function POST(request: Request) {
-  const rawBody = await request.text();
-  const verified = verifySlackRequest({
-    rawBody,
-    timestamp: request.headers.get("x-slack-request-timestamp"),
-    signature: request.headers.get("x-slack-signature"),
-  });
-  if (!verified) {
-    return NextResponse.json({ error: "Invalid Slack signature" }, { status: 401 });
+function verifySlackSignature(req: NextRequest, body: string): boolean {
+  const timestamp = req.headers.get("x-slack-request-timestamp");
+  const signature = req.headers.get("x-slack-signature");
+  if (!timestamp || !signature) return false;
+
+  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+  if (!signingSecret) return false;
+
+  const baseString = `v0:${timestamp}:${body}`;
+  const hmac = crypto.createHmac("sha256", signingSecret).update(baseString).digest("hex");
+  const expected = `v0=${hmac}`;
+
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+
+  if (!verifySlackSignature(req, body)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return NextResponse.json({ error: "Invalid Slack payload" }, { status: 400 });
+  const payload = JSON.parse(body);
+
+  if (payload.type === "url_verification") {
+    return NextResponse.json({ challenge: payload.challenge });
   }
 
-  const result = await handleSlackMarketingEvent(payload as Parameters<typeof handleSlackMarketingEvent>[0]);
-  if (result.type === "challenge") {
-    return NextResponse.json({ challenge: result.challenge });
+  if (payload.type === "event_callback") {
+    const eventType = payload.event?.type;
+
+    if (eventType === "app_mention" || (eventType === "message" && payload.event?.channel_type === "im")) {
+      const subtype = payload.event?.subtype;
+      if (subtype === "message_changed" || subtype === "message_deleted" || subtype === "bot_message") {
+        return NextResponse.json({ ok: true });
+      }
+      if (payload.event?.bot_id || payload.event?.message?.bot_id) {
+        return NextResponse.json({ ok: true });
+      }
+      if (!payload.event?.text) {
+        return NextResponse.json({ ok: true });
+      }
+      handleSlackMention(payload).catch((err) =>
+        console.error("[slack-events] Q&A handler error:", err),
+      );
+    }
   }
-  return NextResponse.json(result);
+
+  return NextResponse.json({ ok: true });
 }

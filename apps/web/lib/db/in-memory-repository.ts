@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type {
   AgentRun,
   Brain,
+  BrainDoc,
   MarketingChannelPost,
   MarketingContentInsight,
   MarketingContentItem,
@@ -16,6 +17,9 @@ import type {
   Relationship,
   SourceEmbedding,
   SourceItem,
+  User,
+  Workspace,
+  WorkspaceMember,
   Workflow,
 } from "@arvya/core";
 import type {
@@ -28,6 +32,7 @@ import type {
   CreateBrainAlertData,
   CreateBrainEventData,
   CreateBrainData,
+  CreateBrainDocData,
   CreateConnectorConfigData,
   CreateConnectorSyncRunData,
   CreateMarketingChannelPostData,
@@ -47,12 +52,18 @@ import type {
   CreateRelationshipData,
   CreateSourceData,
   CreateSourceEmbeddingData,
+  CreateUserData,
   CreateWorkflowData,
+  CreateWorkspaceData,
+  CreateWorkspaceMemberData,
   ListPrioritiesOptions,
+  CalendarEvent,
   NotetakerCalendar,
   NotetakerEvent,
   NotetakerMeeting,
+  ListBrainDocsOptions,
   UpdateAgentRunData,
+  UpdateBrainDocFeedbackData,
   UpdateConnectorConfigData,
   UpdateConnectorSyncRunData,
   UpdateMarketingChannelPostData,
@@ -70,6 +81,49 @@ import type {
 
 const seedAt = new Date("2026-04-25T16:00:00.000Z").toISOString();
 
+const seedUsers: User[] = [
+  {
+    id: "user-pb",
+    email: "prashanthbabu1329@gmail.com",
+    displayName: "Prashanth Babu",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+  {
+    id: "user-naveen",
+    email: "naveen@arvya.co",
+    displayName: "Naveen SB",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+];
+
+const seedWorkspaces: Workspace[] = [
+  {
+    id: "workspace-arvya",
+    name: "Arvya",
+    createdAt: seedAt,
+    updatedAt: seedAt,
+  },
+];
+
+const seedWorkspaceMembers: WorkspaceMember[] = [
+  {
+    id: "wm-pb",
+    workspaceId: "workspace-arvya",
+    userId: "user-pb",
+    role: "owner",
+    joinedAt: seedAt,
+  },
+  {
+    id: "wm-naveen",
+    workspaceId: "workspace-arvya",
+    userId: "user-naveen",
+    role: "owner",
+    joinedAt: seedAt,
+  },
+];
+
 const seedBrains: Brain[] = [
   {
     id: "arvya-company-brain",
@@ -77,6 +131,7 @@ const seedBrains: Brain[] = [
     kind: "company",
     thesis:
       "A living operating brain for Arvya that compounds every investor, customer, advisor, product, and engineering signal into a single source-backed memory.",
+    workspaceId: "workspace-arvya",
     createdAt: seedAt,
     updatedAt: seedAt,
   },
@@ -180,6 +235,9 @@ const seedMarketingWeeklyReports: MarketingWeeklyReport[] = [];
 const seedMarketingLlmUsage: MarketingLlmUsage[] = [];
 
 type InMemoryState = {
+  users: User[];
+  workspaces: Workspace[];
+  workspaceMembers: WorkspaceMember[];
   brains: Brain[];
   sources: SourceItem[];
   memories: MemoryObject[];
@@ -188,6 +246,7 @@ type InMemoryState = {
   workflows: Workflow[];
   embeddings: SourceEmbedding[];
   agentRuns: AgentRun[];
+  brainDocs: BrainDoc[];
   priorities: Priority[];
   connectorConfigs: ConnectorConfig[];
   connectorSyncRuns: ConnectorSyncRun[];
@@ -244,6 +303,9 @@ declare global {
 
 function createSeedState(): InMemoryState {
   return {
+    users: clone(seedUsers),
+    workspaces: clone(seedWorkspaces),
+    workspaceMembers: clone(seedWorkspaceMembers),
     brains: clone(seedBrains),
     sources: clone(seedSources),
     memories: clone(seedMemories),
@@ -252,6 +314,7 @@ function createSeedState(): InMemoryState {
     workflows: clone(seedWorkflows),
     embeddings: clone(seedEmbeddings),
     agentRuns: clone(seedAgentRuns),
+    brainDocs: [],
     priorities: clone(seedPriorities),
     connectorConfigs: clone(seedConnectorConfigs),
     connectorSyncRuns: clone(seedConnectorSyncRuns),
@@ -298,6 +361,64 @@ function loadState(): InMemoryState {
 export class InMemoryRepository implements BrainRepository {
   readonly mode = "in_memory" as const;
 
+  async getUserByEmail(email: string): Promise<User | null> {
+    const found = loadState().users.find((u) => u.email === email);
+    return found ? clone(found) : null;
+  }
+
+  async listUsers(): Promise<User[]> {
+    return clone(loadState().users);
+  }
+
+  async createUser(input: CreateUserData): Promise<User> {
+    const user: User = {
+      id: nanoid(),
+      email: input.email,
+      displayName: input.displayName,
+      avatarUrl: input.avatarUrl ?? null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().users.unshift(user);
+    return clone(user);
+  }
+
+  async getWorkspace(workspaceId: string): Promise<Workspace | null> {
+    const found = loadState().workspaces.find((w) => w.id === workspaceId);
+    return found ? clone(found) : null;
+  }
+
+  async listWorkspaces(): Promise<Workspace[]> {
+    return clone(loadState().workspaces);
+  }
+
+  async createWorkspace(input: CreateWorkspaceData): Promise<Workspace> {
+    const workspace: Workspace = {
+      id: nanoid(),
+      name: input.name,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().workspaces.unshift(workspace);
+    return clone(workspace);
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    return clone(loadState().workspaceMembers.filter((m) => m.workspaceId === workspaceId));
+  }
+
+  async createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember> {
+    const member: WorkspaceMember = {
+      id: nanoid(),
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      role: input.role ?? "member",
+      joinedAt: now(),
+    };
+    loadState().workspaceMembers.unshift(member);
+    return clone(member);
+  }
+
   async listBrains(): Promise<Brain[]> {
     return clone(loadState().brains);
   }
@@ -318,6 +439,15 @@ export class InMemoryRepository implements BrainRepository {
       updatedAt: now(),
     };
     loadState().brains.push(brain);
+    return clone(brain);
+  }
+
+  async updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null> {
+    const state = loadState();
+    const brain = state.brains.find((b) => b.id === brainId);
+    if (!brain) return null;
+    if (update.metadata !== undefined) brain.metadata = update.metadata;
+    brain.updatedAt = new Date().toISOString();
     return clone(brain);
   }
 
@@ -617,6 +747,55 @@ export class InMemoryRepository implements BrainRepository {
     return clone(run);
   }
 
+  async createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc> {
+    const doc: BrainDoc = {
+      id: nanoid(),
+      brainId: input.brainId,
+      docType: input.docType,
+      title: input.title,
+      content: input.content,
+      contentText: input.contentText,
+      feedback: null,
+      agentRunId: input.agentRunId,
+      externalEventId: input.externalEventId,
+      meetingId: input.meetingId,
+      metadata: input.metadata,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    loadState().brainDocs.unshift(doc);
+    return clone(doc);
+  }
+
+  async getBrainDoc(docId: string): Promise<BrainDoc | null> {
+    const doc = loadState().brainDocs.find((d) => d.id === docId);
+    return doc ? clone(doc) : null;
+  }
+
+  async listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]> {
+    let docs = loadState().brainDocs.filter((d) => d.brainId === brainId);
+    if (opts?.meetingId) docs = docs.filter((d) => d.meetingId === opts.meetingId);
+    if (opts?.docType) docs = docs.filter((d) => d.docType === opts.docType);
+    return clone(docs.slice(0, opts?.limit ?? 50));
+  }
+
+  async updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null> {
+    const doc = loadState().brainDocs.find((d) => d.id === docId);
+    if (!doc) return null;
+    doc.feedback = update.feedback;
+    doc.feedbackAt = now();
+    doc.updatedAt = now();
+    return clone(doc);
+  }
+
+  async listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]> {
+    if (meetingIds.length === 0) return [];
+    const set = new Set(meetingIds);
+    return clone(
+      loadState().brainDocs.filter((d) => d.brainId === brainId && d.meetingId && set.has(d.meetingId)),
+    );
+  }
+
   async listPriorities(brainId: string, opts: ListPrioritiesOptions = {}): Promise<Priority[]> {
     const statuses = opts.status
       ? Array.isArray(opts.status)
@@ -777,28 +956,6 @@ export class InMemoryRepository implements BrainRepository {
     return clone(alert);
   }
 
-  async listBrainEvents(brainId: string, options: { limit?: number } = {}): Promise<BrainEvent[]> {
-    return clone(
-      loadState()
-        .brainEvents.filter((event) => event.brainId === brainId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, options.limit ?? 100),
-    );
-  }
-
-  async createBrainEvent(input: CreateBrainEventData): Promise<BrainEvent> {
-    const event: BrainEvent = {
-      id: nanoid(),
-      brainId: input.brainId,
-      eventType: input.eventType,
-      sourceSystem: input.sourceSystem ?? undefined,
-      payload: input.payload ?? {},
-      createdAt: now(),
-    };
-    loadState().brainEvents.unshift(event);
-    return clone(event);
-  }
-
   async listNotetakerCalendars(
     input: { brainId?: string; status?: "connected" | "error" | "disabled" } = {},
   ): Promise<NotetakerCalendar[]> {
@@ -854,9 +1011,9 @@ export class InMemoryRepository implements BrainRepository {
     return state.notetakerCalendars.length !== before;
   }
 
-  async listNotetakerMeetings(
-    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
-  ): Promise<NotetakerMeeting[]> {
+  async listCalendarEvents(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: string } = {},
+  ): Promise<CalendarEvent[]> {
     const from = input.from ? new Date(input.from).getTime() : Number.NEGATIVE_INFINITY;
     const to = input.to ? new Date(input.to).getTime() : Number.POSITIVE_INFINITY;
     return clone(
@@ -866,6 +1023,7 @@ export class InMemoryRepository implements BrainRepository {
           if (input.brainId && meeting.brainId !== input.brainId) return false;
           if (input.calendarId && meeting.notetakerCalendarId !== input.calendarId) return false;
           if (start < from || start > to) return false;
+          if (input.eventStatus && meeting.eventStatus !== input.eventStatus) return false;
           return true;
         })
         .sort((a, b) => a.startTime.localeCompare(b.startTime))
@@ -873,8 +1031,14 @@ export class InMemoryRepository implements BrainRepository {
     );
   }
 
-  async createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<NotetakerMeeting> {
-    const meeting: NotetakerMeeting = {
+  async listNotetakerMeetings(
+    input: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number } = {},
+  ): Promise<CalendarEvent[]> {
+    return this.listCalendarEvents(input);
+  }
+
+  async createCalendarEvent(input: CreateNotetakerMeetingData): Promise<CalendarEvent> {
+    const meeting: CalendarEvent = {
       id: nanoid(),
       brainId: input.brainId,
       notetakerCalendarId: input.notetakerCalendarId ?? null,
@@ -884,12 +1048,15 @@ export class InMemoryRepository implements BrainRepository {
       provider: input.provider,
       title: input.title,
       meetingUrl: input.meetingUrl ?? null,
+      location: input.location ?? null,
       startTime: input.startTime,
       endTime: input.endTime,
       participants: input.participants ?? [],
       autoJoinDecision: input.autoJoinDecision ?? "needs_review",
       autoJoinReason: input.autoJoinReason ?? null,
       botStatus: input.botStatus ?? "not_scheduled",
+      eventStatus: input.eventStatus ?? "active",
+      eventType: input.eventType ?? "unknown",
       sourceItemId: input.sourceItemId ?? null,
       metadata: input.metadata ?? {},
       createdAt: now(),
@@ -899,14 +1066,25 @@ export class InMemoryRepository implements BrainRepository {
     return clone(meeting);
   }
 
-  async updateNotetakerMeeting(
-    meetingId: string,
+  async createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<CalendarEvent> {
+    return this.createCalendarEvent(input);
+  }
+
+  async updateCalendarEvent(
+    eventId: string,
     update: UpdateNotetakerMeetingData,
-  ): Promise<NotetakerMeeting | null> {
-    const meeting = loadState().notetakerMeetings.find((item) => item.id === meetingId);
+  ): Promise<CalendarEvent | null> {
+    const meeting = loadState().notetakerMeetings.find((item) => item.id === eventId);
     if (!meeting) return null;
     Object.assign(meeting, update, { updatedAt: now() });
     return clone(meeting);
+  }
+
+  async updateNotetakerMeeting(
+    meetingId: string,
+    update: UpdateNotetakerMeetingData,
+  ): Promise<CalendarEvent | null> {
+    return this.updateCalendarEvent(meetingId, update);
   }
 
   async listNotetakerEvents(
@@ -949,21 +1127,88 @@ export class InMemoryRepository implements BrainRepository {
     return clone(event);
   }
 
+  async getSourceItemsByIds(ids: string[]): Promise<SourceItem[]> {
+    const wanted = new Set(ids);
+    return clone(loadState().sources.filter((source) => wanted.has(source.id)));
+  }
+
+  async listBrainEvents(brainId: string, options: { limit?: number } = {}): Promise<BrainEvent[]> {
+    return clone(
+      loadState()
+        .brainEvents.filter((event) => event.brainId === brainId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, options.limit ?? 100),
+    );
+  }
+
+  async createBrainEvent(input: CreateBrainEventData): Promise<BrainEvent> {
+    const event: BrainEvent = {
+      id: nanoid(),
+      brainId: input.brainId,
+      eventType: input.eventType,
+      sourceSystem: input.sourceSystem ?? undefined,
+      payload: input.payload ?? {},
+      createdAt: now(),
+    };
+    loadState().brainEvents.unshift(event);
+    return clone(event);
+  }
+
+  async getWorkspaceMemberRole(workspaceId: string, userId: string) {
+    return loadState().workspaceMembers.find((member) => member.workspaceId === workspaceId && member.userId === userId)?.role ?? null;
+  }
+
+  async updateWorkspaceMemberRole(workspaceId: string, userId: string, role: WorkspaceMember["role"]) {
+    const member = loadState().workspaceMembers.find((item) => item.workspaceId === workspaceId && item.userId === userId);
+    if (!member) return null;
+    member.role = role;
+    return clone(member);
+  }
+
+  async removeWorkspaceMember(workspaceId: string, userId: string) {
+    const state = loadState();
+    const before = state.workspaceMembers.length;
+    state.workspaceMembers = state.workspaceMembers.filter((member) => member.workspaceId !== workspaceId || member.userId !== userId);
+    return state.workspaceMembers.length !== before;
+  }
+
+  async getWorkspaceForUser(userId: string) {
+    const member = loadState().workspaceMembers.find((item) => item.userId === userId);
+    if (!member) return null;
+    return clone(loadState().workspaces.find((workspace) => workspace.id === member.workspaceId) ?? null);
+  }
+
+  async listBrainsForWorkspace(workspaceId: string) {
+    return clone(loadState().brains.filter((brain) => brain.workspaceId === workspaceId));
+  }
+
+  async createWorkspaceInvite(): Promise<import("@arvya/core").WorkspaceInvite> {
+    throw new Error("Workspace invites are not supported in in-memory mode.");
+  }
+
+  async getWorkspaceInviteByToken() {
+    return null;
+  }
+
+  async acceptWorkspaceInvite(): Promise<WorkspaceMember> {
+    throw new Error("Workspace invites are not supported in in-memory mode.");
+  }
+
   async createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem> {
     const item: MarketingContentItem = {
       id: nanoid(),
       brainId: input.brainId,
-      sourceItemId: input.sourceItemId ?? null,
+      sourceItemId: input.sourceItemId ?? undefined,
       sourcePlatform: input.sourcePlatform,
       sourceType: input.sourceType,
-      sourceUrl: input.sourceUrl ?? null,
-      sourceExternalId: input.sourceExternalId ?? null,
-      sourceOwner: input.sourceOwner ?? null,
-      sourceDate: input.sourceDate ?? null,
+      sourceUrl: input.sourceUrl ?? undefined,
+      sourceExternalId: input.sourceExternalId ?? undefined,
+      sourceOwner: input.sourceOwner ?? undefined,
+      sourceDate: input.sourceDate ?? undefined,
       sourceConfidentiality: input.sourceConfidentiality ?? "internal",
       rawText: input.rawText,
-      cleanedSummary: input.cleanedSummary ?? null,
-      contentSafeSummary: input.contentSafeSummary ?? null,
+      cleanedSummary: input.cleanedSummary ?? undefined,
+      contentSafeSummary: input.contentSafeSummary ?? undefined,
       requiresRedaction: input.requiresRedaction ?? true,
       approvedForContent: input.approvedForContent ?? false,
       metadata: input.metadata ?? {},
@@ -974,34 +1219,33 @@ export class InMemoryRepository implements BrainRepository {
     return clone(item);
   }
 
-  async updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData): Promise<MarketingContentItem | null> {
+  async updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData) {
     const item = loadState().marketingContentItems.find((entry) => entry.id === contentItemId);
     if (!item) return null;
     Object.assign(item, update, { updatedAt: now() });
     return clone(item);
   }
 
-  async listMarketingContentItems(brainId: string, options: { limit?: number } = {}): Promise<MarketingContentItem[]> {
+  async listMarketingContentItems(brainId: string, options: { limit?: number } = {}) {
     return clone(loadState().marketingContentItems.filter((item) => item.brainId === brainId).slice(0, options.limit ?? 100));
   }
 
-  async getMarketingContentItem(contentItemId: string): Promise<MarketingContentItem | null> {
-    const item = loadState().marketingContentItems.find((entry) => entry.id === contentItemId);
-    return item ? clone(item) : null;
+  async getMarketingContentItem(contentItemId: string) {
+    return clone(loadState().marketingContentItems.find((item) => item.id === contentItemId) ?? null);
   }
 
-  async createMarketingContentInsights(items: CreateMarketingContentInsightData[]): Promise<MarketingContentInsight[]> {
-    const created = items.map((item) => ({
+  async createMarketingContentInsights(items: CreateMarketingContentInsightData[]) {
+    const created = items.map((input) => ({
       id: nanoid(),
-      brainId: item.brainId,
-      contentItemId: item.contentItemId,
-      rawInsight: item.rawInsight,
-      contentSafeInsight: item.contentSafeInsight,
-      sensitivityLevel: item.sensitivityLevel ?? "medium",
-      suggestedPillar: item.suggestedPillar ?? null,
-      suggestedChannels: item.suggestedChannels ?? [],
-      approvedForContent: item.approvedForContent ?? false,
-      metadata: item.metadata ?? {},
+      brainId: input.brainId,
+      contentItemId: input.contentItemId,
+      rawInsight: input.rawInsight,
+      contentSafeInsight: input.contentSafeInsight,
+      sensitivityLevel: input.sensitivityLevel ?? "medium",
+      suggestedPillar: input.suggestedPillar ?? undefined,
+      suggestedChannels: input.suggestedChannels ?? [],
+      approvedForContent: input.approvedForContent ?? false,
+      metadata: input.metadata ?? {},
       createdAt: now(),
       updatedAt: now(),
     }));
@@ -1009,207 +1253,136 @@ export class InMemoryRepository implements BrainRepository {
     return clone(created);
   }
 
-  async updateMarketingContentInsight(insightId: string, update: UpdateMarketingContentInsightData): Promise<MarketingContentInsight | null> {
+  async updateMarketingContentInsight(insightId: string, update: UpdateMarketingContentInsightData) {
     const insight = loadState().marketingContentInsights.find((entry) => entry.id === insightId);
     if (!insight) return null;
     Object.assign(insight, update, { updatedAt: now() });
     return clone(insight);
   }
 
-  async listMarketingContentInsights(brainId: string, options: { limit?: number; approvedOnly?: boolean } = {}): Promise<MarketingContentInsight[]> {
-    return clone(loadState().marketingContentInsights
-      .filter((item) => item.brainId === brainId)
-      .filter((item) => (options.approvedOnly ? item.approvedForContent : true))
-      .slice(0, options.limit ?? 100));
+  async listMarketingContentInsights(brainId: string, options: { limit?: number; approvedOnly?: boolean } = {}) {
+    return clone(
+      loadState()
+        .marketingContentInsights.filter((insight) => insight.brainId === brainId && (!options.approvedOnly || insight.approvedForContent))
+        .slice(0, options.limit ?? 100),
+    );
   }
 
-  async getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null> {
-    const insight = loadState().marketingContentInsights.find((entry) => entry.id === insightId);
-    return insight ? clone(insight) : null;
+  async getMarketingContentInsight(insightId: string) {
+    return clone(loadState().marketingContentInsights.find((insight) => insight.id === insightId) ?? null);
   }
 
-  async createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]> {
-    const created = items.map((item) => ({
+  async createMarketingChannelPosts(items: CreateMarketingChannelPostData[]) {
+    const created = items.map((input) => ({
       id: nanoid(),
-      brainId: item.brainId,
-      contentItemId: item.contentItemId ?? null,
-      contentInsightId: item.contentInsightId ?? null,
-      channel: item.channel,
-      status: item.status ?? "draft",
-      bodyText: item.bodyText,
-      mediaType: null,
-      mediaReference: null,
-      plannedPostDate: item.plannedPostDate ?? null,
-      postingWindow: item.postingWindow ?? null,
-      scheduledAt: item.scheduledAt ?? null,
-      publishedAt: item.publishedAt ?? null,
-      liveUrl: item.liveUrl ?? null,
-      schedulerProvider: item.schedulerProvider ?? null,
-      schedulerPostId: item.schedulerPostId ?? null,
-      campaignTag: item.campaignTag ?? null,
-      pillar: item.pillar ?? null,
-      formatType: item.formatType ?? null,
-      hookType: item.hookType ?? null,
-      targetIcp: item.targetIcp ?? null,
-      funnelStage: item.funnelStage ?? null,
-      experimentTag: item.experimentTag ?? null,
-      requiresReview: item.requiresReview ?? true,
-      sensitivityLevel: item.sensitivityLevel ?? "medium",
-      approvedBy: item.approvedBy ?? null,
-      approvedAt: item.approvedAt ?? null,
-      revisionReason: item.revisionReason ?? null,
-      safetyCheckStatus: item.safetyCheckStatus ?? "not_run",
-      safetyCheckReason: item.safetyCheckReason ?? null,
-      isExemplar: item.isExemplar ?? false,
-      performanceTag: item.performanceTag ?? null,
-      utmSource: item.utmSource ?? null,
-      utmMedium: item.utmMedium ?? null,
-      utmCampaign: item.utmCampaign ?? null,
-      utmContent: item.utmContent ?? null,
-      metadata: item.metadata ?? {},
+      brainId: input.brainId,
+      contentItemId: input.contentItemId ?? undefined,
+      contentInsightId: input.contentInsightId ?? undefined,
+      channel: input.channel,
+      status: input.status ?? "draft",
+      bodyText: input.bodyText,
+      plannedPostDate: input.plannedPostDate ?? undefined,
+      postingWindow: input.postingWindow ?? undefined,
+      scheduledAt: input.scheduledAt ?? undefined,
+      publishedAt: input.publishedAt ?? undefined,
+      liveUrl: input.liveUrl ?? undefined,
+      schedulerProvider: input.schedulerProvider ?? undefined,
+      schedulerPostId: input.schedulerPostId ?? undefined,
+      campaignTag: input.campaignTag ?? undefined,
+      pillar: input.pillar ?? undefined,
+      formatType: input.formatType ?? undefined,
+      hookType: input.hookType ?? undefined,
+      targetIcp: input.targetIcp ?? undefined,
+      funnelStage: input.funnelStage ?? undefined,
+      experimentTag: input.experimentTag ?? undefined,
+      requiresReview: input.requiresReview ?? true,
+      sensitivityLevel: input.sensitivityLevel ?? "medium",
+      approvedBy: input.approvedBy ?? undefined,
+      approvedAt: input.approvedAt ?? undefined,
+      revisionReason: input.revisionReason ?? undefined,
+      safetyCheckStatus: input.safetyCheckStatus ?? "not_run",
+      safetyCheckReason: input.safetyCheckReason ?? undefined,
+      isExemplar: input.isExemplar ?? false,
+      performanceTag: input.performanceTag ?? undefined,
+      utmSource: input.utmSource ?? undefined,
+      utmMedium: input.utmMedium ?? undefined,
+      utmCampaign: input.utmCampaign ?? undefined,
+      utmContent: input.utmContent ?? undefined,
+      metadata: input.metadata ?? {},
       createdAt: now(),
       updatedAt: now(),
-    }));
+    })) satisfies MarketingChannelPost[];
     loadState().marketingChannelPosts.unshift(...created);
     return clone(created);
   }
 
-  async updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null> {
+  async updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData) {
     const post = loadState().marketingChannelPosts.find((entry) => entry.id === postId);
     if (!post) return null;
     Object.assign(post, update, { updatedAt: now() });
     return clone(post);
   }
 
-  async listMarketingChannelPosts(brainId: string, options: { limit?: number; status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}): Promise<MarketingChannelPost[]> {
-    const statuses = options.status ? (Array.isArray(options.status) ? options.status : [options.status]) : null;
-    return clone(loadState().marketingChannelPosts
-      .filter((post) => post.brainId === brainId)
-      .filter((post) => (statuses ? statuses.includes(post.status) : true))
-      .filter((post) => (options.exemplarOnly ? post.isExemplar : true))
-      .slice(0, options.limit ?? 100));
+  async listMarketingChannelPosts(brainId: string, options: { limit?: number; status?: MarketingChannelPost["status"] | MarketingChannelPost["status"][]; exemplarOnly?: boolean } = {}) {
+    const statuses = Array.isArray(options.status) ? options.status : options.status ? [options.status] : null;
+    return clone(
+      loadState()
+        .marketingChannelPosts.filter((post) => post.brainId === brainId && (!statuses || statuses.includes(post.status)) && (!options.exemplarOnly || post.isExemplar))
+        .slice(0, options.limit ?? 100),
+    );
   }
 
-  async getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null> {
-    const post = loadState().marketingChannelPosts.find((entry) => entry.id === postId);
-    return post ? clone(post) : null;
+  async getMarketingChannelPost(postId: string) {
+    return clone(loadState().marketingChannelPosts.find((post) => post.id === postId) ?? null);
   }
 
-  async createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric> {
-    const metric: MarketingPostMetric = {
-      id: nanoid(),
-      brainId: input.brainId,
-      channelPostId: input.channelPostId,
-      metricDate: input.metricDate,
-      impressions: input.impressions ?? 0,
-      reactions: input.reactions ?? 0,
-      comments: input.comments ?? 0,
-      shares: input.shares ?? 0,
-      clicks: input.clicks ?? 0,
-      saves: input.saves ?? 0,
-      follows: input.follows ?? 0,
-      rawMetrics: input.rawMetrics ?? {},
-      createdAt: now(),
-      updatedAt: now(),
-    };
+  async createMarketingPostMetric(input: CreateMarketingPostMetricData) {
+    const metric: MarketingPostMetric = { id: nanoid(), brainId: input.brainId, channelPostId: input.channelPostId, metricDate: input.metricDate, impressions: input.impressions ?? 0, reactions: input.reactions ?? 0, comments: input.comments ?? 0, shares: input.shares ?? 0, clicks: input.clicks ?? 0, saves: input.saves ?? 0, follows: input.follows ?? 0, rawMetrics: input.rawMetrics ?? {}, createdAt: now(), updatedAt: now() };
     loadState().marketingPostMetrics.unshift(metric);
     return clone(metric);
   }
 
-  async listMarketingPostMetrics(brainId: string, options: { limit?: number } = {}): Promise<MarketingPostMetric[]> {
-    return clone(loadState().marketingPostMetrics.filter((metric) => metric.brainId === brainId).slice(0, options.limit ?? 500));
+  async listMarketingPostMetrics(brainId: string, options: { limit?: number } = {}) {
+    return clone(loadState().marketingPostMetrics.filter((metric) => metric.brainId === brainId).slice(0, options.limit ?? 100));
   }
 
-  async createMarketingEvent(input: CreateMarketingEventData): Promise<MarketingEvent> {
-    const event: MarketingEvent = {
-      id: nanoid(),
-      brainId: input.brainId,
-      channelPostId: input.channelPostId ?? null,
-      eventType: input.eventType,
-      eventSource: input.eventSource,
-      eventAt: input.eventAt ?? now(),
-      description: input.description,
-      contactName: input.contactName ?? null,
-      companyName: input.companyName ?? null,
-      value: input.value ?? null,
-      utmSource: input.utmSource ?? null,
-      utmMedium: input.utmMedium ?? null,
-      utmCampaign: input.utmCampaign ?? null,
-      utmContent: input.utmContent ?? null,
-      attributionConfidence: input.attributionConfidence ?? "unknown",
-      metadata: input.metadata ?? {},
-      createdAt: now(),
-    };
+  async createMarketingEvent(input: CreateMarketingEventData) {
+    const event: MarketingEvent = { id: nanoid(), brainId: input.brainId, channelPostId: input.channelPostId ?? undefined, eventType: input.eventType, eventSource: input.eventSource, eventAt: input.eventAt ?? now(), description: input.description, contactName: input.contactName ?? undefined, companyName: input.companyName ?? undefined, value: input.value ?? undefined, utmSource: input.utmSource ?? undefined, utmMedium: input.utmMedium ?? undefined, utmCampaign: input.utmCampaign ?? undefined, utmContent: input.utmContent ?? undefined, attributionConfidence: input.attributionConfidence ?? "unknown", metadata: input.metadata ?? {}, createdAt: now() };
     loadState().marketingEvents.unshift(event);
     return clone(event);
   }
 
-  async listMarketingEvents(brainId: string, options: { limit?: number } = {}): Promise<MarketingEvent[]> {
-    return clone(loadState().marketingEvents.filter((event) => event.brainId === brainId).slice(0, options.limit ?? 200));
+  async listMarketingEvents(brainId: string, options: { limit?: number } = {}) {
+    return clone(loadState().marketingEvents.filter((event) => event.brainId === brainId).slice(0, options.limit ?? 100));
   }
 
-  async createMarketingExperiment(input: CreateMarketingExperimentData): Promise<MarketingExperiment> {
-    const experiment: MarketingExperiment = {
-      id: nanoid(),
-      brainId: input.brainId,
-      tag: input.tag,
-      title: input.title,
-      hypothesis: input.hypothesis,
-      status: input.status ?? "planned",
-      startedAt: input.startedAt ?? null,
-      endedAt: input.endedAt ?? null,
-      metadata: input.metadata ?? {},
-      createdAt: now(),
-      updatedAt: now(),
-    };
+  async createMarketingExperiment(input: CreateMarketingExperimentData) {
+    const experiment: MarketingExperiment = { id: nanoid(), brainId: input.brainId, tag: input.tag, title: input.title, hypothesis: input.hypothesis, status: input.status ?? "planned", startedAt: input.startedAt ?? undefined, endedAt: input.endedAt ?? undefined, metadata: input.metadata ?? {}, createdAt: now(), updatedAt: now() };
     loadState().marketingExperiments.unshift(experiment);
     return clone(experiment);
   }
 
-  async listMarketingExperiments(brainId: string, options: { limit?: number } = {}): Promise<MarketingExperiment[]> {
+  async listMarketingExperiments(brainId: string, options: { limit?: number } = {}) {
     return clone(loadState().marketingExperiments.filter((experiment) => experiment.brainId === brainId).slice(0, options.limit ?? 100));
   }
 
-  async createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData): Promise<MarketingWeeklyReport> {
-    const report: MarketingWeeklyReport = {
-      id: nanoid(),
-      brainId: input.brainId,
-      weekStart: input.weekStart,
-      weekEnd: input.weekEnd,
-      publishedCount: input.publishedCount,
-      qualitativeOnly: input.qualitativeOnly,
-      summary: input.summary,
-      markdown: input.markdown,
-      recommendedExperiments: input.recommendedExperiments ?? [],
-      metadata: input.metadata ?? {},
-      createdAt: now(),
-    };
+  async createMarketingWeeklyReport(input: CreateMarketingWeeklyReportData) {
+    const report: MarketingWeeklyReport = { id: nanoid(), brainId: input.brainId, weekStart: input.weekStart, weekEnd: input.weekEnd, publishedCount: input.publishedCount, qualitativeOnly: input.qualitativeOnly, summary: input.summary, markdown: input.markdown, recommendedExperiments: input.recommendedExperiments ?? [], metadata: input.metadata ?? {}, createdAt: now() };
     loadState().marketingWeeklyReports.unshift(report);
     return clone(report);
   }
 
-  async listMarketingWeeklyReports(brainId: string, options: { limit?: number } = {}): Promise<MarketingWeeklyReport[]> {
-    return clone(loadState().marketingWeeklyReports.filter((report) => report.brainId === brainId).slice(0, options.limit ?? 50));
+  async listMarketingWeeklyReports(brainId: string, options: { limit?: number } = {}) {
+    return clone(loadState().marketingWeeklyReports.filter((report) => report.brainId === brainId).slice(0, options.limit ?? 100));
   }
 
-  async createMarketingLlmUsage(input: CreateMarketingLlmUsageData): Promise<MarketingLlmUsage> {
-    const usage: MarketingLlmUsage = {
-      id: nanoid(),
-      brainId: input.brainId,
-      jobType: input.jobType,
-      modelProvider: input.modelProvider,
-      model: input.model,
-      inputTokens: input.inputTokens ?? 0,
-      outputTokens: input.outputTokens ?? 0,
-      estimatedCostUsd: input.estimatedCostUsd ?? 0,
-      metadata: input.metadata ?? {},
-      createdAt: now(),
-    };
+  async createMarketingLlmUsage(input: CreateMarketingLlmUsageData) {
+    const usage: MarketingLlmUsage = { id: nanoid(), brainId: input.brainId, jobType: input.jobType, modelProvider: input.modelProvider, model: input.model, inputTokens: input.inputTokens ?? 0, outputTokens: input.outputTokens ?? 0, estimatedCostUsd: input.estimatedCostUsd ?? 0, metadata: input.metadata ?? {}, createdAt: now() };
     loadState().marketingLlmUsage.unshift(usage);
     return clone(usage);
   }
 
-  async listMarketingLlmUsage(brainId: string, options: { limit?: number } = {}): Promise<MarketingLlmUsage[]> {
-    return clone(loadState().marketingLlmUsage.filter((usage) => usage.brainId === brainId).slice(0, options.limit ?? 500));
+  async listMarketingLlmUsage(brainId: string, options: { limit?: number } = {}) {
+    return clone(loadState().marketingLlmUsage.filter((usage) => usage.brainId === brainId).slice(0, options.limit ?? 100));
   }
 }

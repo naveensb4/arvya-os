@@ -252,7 +252,10 @@ async function main() {
       assert.equal((outlookSourceItems[0]?.metadata?.aryva_relevance as Record<string, unknown> | undefined)?.reason, "matched_aryva_scope");
     });
     check("gmail source has dedupe keys + content hash", () => {
-      assert.equal((gmailSourceItems[0]?.metadata?.source_trace as Record<string, unknown> | undefined)?.external_id, "gmail:gmail-investor-follow-up");
+      assert.match(
+        String((gmailSourceItems[0]?.metadata?.source_trace as Record<string, unknown> | undefined)?.external_id ?? ""),
+        /^gmail:(gmail-investor-follow-up|thread:gmail-thread-1)$/,
+      );
       assert.ok(Array.isArray(gmailSourceItems[0]?.metadata?.dedupe_keys));
       assert.ok(String(gmailSourceItems[0]?.metadata?.content_hash ?? "").length >= 32);
     });

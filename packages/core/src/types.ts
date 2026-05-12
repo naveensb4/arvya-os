@@ -77,10 +77,57 @@ export type Brain = {
   name: string;
   kind: BrainKind;
   thesis: string;
+  workspaceId?: string | null;
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt?: string;
 };
+
+export type User = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type WorkspaceMemberRole = "owner" | "admin" | "member" | "viewer";
+
+export type WorkspaceMember = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceMemberRole;
+  joinedAt: string;
+};
+
+export type WorkspaceInvite = {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: WorkspaceMemberRole;
+  token: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  createdAt: string;
+};
+
+export type MeetingType =
+  | "investor_call"
+  | "customer_call"
+  | "advisor_call"
+  | "internal_sync"
+  | "partner_call"
+  | "product_review"
+  | "other";
 
 export type SourceItem = {
   id: string;
@@ -674,6 +721,26 @@ export interface AiClient {
   completeStructured<T>(input: AiStructuredInput<T>): Promise<AiStructuredCompletion<T>>;
   embed(texts: string[]): Promise<number[][] | null>;
 }
+
+export type BrainDocType = "meeting_prep" | "transcript" | "summary" | "action_items";
+export type BrainDocFeedback = "useful" | "not_useful";
+
+export type BrainDoc = {
+  id: string;
+  brainId: string;
+  docType: BrainDocType;
+  title: string;
+  content: Record<string, unknown>;
+  contentText?: string;
+  feedback?: BrainDocFeedback | null;
+  feedbackAt?: string;
+  agentRunId?: string;
+  externalEventId?: string;
+  meetingId?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
 
 export type Source = SourceItem;
 export type MemoryKind = MemoryObjectType;

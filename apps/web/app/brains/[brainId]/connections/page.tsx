@@ -1,350 +1,349 @@
-import { SectionShell } from "@/components/layout/section-shell";
-import { CONNECTOR_TYPES, ensureDefaultConnectorConfigs } from "@/lib/always-on/runtime";
+import Image from "next/image";
+import {
+  CONNECTOR_TYPES,
+  ensureDefaultConnectorConfigs,
+} from "@/lib/always-on/runtime";
 import { selectedBrainOrDefault } from "@/lib/brain/store";
 import {
   getRepository,
   type ConnectorConfig,
-  type ConnectorSyncRun,
-  type NotetakerCalendar,
-  type NotetakerMeeting,
+  type ConnectorType,
 } from "@/lib/db/repository";
+import styles from "./page.module.css";
+import { ConnectorPrivacyToggles } from "./privacy-toggles";
+
+// Renders the prototype's 7-card layout (docs/prototype/Connectors.html) but
+// wires every card to the real OAuth start + sync routes that live under
+// app/api/connectors/. The four real OAuth connectors (slack, gmail,
+// google_drive, outlook) get Connect / Reconnect / Sync now buttons. Recall
+// (Arvya Notetaker) gets a sync button only - it is webhook-first. Visual-
+// only cards (Calendar, Notion, HubSpot) stay decorative until those
+// connectors land.
+
+type CardSpec = {
+  id: string;
+  name: string;
+  meta: string;
+  branded?: boolean;
+  logoSrc?: string;
+  logoAlt?: string;
+  logoSvg?: React.ReactNode;
+  connectorType: ConnectorType | null;
+  authStart?: string;
+  syncRoute?: string;
+};
+
+// Authentic Google Calendar product mark - 4-color frame, day-marker bars,
+// large blue numeral. Matches the official brand asset within ASCII SVG.
+const calendarLogo = (
+  <svg viewBox="0 0 200 200" width="32" height="32" aria-hidden>
+    <rect x="14" y="14" width="172" height="172" rx="12" fill="#fff" />
+    <path d="M14 50 L186 50 L186 164 Q186 186 164 186 L14 186 Z" fill="#fff" />
+    <rect x="14" y="14" width="172" height="36" fill="#4285F4" />
+    <rect x="14" y="50" width="14" height="136" fill="#34A853" />
+    <rect x="172" y="50" width="14" height="136" fill="#FBBC04" />
+    <rect x="14" y="172" width="172" height="14" fill="#EA4335" />
+    <text
+      x="100"
+      y="140"
+      textAnchor="middle"
+      fontFamily="Roboto, Arial, sans-serif"
+      fontSize="86"
+      fontWeight="500"
+      fill="#4285F4"
+    >
+      31
+    </text>
+    <rect x="58" y="6" width="14" height="34" rx="6" fill="#5F6368" />
+    <rect x="128" y="6" width="14" height="34" rx="6" fill="#5F6368" />
+  </svg>
+);
+
+const notionLogo = (
+  <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden>
+    <rect width="24" height="24" rx="5" fill="#fff" stroke="#E5E2DC" strokeWidth="1" />
+    <path d="M6 7v11h2V11.5l5 6.5h2V7h-2v6.5L8 7H6z" fill="#000" />
+  </svg>
+);
+
+const hubspotLogo = (
+  <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden>
+    <circle cx="12" cy="12" r="11" fill="#FF7A59" />
+    <path d="M16 9V6.5a1.5 1.5 0 1 0-1.5 1.5h.2v1A4 4 0 0 0 12 9.7L8.4 7.3a2 2 0 1 0-1 1.6L11 11.3a4 4 0 1 0 5-2.3z" fill="#fff" />
+  </svg>
+);
+
+const arvyaNotetakerLogo = (
+  <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden>
+    <rect width="32" height="32" rx="7" fill="#0E1726" />
+    <circle cx="16" cy="13.5" r="3.5" fill="#D89A3F" />
+    <rect x="14" y="17" width="4" height="6" rx="1.5" fill="#D89A3F" />
+    <rect x="11" y="20.5" width="10" height="1.6" rx="0.8" fill="#D89A3F" />
+  </svg>
+);
+
+const CARDS: CardSpec[] = [
+  {
+    id: "arvya-notetaker",
+    name: "Arvya Notetaker",
+    meta: "First-party - joins your meetings",
+    branded: true,
+    logoSvg: arvyaNotetakerLogo,
+    connectorType: "recall",
+    syncRoute: "/api/connectors/sync-now",
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    meta: "Scheduled polling on selected labels",
+    logoSrc: "/brand/gmail.png",
+    logoAlt: "Gmail",
+    connectorType: "gmail",
+    authStart: "/api/connectors/gmail/auth/start",
+    syncRoute: "/api/connectors/gmail/sync",
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    meta: "Channel ingestion + Q&A bot",
+    logoSrc: "/brand/slack.png",
+    logoAlt: "Slack",
+    connectorType: "slack",
+    authStart: "/api/connectors/slack/auth/start",
+    syncRoute: "/api/connectors/sync-now",
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    meta: "Selected transcript folders",
+    logoSrc: "/brand/gdrive.png",
+    logoAlt: "Google Drive",
+    connectorType: "google_drive",
+    authStart: "/api/connectors/google-drive/auth/start",
+    syncRoute: "/api/connectors/google-drive/sync",
+  },
+  {
+    id: "google-calendar",
+    name: "Google Calendar",
+    meta: "Connect via Google Workspace OAuth",
+    logoSvg: calendarLogo,
+    // Calendar shares the unified Google OAuth (one consent grants Gmail +
+    // Drive + Calendar). The card lights up when Gmail or Drive is live.
+    connectorType: null,
+    authStart: "/api/connectors/google/auth/start",
+  },
+  {
+    id: "notion",
+    name: "Notion",
+    meta: "Coming soon - top-level pages",
+    logoSvg: notionLogo,
+    connectorType: null,
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    meta: "Coming soon - contacts and deals",
+    logoSvg: hubspotLogo,
+    connectorType: null,
+  },
+];
+
+const placeholderPrivacy = [
+  {
+    id: "forget_on_disconnect",
+    label: "Forget on disconnect",
+    desc: "When a source is disconnected, all derived memories, edges, and entity-page sections are removed within 30 days. You can also force-purge instantly.",
+    on: true,
+  },
+  {
+    id: "personal_invisible",
+    label: "Personal label is invisible",
+    desc: "Any source labelled 'personal' (Gmail label, Calendar private, Slack DM) is excluded entirely. The brain never sees, indexes, or surfaces it.",
+    on: true,
+  },
+  {
+    id: "reads_never_writes",
+    label: "Reads, never writes",
+    desc: "By default the brain only reads. To draft replies, send messages, or update tickets, you must enable per-connector write scopes.",
+    on: true,
+  },
+  {
+    id: "audit_log",
+    label: "Audit log of every read",
+    desc: "Every fetch, every entity touched, every model call is in the agent runs page with timestamps and source citations.",
+    on: true,
+  },
+];
 
 type PageProps = {
   params: Promise<{ brainId: string }>;
 };
 
-const connectorDescriptions: Record<string, string> = {
-  google_drive: "Scheduled polling for selected transcript folders only. Ingests .txt and .md files into the Brain.",
-  gmail: "Scheduled polling for selected labels, then a required Aryva relevance check. Never sends email.",
-  outlook: "Scheduled polling for selected folders or categories, then a required Aryva relevance check. Never sends email.",
-  recall: "Webhook-first transcript ingestion. Scheduled sync stays off by default.",
-  mock: "Local always-on verifier that exercises source creation, ingestion, sync runs, and alerts.",
-};
+function isLive(config: ConnectorConfig | undefined): boolean {
+  if (!config) return false;
+  return config.status === "connected" || config.status === "active";
+}
 
-export default async function Page({ params }: PageProps) {
+function needsReauth(config: ConnectorConfig | undefined): boolean {
+  return config?.status === "needs_reauth";
+}
+
+function pillStateFor(card: CardSpec, config?: ConnectorConfig) {
+  // Cards without a backing connector OR an OAuth route are "Coming soon"
+  // (Notion, HubSpot). Cards with no connectorType but with an authStart
+  // (Google Calendar shares the unified Google OAuth) get treated like
+  // a real OAuth connector.
+  if (card.connectorType === null && !card.authStart) {
+    return { variant: "muted" as const, label: "Coming soon" };
+  }
+  if (needsReauth(config)) return { variant: "warn" as const, label: "Reauth" };
+  if (isLive(config)) return { variant: "live" as const, label: "Live" };
+  return { variant: "muted" as const, label: "Not connected" };
+}
+
+function pillClass(variant: "live" | "warn" | "muted") {
+  if (variant === "live") return `${styles.pill} ${styles.pillLive}`;
+  if (variant === "warn") return `${styles.pill} ${styles.pillWarn}`;
+  return `${styles.pill} ${styles.pillMuted}`;
+}
+
+function formatAgo(iso: string | null | undefined): string {
+  if (!iso) return "no syncs";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
+export default async function ConnectionsPage({ params }: PageProps) {
   const { brainId } = await params;
   const { selectedBrain } = await selectedBrainOrDefault(brainId);
   const selectedBrainId = selectedBrain.id;
   const repository = getRepository();
   const configs = await ensureDefaultConnectorConfigs(selectedBrainId);
-  const now = new Date();
-  const upcomingWindowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-  const [syncRuns, notetakerCalendars, upcomingMeetings] = await Promise.all([
-    repository.listConnectorSyncRuns({ brainId: selectedBrainId, limit: 30 }),
-    repository.listNotetakerCalendars({ brainId: selectedBrainId }),
-    repository.listNotetakerMeetings({
-      brainId: selectedBrainId,
-      from: now.toISOString(),
-      to: upcomingWindowEnd.toISOString(),
-      limit: 8,
-    }),
-  ]);
+  const syncRuns = await repository.listConnectorSyncRuns({
+    brainId: selectedBrainId,
+    limit: 20,
+  });
+
+  const configByType = new Map<ConnectorType, ConnectorConfig>(
+    configs.map((c) => [c.connectorType, c]),
+  );
+
+  const googleConnected =
+    isLive(configByType.get("gmail")) || isLive(configByType.get("google_drive"));
+
+  const liveCount = CARDS.filter((card) => {
+    if (card.id === "google-calendar") return googleConnected;
+    if (!card.connectorType) return false;
+    return isLive(configByType.get(card.connectorType));
+  }).length;
+
+  const reauthCount = CARDS.filter((card) => {
+    if (!card.connectorType) return false;
+    return needsReauth(configByType.get(card.connectorType));
+  }).length;
+
+  const lastSyncRun = syncRuns[0];
 
   return (
-    <SectionShell brainId={selectedBrainId} title="Connections" description="Configure always-on source capture. Manual sync and scheduled sync use the same runtime path.">
-      <div className="grid gap-4">
-        {CONNECTOR_TYPES.map((connectorType) => {
-          const config = configs.find((item) => item.connectorType === connectorType);
-          if (!config) return null;
-          const recentRuns = syncRuns.filter((run) => run.connectorConfigId === config.id).slice(0, 3);
+    <div>
+      <header className={styles.heroHead}>
+        <span className={styles.eyebrow}>Source health</span>
+        <h1>Connectors.</h1>
+        <p>
+          Where the brain learns from. Anything you connect, the brain reads in
+          real time and writes into entity pages, the graph, and open loops.
+          Anything you disconnect, it forgets within a 30 day grace.
+        </p>
+      </header>
+
+      <div className={styles.summary}>
+        <b>{liveCount} connected</b>
+        <span style={{ color: "var(--text-tertiary)" }}>
+          {reauthCount > 0 ? `- ${reauthCount} need reauth ` : ""}
+          {lastSyncRun
+            ? `- last sync ${formatAgo(lastSyncRun.startedAt)}`
+            : "- no syncs yet"}
+        </span>
+        <span className={styles.grow} />
+      </div>
+
+      <div className={styles.groupLab}>Active connectors</div>
+      <div className={styles.igGrid}>
+        {CARDS.map((card) => {
+          const config = card.connectorType
+            ? configByType.get(card.connectorType)
+            : undefined;
+          const cardConfig =
+            card.id === "google-calendar"
+              ? googleConnected
+                ? ({ status: "connected" } as ConnectorConfig)
+                : undefined
+              : config;
+          const pill = pillStateFor(card, cardConfig);
+          const live = pill.variant === "live";
+          const reauth = pill.variant === "warn";
+
           return (
-            <ConnectorCard
-              key={connectorType}
-              brainId={selectedBrainId}
-              config={config}
-              recentRuns={recentRuns}
-              notetakerCalendars={connectorType === "recall" ? notetakerCalendars : []}
-              upcomingMeetings={connectorType === "recall" ? upcomingMeetings : []}
-            />
+            <div
+              key={card.id}
+              className={`${styles.ig} ${card.branded ? styles.igArvya : ""}`}
+            >
+              <span className={styles.lg}>
+                {card.logoSrc ? (
+                  <Image
+                    src={card.logoSrc}
+                    alt={card.logoAlt ?? card.name}
+                    width={32}
+                    height={32}
+                  />
+                ) : (
+                  card.logoSvg
+                )}
+              </span>
+              <div className={styles.nmBlock}>
+                <div className={styles.nm}>{card.name}</div>
+                <div className={styles.ac}>{card.meta}</div>
+              </div>
+              <div className={styles.cardActions}>
+                <span className={pillClass(pill.variant)}>
+                  <span className={styles.dot} />
+                  {pill.label}
+                </span>
+                {card.authStart ? (
+                  <a
+                    className={styles.btnLink}
+                    href={`${card.authStart}?brainId=${encodeURIComponent(selectedBrainId)}`}
+                  >
+                    {live || reauth ? "Reconnect" : "Connect"}
+                  </a>
+                ) : null}
+                {card.syncRoute && live && config ? (
+                  <form action={card.syncRoute} method="post" className={styles.inlineForm}>
+                    <input type="hidden" name="brainId" value={selectedBrainId} />
+                    <input
+                      type="hidden"
+                      name="connectorConfigId"
+                      value={config.id}
+                    />
+                    <button type="submit" className={styles.btnLink}>
+                      Sync now
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            </div>
           );
         })}
       </div>
-    </SectionShell>
-  );
-}
 
-function ConnectorCard({
-  brainId,
-  config,
-  recentRuns,
-  notetakerCalendars,
-  upcomingMeetings,
-}: {
-  brainId: string;
-  config: ConnectorConfig;
-  recentRuns: ConnectorSyncRun[];
-  notetakerCalendars: NotetakerCalendar[];
-  upcomingMeetings: NotetakerMeeting[];
-}) {
-  const label = config.connectorType.replace("_", " ");
-  const isOAuthConnector = config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook";
-  const connected = isOAuthConnector
-    ? config.status === "connected"
-    : config.status === "active";
-  const alwaysOnStatus = config.syncEnabled && connected ? "Always-on" : "Manual";
-  const isGoogleDrive = config.connectorType === "google_drive";
-  const isGmail = config.connectorType === "gmail";
-  const isOutlook = config.connectorType === "outlook";
-  const folderIds = Array.isArray(config.config.folderIds)
-    ? config.config.folderIds.map((item) => String(item)).join("\n")
-    : "";
-  const labelIds = Array.isArray(config.config.labelIds)
-    ? config.config.labelIds.map((item) => String(item)).join("\n")
-    : "";
-  const outlookFolderIds = Array.isArray(config.config.outlookFolderIds)
-    ? config.config.outlookFolderIds.map((item) => String(item)).join("\n")
-    : "";
-  const outlookCategoryNames = Array.isArray(config.config.outlookCategoryNames)
-    ? config.config.outlookCategoryNames.map((item) => String(item)).join("\n")
-    : "";
-  const maxItemTestMode = config.config.maxItemTestMode === true;
-  const isRecall = config.connectorType === "recall";
-  const recallConfigured = Boolean(process.env.RECALL_API_KEY?.trim());
-  const primaryNotetakerCalendar = notetakerCalendars[0];
-  const authStartPath =
-    isGoogleDrive ? "/api/connectors/google-drive/auth/start" :
-    isGmail ? "/api/connectors/gmail/auth/start" :
-    isOutlook ? "/api/connectors/outlook/auth/start" :
-    "";
-  const syncPath =
-    isGoogleDrive ? "/api/connectors/google-drive/sync" :
-    isGmail ? "/api/connectors/gmail/sync" :
-    isOutlook ? "/api/connectors/outlook/sync" :
-    "/api/connectors/sync-now";
-
-  return (
-    <section className="rounded-2xl bg-stone-50 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow text-amber-700">{alwaysOnStatus}</p>
-          <h2 className="mt-2 text-2xl font-semibold capitalize">{label}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-            {connectorDescriptions[config.connectorType]}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {isOAuthConnector ? (
-            <a className="button-secondary" href={`${authStartPath}?brainId=${encodeURIComponent(brainId)}`}>
-              {connected ? `Reconnect ${connectorDisplayName(config.connectorType)}` : `Connect ${connectorDisplayName(config.connectorType)}`}
-            </a>
-          ) : null}
-          <form action={syncPath} method="post">
-            <input type="hidden" name="brainId" value={brainId} />
-            <input type="hidden" name="connectorConfigId" value={config.id} />
-            <button className="button" type="submit">Sync now</button>
-          </form>
-        </div>
-      </div>
-
-      {isOAuthConnector ? (
-        <div className="mt-5 rounded-xl bg-white p-4 text-sm">
-          <p className="font-medium">{connected ? `${connectorDisplayName(config.connectorType)} connected` : `${connectorDisplayName(config.connectorType)} not connected`}</p>
-          <p className="mt-1 text-stone-500">Credentials are stored server-side and are never sent to the browser.</p>
-          {isGmail ? (
-            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
-              Create a Gmail label named <span className="font-semibold">Arvya Brain</span>, apply it to 5-10 important threads, then save that label name or ID below. A second message-level gate still skips anything that does not mention Aryva/Arvya or an Aryva domain.
-            </p>
-          ) : null}
-          {isOutlook ? (
-            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-amber-900">
-              Create an Outlook folder or category named <span className="font-semibold">Arvya Brain</span>, move or categorize 5-10 important emails, then save that folder/category name below. A second message-level gate still skips anything that does not mention Aryva/Arvya or an Aryva domain.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {isRecall ? (
-        <div className="mt-5 grid gap-4 rounded-xl bg-white p-4 text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-medium">Arvya Notetaker</p>
-              <p className="mt-1 text-stone-500">
-                Recall API is {recallConfigured ? "configured" : "missing"}. Transcripts become source items and use the Brain ingestion pipeline.
-              </p>
-            </div>
-            <a className="button-secondary" href={`/brains/${brainId}/notetaker`}>Open Notetaker</a>
-          </div>
-
-          <form action="/api/notetaker/config" method="post" className="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto]">
-            <input type="hidden" name="brainId" value={brainId} />
-            {primaryNotetakerCalendar ? <input type="hidden" name="calendarId" value={primaryNotetakerCalendar.id} /> : null}
-            <label className="rounded-xl bg-stone-50 px-4 py-3">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">Provider</span>
-              <select className="mt-1 w-full bg-transparent" name="provider" defaultValue={primaryNotetakerCalendar?.provider ?? "google_calendar"}>
-                <option value="google_calendar">Google Calendar</option>
-                <option value="outlook_calendar">Outlook Calendar</option>
-              </select>
-            </label>
-            <label className="rounded-xl bg-stone-50 px-4 py-3">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">Auto-join mode</span>
-              <select className="mt-1 w-full bg-transparent" name="autoJoinMode" defaultValue={primaryNotetakerCalendar?.autoJoinMode ?? "all_calls"}>
-                <option value="all_calls">All calls</option>
-                <option value="external_only">External only</option>
-                <option value="arvya_related_only">Arvya-related only</option>
-                <option value="manual_only">Manual only</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3">
-              <input type="checkbox" name="autoJoinEnabled" defaultChecked={primaryNotetakerCalendar?.autoJoinEnabled ?? true} />
-              Enable auto-join
-            </label>
-            <button className="button-secondary" type="submit">{primaryNotetakerCalendar ? "Save Notetaker" : "Create Notetaker"}</button>
-            <label className="rounded-xl bg-stone-50 px-4 py-3 md:col-span-2">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">Recall calendar ID</span>
-              <input className="mt-1 w-full bg-transparent" name="recallCalendarId" defaultValue={primaryNotetakerCalendar?.recallCalendarId ?? ""} placeholder="cal_..." />
-            </label>
-            <label className="rounded-xl bg-stone-50 px-4 py-3 md:col-span-2">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">External calendar ID</span>
-              <input className="mt-1 w-full bg-transparent" name="externalCalendarId" defaultValue={primaryNotetakerCalendar?.externalCalendarId ?? ""} placeholder="primary or calendar email" />
-            </label>
-          </form>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            <Metric label="Calendars" value={String(notetakerCalendars.length)} />
-            <Metric label="Upcoming meetings" value={String(upcomingMeetings.length)} />
-            <Metric label="Bots scheduled" value={String(upcomingMeetings.filter((meeting) => meeting.botStatus === "scheduled").length)} />
-            <Metric label="Last webhook" value={formatDate(lastWebhookAt(upcomingMeetings))} />
-          </div>
-        </div>
-      ) : null}
-
-      <form action="/api/connectors/configs" method="post" className="mt-5 grid gap-3 md:grid-cols-[1fr_160px_auto]">
-        <input type="hidden" name="brainId" value={brainId} />
-        <input type="hidden" name="connectorType" value={config.connectorType} />
-        {isGoogleDrive ? (
-          <label className="rounded-xl bg-white px-4 py-3 text-sm md:col-span-3">
-            <span className="block text-xs uppercase tracking-widest text-stone-500">Google Drive folder IDs</span>
-            <textarea
-              className="mt-2 min-h-24 w-full resize-y bg-transparent outline-none"
-              name="folderIds"
-              defaultValue={folderIds}
-              placeholder="One folder ID per line"
-            />
-          </label>
-        ) : null}
-        {isGmail ? (
-          <label className="rounded-xl bg-white px-4 py-3 text-sm md:col-span-3">
-            <span className="block text-xs uppercase tracking-widest text-stone-500">Gmail label names or IDs</span>
-            <textarea
-              className="mt-2 min-h-24 w-full resize-y bg-transparent outline-none"
-              name="labelIds"
-              defaultValue={labelIds}
-              placeholder="Arvya Brain"
-            />
-          </label>
-        ) : null}
-        {isOutlook ? (
-          <>
-            <label className="rounded-xl bg-white px-4 py-3 text-sm md:col-span-3">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">Outlook mail folder names or IDs</span>
-              <textarea
-                className="mt-2 min-h-24 w-full resize-y bg-transparent outline-none"
-                name="outlookFolderIds"
-                defaultValue={outlookFolderIds}
-                placeholder="Arvya Brain"
-              />
-            </label>
-            <label className="rounded-xl bg-white px-4 py-3 text-sm md:col-span-3">
-              <span className="block text-xs uppercase tracking-widest text-stone-500">Outlook category names</span>
-              <textarea
-                className="mt-2 min-h-24 w-full resize-y bg-transparent outline-none"
-                name="outlookCategoryNames"
-                defaultValue={outlookCategoryNames}
-                placeholder="Arvya Brain"
-              />
-            </label>
-          </>
-        ) : null}
-        <label className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm">
-          <input type="checkbox" name="syncEnabled" defaultChecked={config.syncEnabled} />
-          Enable scheduled sync
-        </label>
-        {isGmail || isOutlook ? (
-          <label className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm">
-            <input type="checkbox" name="maxItemTestMode" defaultChecked={maxItemTestMode} />
-            Max-item test mode
-          </label>
-        ) : null}
-        <label className="rounded-xl bg-white px-4 py-3 text-sm">
-          <span className="block text-xs uppercase tracking-widest text-stone-500">Interval</span>
-          <input
-            className="mt-1 w-full bg-transparent"
-            name="syncIntervalMinutes"
-            type="number"
-            min={5}
-            step={5}
-            defaultValue={config.syncIntervalMinutes ?? 10}
-          />
-        </label>
-        <button className="button-secondary" type="submit">Save</button>
-      </form>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        <Metric label="Status" value={config.status} />
-        <Metric label="Last Sync" value={formatDate(config.lastSyncAt)} />
-        <Metric label="Last Success" value={formatDate(config.lastSuccessAt)} />
-        <Metric label="Last Error" value={config.lastError ?? "None"} />
-      </div>
-
-      <div className="mt-5">
-        <h3 className="text-sm font-semibold uppercase tracking-widest text-stone-500">Recent sync runs</h3>
-        <div className="mt-3 space-y-2">
-          {recentRuns.map((run) => (
-            <div key={run.id} className="rounded-xl bg-white p-3 text-sm text-stone-700">
-              <span className="font-medium">{run.status}</span>
-              <span className="text-stone-400"> · </span>
-              <span>{formatDate(run.startedAt)}</span>
-              <span className="text-stone-400"> · </span>
-              <span>
-                {run.itemsFound} found, {run.itemsIngested} ingested, {run.itemsSkipped} skipped, {itemsFailed(run)} failed
-              </span>
-              {run.error ? <p className="mt-1 text-red-700">{run.error}</p> : null}
-            </div>
-          ))}
-          {recentRuns.length === 0 ? (
-            <p className="rounded-xl bg-white p-3 text-sm text-stone-500">No sync runs yet.</p>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function connectorDisplayName(type: ConnectorConfig["connectorType"]) {
-  if (type === "google_drive") return "Google Drive";
-  if (type === "gmail") return "Gmail";
-  if (type === "outlook") return "Outlook";
-  return type.replace("_", " ");
-}
-
-function itemsFailed(run: ConnectorSyncRun) {
-  const value = run.metadata?.itemsFailed;
-  return typeof value === "number" ? value : 0;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-white p-3">
-      <p className="truncate text-sm font-medium">{value}</p>
-      <p className="mt-1 text-xs uppercase tracking-widest text-stone-500">{label}</p>
+      <ConnectorPrivacyToggles toggles={placeholderPrivacy} />
     </div>
   );
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
-
-function lastWebhookAt(meetings: NotetakerMeeting[]) {
-  const timestamps = meetings
-    .map((meeting) => meeting.metadata?.notetaker_ingested_at ?? meeting.metadata?.transcriptProcessedAt)
-    .filter((value): value is string => typeof value === "string");
-  return timestamps.sort().at(-1);
-}
+void CONNECTOR_TYPES;

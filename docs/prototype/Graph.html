@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Knowledge graph</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .gr-layout { display: grid; grid-template-columns: 240px 1fr 320px; gap: 22px; }
+
+  .gr-side { border-right: 1px solid var(--border-subtle); padding-right: 22px; }
+  .gr-side h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); margin: 18px 0 8px; }
+  .gr-side h4:first-child { margin-top: 0; }
+  .gr-side label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 12.5px; cursor: pointer; }
+  .gr-side label .ct { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); }
+  .gr-side label .sw { width: 10px; height: 10px; border-radius: 50%; }
+
+  .gr-canvas {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    height: 720px;
+    position: relative;
+    overflow: hidden;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(216,154,63,.05), transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(14,23,38,.04), transparent 60%);
+  }
+  .gr-canvas .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(var(--cream-200) 1px, transparent 1px),
+      linear-gradient(90deg, var(--cream-200) 1px, transparent 1px);
+    background-size: 32px 32px;
+    opacity: .35;
+    pointer-events: none;
+  }
+  .gr-canvas svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    padding: 6px 12px 6px 8px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    z-index: 2;
+  }
+  .node:hover { border-color: var(--arvya-gold); }
+  .node.sel { border-color: var(--arvya-gold-700); box-shadow: 0 0 0 4px rgba(216,154,63,.15), var(--shadow-md); background: var(--arvya-gold-bg); }
+  .node .av {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--arvya-dark-900); color: var(--cream-50);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9.5px; font-weight: 600;
+  }
+  .node.person .av { background: var(--arvya-dark-900); }
+  .node.company .av { background: var(--arvya-gold); color: var(--arvya-dark-900); }
+  .node.topic .av { background: var(--cream-300); color: var(--arvya-dark-700); border-radius: 4px; }
+  .node.deal .av { background: #C75050; color: #fff; border-radius: 4px; }
+  .node.promise .av { background: #2A6F45; color: #fff; border-radius: 4px; }
+  .node .nm { font-weight: 500; color: var(--text-primary); }
+  .node .ty { font-family: var(--font-mono); font-size: 9px; color: var(--text-tertiary); margin-left: 4px; letter-spacing: .04em; text-transform: uppercase; }
+
+  .edge-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border: 1px solid var(--cream-300);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    z-index: 1;
+  }
+
+  .canvas-toolbar {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 8px 10px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px;
+    z-index: 5;
+  }
+  .canvas-toolbar .grp { display: inline-flex; gap: 2px; background: var(--cream-100); border-radius: 6px; padding: 2px; }
+  .canvas-toolbar .grp button { border: 0; background: transparent; padding: 4px 8px; border-radius: 4px; font-size: 11.5px; cursor: pointer; color: var(--text-secondary); }
+  .canvas-toolbar .grp button.on { background: #fff; color: var(--text-primary); box-shadow: var(--shadow-xs); }
+
+  .legend {
+    position: absolute; bottom: 14px; left: 14px;
+    background: rgba(255,255,255,.92); backdrop-filter: blur(6px);
+    border: 1px solid var(--border-subtle); border-radius: 10px;
+    padding: 10px 14px;
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: .04em;
+    color: var(--text-secondary);
+    display: flex; gap: 14px; align-items: center;
+    z-index: 5;
+  }
+  .legend .it { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 50%; }
+
+  .gr-detail .card { padding: 18px 20px; margin-bottom: 14px; }
+  .gr-detail h2 { font-family: var(--font-serif); font-weight: 500; font-size: 19px; margin: 0 0 4px; letter-spacing: -0.005em; }
+  .gr-detail .subline { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; color: var(--text-tertiary); text-transform: uppercase; }
+  .gr-detail h3 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--arvya-gold-700); margin: 14px 0 8px; }
+  .gr-detail .edge-row {
+    display: grid; grid-template-columns: 90px 1fr;
+    gap: 10px; padding: 8px 0;
+    border-bottom: 1px dashed var(--cream-300);
+    font-size: 12.5px;
+    align-items: baseline;
+  }
+  .gr-detail .edge-row:last-child { border: 0; }
+  .gr-detail .edge-row .v { font-family: var(--font-mono); font-size: 10px; color: var(--arvya-gold-700); letter-spacing: .04em; }
+  .gr-detail .edge-row .o { color: var(--text-primary); font-weight: 500; }
+
+  /* Saved chains */
+  .chain {
+    background: var(--cream-50); border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .chain:hover { border-color: var(--arvya-gold); }
+  .chain h4 { font-family: var(--font-serif); font-weight: 500; font-size: 14px; margin: 0 0 6px; }
+  .chain .pth { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); letter-spacing: .04em; line-height: 1.5; }
+  .chain .pth b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Knowledge graph">
+
+  <div class="page-head">
+    <div>
+      <span class="eyebrow gold">— Knowledge graph</span>
+      <h1>The shape of what we know.</h1>
+      <p class="sub">432 nodes · 1,847 edges across 43 canonical relationship types. Click any node to see what links to it. Use the chains to follow how a single signal — a person, a deal, a question — connects across the company.</p>
+    </div>
+    <div class="right">
+      <div style="display: flex; gap: 8px;">
+        <button class="btn ghost">Export subgraph</button>
+        <button class="btn primary">Run dream cycle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="gr-layout">
+
+    <!-- Filters -->
+    <div class="gr-side">
+      <h4>— Show node types</h4>
+      <label><input type="checkbox" checked><span class="sw" style="background:var(--arvya-dark-900);"></span> People <span class="ct">142</span></label>
+      <label><input type="checkbox" checked><span class="sw" style="background:var(--arvya-gold);"></span> Companies <span class="ct">88</span></label>
+      <label><input type="checkbox" checked><span class="sw" style="background:var(--cream-400);"></span> Topics <span class="ct">63</span></label>
+      <label><input type="checkbox" checked><span class="sw" style="background:#C75050;"></span> Deals <span class="ct">22</span></label>
+      <label><input type="checkbox" checked><span class="sw" style="background:#2A6F45;"></span> Promises <span class="ct">38</span></label>
+      <label><input type="checkbox"><span class="sw" style="background:#5673A8;"></span> Documents <span class="ct">79</span></label>
+
+      <h4>— Show edge types</h4>
+      <label><input type="checkbox" checked> works-at <span class="ct">312</span></label>
+      <label><input type="checkbox" checked> asked-about <span class="ct">189</span></label>
+      <label><input type="checkbox" checked> promised-to <span class="ct">102</span></label>
+      <label><input type="checkbox" checked> introduced-by <span class="ct">88</span></label>
+      <label><input type="checkbox"> mentioned-in <span class="ct">540</span></label>
+      <label><input type="checkbox"> attended <span class="ct">241</span></label>
+      <label><input type="checkbox"> + 37 more</label>
+
+      <h4>— Confidence floor</h4>
+      <input type="range" min="0" max="100" value="60" style="width: 100%;">
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); display: flex; justify-content: space-between; margin-top: 4px;"><span>0.0</span><span style="color: var(--arvya-gold-700);">≥ 0.60</span><span>1.0</span></div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="gr-canvas">
+      <div class="grid"></div>
+
+      <div class="canvas-toolbar">
+        <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); letter-spacing: .08em;">— LAYOUT</span>
+        <div class="grp">
+          <button class="on">Force</button>
+          <button>Tree</button>
+          <button>Cluster</button>
+        </div>
+        <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary);">432 / 1,847</span>
+      </div>
+
+      <!-- SVG edges -->
+      <svg class="edges" viewBox="0 0 900 720" preserveAspectRatio="none">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#D89A3F"></path>
+          </marker>
+          <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#a3a3a8"></path>
+          </marker>
+        </defs>
+        <!-- Roelof connects to Sequoia, deck, SOC2, Maya -->
+        <path d="M 470 320 L 240 240" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <path d="M 470 320 L 690 200" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <path d="M 470 320 L 720 420" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <path d="M 470 320 L 280 480" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <path d="M 470 320 L 480 540" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <path d="M 470 320 L 660 600" stroke="#D89A3F" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        <!-- Maya -> Caffeinated, Joel -->
+        <path d="M 280 480 L 130 540" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+        <path d="M 280 480 L 380 620" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+        <!-- Sequoia → Mike, Pat -->
+        <path d="M 240 240 L 100 180" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+        <path d="M 240 240 L 130 320" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+        <!-- BlackRock + Jon to graph spec topic -->
+        <path d="M 760 540 L 720 420" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+        <path d="M 800 360 L 720 420" stroke="#a3a3a8" stroke-width="1.2" fill="none" marker-end="url(#arrG)"/>
+      </svg>
+
+      <!-- Edge labels (a few) -->
+      <div class="edge-label" style="left:355px; top:280px;">— invested-in</div>
+      <div class="edge-label" style="left:580px; top:260px;">— asked-about</div>
+      <div class="edge-label" style="left:600px; top:370px;">— asked-about</div>
+      <div class="edge-label" style="left:380px; top:420px;">— introduced-by</div>
+      <div class="edge-label" style="left:480px; top:430px;">— promised-to</div>
+
+      <!-- Nodes -->
+      <div class="node person sel" style="left:470px; top:320px;"><span class="av">RB</span><span class="nm">Roelof Botha</span><span class="ty">person</span></div>
+      <div class="node company" style="left:240px; top:240px;"><span class="av">S</span><span class="nm">Sequoia Capital</span><span class="ty">company</span></div>
+      <div class="node person" style="left:100px; top:180px;"><span class="av">MV</span><span class="nm">Mike Vernal</span></div>
+      <div class="node person" style="left:130px; top:320px;"><span class="av">PG</span><span class="nm">Pat Grady</span></div>
+      <div class="node person" style="left:280px; top:480px;"><span class="av">MS</span><span class="nm">Maya Singh</span></div>
+      <div class="node company" style="left:130px; top:540px;"><span class="av">C</span><span class="nm">Caffeinated</span></div>
+      <div class="node person" style="left:380px; top:620px;"><span class="av">JC</span><span class="nm">Joel · Verdant</span></div>
+      <div class="node topic" style="left:690px; top:200px;"><span class="av">⊡</span><span class="nm">SOC 2 readiness</span><span class="ty">topic</span></div>
+      <div class="node topic" style="left:720px; top:420px;"><span class="av">⊡</span><span class="nm">Graph spec</span><span class="ty">topic</span></div>
+      <div class="node company" style="left:760px; top:540px;"><span class="av">B</span><span class="nm">BlackRock</span></div>
+      <div class="node person" style="left:800px; top:360px;"><span class="av">JR</span><span class="nm">Jon Rivers</span></div>
+      <div class="node promise" style="left:480px; top:540px;"><span class="av">!</span><span class="nm">3 answers by Fri</span><span class="ty">promise</span></div>
+      <div class="node deal" style="left:660px; top:600px;"><span class="av">$</span><span class="nm">Sequoia · TS</span><span class="ty">deal</span></div>
+
+      <div class="legend">
+        <span class="it"><span class="sw" style="background:var(--arvya-dark-900);"></span>Person</span>
+        <span class="it"><span class="sw" style="background:var(--arvya-gold);"></span>Company</span>
+        <span class="it"><span class="sw" style="background:var(--cream-400);"></span>Topic</span>
+        <span class="it"><span class="sw" style="background:#C75050;"></span>Deal</span>
+        <span class="it"><span class="sw" style="background:#2A6F45;"></span>Promise</span>
+        <span class="it" style="border-left: 1px solid var(--cream-300); padding-left: 14px;">Edge thickness = # of supporting sources</span>
+      </div>
+    </div>
+
+    <!-- Detail -->
+    <div class="gr-detail">
+      <div class="card">
+        <span class="subline">— PERSON · selected</span>
+        <h2>Roelof Botha</h2>
+        <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;">Connected to <b>14 entities</b> across <b>23 sources</b>.</div>
+
+        <h3>— Outgoing edges (8)</h3>
+        <div class="edge-row"><span class="v">— works-at</span><span class="o">Sequoia Capital · since 2003</span></div>
+        <div class="edge-row"><span class="v">— invested-in</span><span class="o">Square, YouTube, Whatsapp, MongoDB, Arvya OS (negotiating)</span></div>
+        <div class="edge-row"><span class="v">— asked-about</span><span class="o">SOC 2 · model-lock-in · ownership · retention · pricing</span></div>
+        <div class="edge-row"><span class="v">— promised-to</span><span class="o">Naveen — "set up Mike + Pat" (conditional)</span></div>
+        <div class="edge-row"><span class="v">— introduced-by</span><span class="o">Maya Singh · Aug 2024</span></div>
+        <div class="edge-row"><span class="v">— attended</span><span class="o">Sequoia partner mtg · Apr 28 + 1 other</span></div>
+
+        <h3>— Incoming edges (6)</h3>
+        <div class="edge-row"><span class="v">— member-of</span><span class="o">Sequoia Capital partner team</span></div>
+        <div class="edge-row"><span class="v">— mentioned-in</span><span class="o">Voice memo · NA · Yesterday 09:14</span></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">— Saved chains</h3>
+        <div class="chain">
+          <h4>How does Maya connect to Sequoia?</h4>
+          <div class="pth"><b>Maya</b> → <i>introduced</i> → <b>Roelof</b> → <i>works-at</i> → <b>Sequoia</b></div>
+        </div>
+        <div class="chain">
+          <h4>Who has asked us about ownership?</h4>
+          <div class="pth"><b>Topic: ownership</b> ← <i>asked-about</i> ← <b>Roelof, Lonne, Jon</b></div>
+        </div>
+        <div class="chain">
+          <h4>What does BlackRock want from us?</h4>
+          <div class="pth"><b>BlackRock</b> → <i>promised-to-receive</i> → <b>Graph spec v0</b> (3d late)</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'graph', crumbs: ['Arvya Co.', 'Knowledge graph'] });
+</script>
+</body>
+</html>

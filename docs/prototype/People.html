@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1480">
+<title>Arvya OS — People</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* ===== TOOLBAR ===== */
+  .pp-bar { display: flex; align-items: center; gap: 10px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
+  .pp-bar .seg { display: inline-flex; background: var(--cream-100); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 2px; }
+  .pp-bar .seg span { font: 11px var(--font-mono); padding: 5px 11px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); letter-spacing: .04em; display: inline-flex; align-items: center; gap: 6px; }
+  .pp-bar .seg span.on { background: #fff; color: var(--text-primary); box-shadow: var(--shadow-xs); }
+  .pp-bar .seg svg { width: 11px; height: 11px; }
+
+  .pp-search { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-default); border-radius: 8px; padding: 6px 12px; background: #fff; min-width: 240px; }
+  .pp-search svg { width: 13px; height: 13px; color: var(--text-tertiary); }
+  .pp-search input { border: 0; outline: 0; flex: 1; font-size: 13px; background: transparent; }
+
+  .pp-bar .filter { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--font-mono); padding: 6px 10px; border-radius: 8px; background: #fff; border: 1px solid var(--border-subtle); cursor: pointer; color: var(--text-secondary); letter-spacing: .04em; }
+  .pp-bar .filter.on { background: var(--arvya-gold-bg); color: var(--arvya-gold-700); border-color: var(--arvya-gold-border); }
+  .pp-bar .filter svg { width: 11px; height: 11px; }
+  .pp-bar .grow { flex: 1; }
+
+  .pp-bar .add { background: var(--arvya-dark-900); color: var(--cream-50); border: 0; padding: 6px 14px; border-radius: 8px; font: 11.5px var(--font-sans); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 30px; }
+  .pp-bar .add:hover { background: #1a2538; }
+
+  /* ===== TABLE ===== */
+  table.crm { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
+  table.crm thead th { background: var(--cream-50); padding: 10px 14px; text-align: left; font: 10.5px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); border-bottom: 1px solid var(--cream-200); white-space: nowrap; font-weight: 500; }
+  table.crm thead th .sort { color: var(--cream-400); margin-left: 4px; }
+  table.crm thead th.sortable { cursor: pointer; }
+  table.crm thead th.add-col { background: rgba(216,154,63,.06); color: var(--arvya-gold-700); cursor: pointer; }
+  table.crm thead th.add-col:hover { background: rgba(216,154,63,.14); }
+  table.crm tbody tr { transition: background .12s; cursor: pointer; }
+  table.crm tbody tr:hover { background: var(--cream-50); }
+  table.crm tbody td { padding: 11px 14px; border-bottom: 1px solid var(--cream-200); font-size: 13px; vertical-align: middle; color: var(--text-primary); }
+  table.crm tbody tr:last-child td { border-bottom: 0; }
+  table.crm tbody td.ai-cell { background: rgba(216,154,63,.04); }
+  table.crm tbody tr:hover td.ai-cell { background: rgba(216,154,63,.08); }
+
+  /* Person cell */
+  .pn { display: flex; align-items: center; gap: 10px; }
+  .pn .av { width: 30px; height: 30px; border-radius: 50%; background: var(--cream-200); display: grid; place-items: center; font: 600 11px var(--font-serif); color: var(--text-primary); flex-shrink: 0; }
+  .pn .av.gold { background: var(--arvya-gold); color: #0E1726; }
+  .pn .av.dark { background: var(--arvya-dark-900); color: var(--cream-50); }
+  .pn .nm { font-size: 13px; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; }
+  .pn .nm .sub { font: 10.5px var(--font-mono); color: var(--text-tertiary); margin-top: 2px; letter-spacing: .04em; font-weight: 400; }
+
+  /* Company cell */
+  .cm { display: inline-flex; align-items: center; gap: 7px; }
+  .cm .lg { width: 18px; height: 18px; border-radius: 4px; background: var(--cream-200); display: grid; place-items: center; font: 600 9px var(--font-serif); color: var(--text-primary); flex-shrink: 0; }
+  .cm .lg.gold { background: var(--arvya-gold); color: #0E1726; }
+  .cm .lg.dark { background: var(--arvya-dark-900); color: var(--cream-50); }
+
+  /* Tag pills (relation) */
+  .tag { display: inline-flex; align-items: center; gap: 5px; font: 10.5px var(--font-mono); padding: 2px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .tag .pip { width: 5px; height: 5px; border-radius: 50%; }
+  .tag.investor { background: var(--arvya-gold-bg); color: var(--arvya-gold-700); }
+  .tag.investor .pip { background: var(--arvya-gold); }
+  .tag.customer { background: #DDEFE2; color: #2A6F45; }
+  .tag.customer .pip { background: #2EA968; }
+  .tag.partner { background: #DBE7F4; color: #2A4F8A; }
+  .tag.partner .pip { background: #2A6FDB; }
+  .tag.team { background: #ECE4F4; color: #5A3F8E; }
+  .tag.team .pip { background: #7A5EB6; }
+  .tag.press { background: #F4E4DB; color: #8E5A3F; }
+  .tag.press .pip { background: #B6855E; }
+  .tag.recruit { background: #F1F1EE; color: var(--text-secondary); }
+  .tag.recruit .pip { background: var(--text-tertiary); }
+
+  /* Heat */
+  .heat { display: inline-flex; align-items: center; gap: 6px; font: 10.5px var(--font-mono); color: var(--text-secondary); letter-spacing: .04em; }
+  .heat .bars { display: inline-flex; gap: 1.5px; }
+  .heat .bars i { width: 3px; height: 10px; background: var(--cream-300); border-radius: 1px; }
+  .heat .bars i.on { background: var(--cream-400); }
+  .heat.hot .bars i.on { background: #C75050; }
+  .heat.hot { color: #A83C3C; }
+  .heat.warm .bars i.on { background: var(--arvya-gold); }
+  .heat.warm { color: var(--arvya-gold-700); }
+  .heat.ok .bars i.on { background: #2EA968; }
+  .heat.ok { color: #2A6F45; }
+
+  /* AI signal cell */
+  .ai-sig { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-primary); }
+  .ai-sig .spark { font: 10px var(--font-mono); color: var(--arvya-gold-700); flex-shrink: 0; }
+  .ai-sig .conf { font: 10px var(--font-mono); color: var(--text-tertiary); margin-left: 6px; }
+
+  /* Last touch */
+  .last { font: 11px var(--font-mono); color: var(--text-secondary); letter-spacing: .04em; }
+  .last.warn { color: #A83C3C; }
+
+  /* Owe a reply */
+  .owe-pill { display: inline-flex; align-items: center; gap: 5px; font: 10.5px var(--font-mono); padding: 2px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .owe-pill.warn { background: #F9DCDC; color: #A83C3C; }
+  .owe-pill.ok { background: #DDEFE2; color: #2A6F45; }
+  .owe-pill.you { background: var(--cream-100); color: var(--text-secondary); }
+
+  /* Status counts strip */
+  .strip {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+    background: var(--cream-200); border: 1px solid var(--cream-200);
+    border-radius: 12px; overflow: hidden; margin: 22px 0;
+  }
+  .strip > div { background: #fff; padding: 14px 18px; cursor: pointer; transition: background .12s; }
+  .strip > div:hover { background: var(--cream-50); }
+  .strip > div.on { background: var(--arvya-dark-900); }
+  .strip > div.on .lab, .strip > div.on .v, .strip > div.on .sub { color: var(--cream-50); }
+  .strip > div.on .v { color: var(--arvya-gold); }
+  .strip .lab { font: 10px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary); }
+  .strip .v { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -0.01em; }
+  .strip .v.warn { color: #C75050; }
+  .strip .sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="People">
+
+  <!-- Header -->
+  <header style="padding: 8px 0 14px;">
+    <span class="eyebrow gold">— People · 184 contacts</span>
+    <h1 style="font: 500 30px var(--font-serif); letter-spacing: -0.02em; margin: 6px 0 0;">Contacts.</h1>
+  </header>
+
+  <!-- Saved-view strip -->
+  <div class="strip">
+    <div class="on"><div class="lab">— All</div><div class="v">184</div><div class="sub">across 47 companies</div></div>
+    <div><div class="lab">— Owe a reply</div><div class="v warn">7</div><div class="sub">3 past patience window</div></div>
+    <div><div class="lab">— Hot this week</div><div class="v">14</div><div class="sub">touched in last 7d</div></div>
+    <div><div class="lab">— Cooling</div><div class="v">12</div><div class="sub">no touch &gt;30d</div></div>
+    <div><div class="lab">— Investors</div><div class="v">22</div><div class="sub">8 active diligence</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="pp-bar">
+    <div class="seg">
+      <span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>Table</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Cards</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/></svg>Queue</span>
+    </div>
+    <div class="filter on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>Relation: All</div>
+    <div class="filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Last touch: Anytime</div>
+    <div class="filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Owes reply: Any</div>
+    <div class="filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"/><path d="M2 12h20"/></svg>Add filter</div>
+    <div class="grow"></div>
+    <div class="pp-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input placeholder="Find a person…">
+    </div>
+    <button class="add">+ New contact</button>
+  </div>
+
+  <!-- ===== TABLE ===== -->
+  <table class="crm">
+    <thead>
+      <tr>
+        <th class="sortable" style="width: 240px;">Name <span class="sort">↕</span></th>
+        <th class="sortable" style="width: 130px;">Relation</th>
+        <th class="sortable" style="width: 180px;">Company</th>
+        <th class="sortable" style="width: 110px;">Role</th>
+        <th class="sortable">Last touch</th>
+        <th class="sortable">Owes</th>
+        <th class="sortable">Heat</th>
+        <th class="ai-cell" style="min-width: 280px;">⊹ Why now <span style="font-weight:400;color:var(--text-tertiary);">— ai</span></th>
+        <th class="add-col">+ Add column</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <!-- Roelof -->
+      <tr>
+        <td><div class="pn"><span class="av dark">RB</span><span class="nm">Roelof Botha<span class="sub">— roelof@sequoiacap.com</span></span></div></td>
+        <td><span class="tag investor"><span class="pip"></span>Investor</span></td>
+        <td><span class="cm"><span class="lg gold">S</span>Sequoia Capital</span></td>
+        <td>Partner</td>
+        <td><span class="last">Today · 06:04</span></td>
+        <td><span class="owe-pill warn">You · 3h left</span></td>
+        <td><span class="heat hot"><span class="bars"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>Hot</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Sent 3 questions; reply window closing fast.<span class="conf">0.94</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Eli -->
+      <tr>
+        <td><div class="pn"><span class="av">EC</span><span class="nm">Eli Chen<span class="sub">— eli@marlowe.health</span></span></div></td>
+        <td><span class="tag customer"><span class="pip"></span>Customer</span></td>
+        <td><a href="Company.html" style="text-decoration:none;color:inherit;"><span class="cm"><span class="lg" style="background:#2A6FDB;color:#fff;">M</span>Marlowe Health</span></a></td>
+        <td>Product Lead</td>
+        <td><span class="last warn">8d</span></td>
+        <td><span class="owe-pill warn">You · 1.5d late</span></td>
+        <td><span class="heat hot"><span class="bars"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>Hot</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Reply length dropped 40% — decision close.<span class="conf">0.81</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Jon -->
+      <tr>
+        <td><div class="pn"><span class="av">JK</span><span class="nm">Jon Kessler<span class="sub">— jon.kessler@blackrock.com</span></span></div></td>
+        <td><span class="tag partner"><span class="pip"></span>Prospect</span></td>
+        <td><span class="cm"><span class="lg" style="background:#0a0a0a;color:#fff;">B</span>BlackRock</span></td>
+        <td>VP Strategy</td>
+        <td><span class="last">Mon · 6d</span></td>
+        <td><span class="owe-pill warn">You · 3d late</span></td>
+        <td><span class="heat hot"><span class="bars"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>Hot</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Promised graph spec by Thu. Drift = 3 days.<span class="conf">0.97</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Maya -->
+      <tr>
+        <td><div class="pn"><span class="av gold">MN</span><span class="nm">Maya Nair<span class="sub">— maya@caffeinated.cc</span></span></div></td>
+        <td><span class="tag partner"><span class="pip"></span>Partner</span></td>
+        <td><span class="cm"><span class="lg" style="background:#6E4F2A;color:#fff;">C</span>Caffeinated AI</span></td>
+        <td>Founder</td>
+        <td><span class="last">Wed · 4d</span></td>
+        <td><span class="owe-pill warn">You</span></td>
+        <td><span class="heat warm"><span class="bars"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>Warm</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Slack connector ETA — pilot blocking.<span class="conf">0.86</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Andy -->
+      <tr>
+        <td><div class="pn"><span class="av">AW</span><span class="nm">Andy Weissman<span class="sub">— andy@usv.com</span></span></div></td>
+        <td><span class="tag investor"><span class="pip"></span>Investor</span></td>
+        <td><span class="cm"><span class="lg" style="background:#FF5050;color:#fff;">U</span>Union Square Ventures</span></td>
+        <td>Partner</td>
+        <td><span class="last">Tue · 5d</span></td>
+        <td><span class="owe-pill you">Soft ask</span></td>
+        <td><span class="heat warm"><span class="bars"><i class="on"></i><i class="on"></i><i></i><i></i></span>Warm</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Offered partner intro — expires day 14.<span class="conf">0.78</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Priya -->
+      <tr>
+        <td><div class="pn"><span class="av">PR</span><span class="nm">Priya Rao<span class="sub">— priya@marlowe.health</span></span></div></td>
+        <td><span class="tag customer"><span class="pip"></span>Customer</span></td>
+        <td><a href="Company.html" style="text-decoration:none;color:inherit;"><span class="cm"><span class="lg" style="background:#2A6FDB;color:#fff;">M</span>Marlowe Health</span></a></td>
+        <td>Eng Manager</td>
+        <td><span class="last">Wed · 4d</span></td>
+        <td><span class="owe-pill ok">—</span></td>
+        <td><span class="heat warm"><span class="bars"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>Warm</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Expansion signal — 2 new teams in 4-6w.<span class="conf">0.83</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Sarah -->
+      <tr>
+        <td><div class="pn"><span class="av">SM</span><span class="nm">Sarah Meier<span class="sub">— sarah.meier@insightpartners.com</span></span></div></td>
+        <td><span class="tag investor"><span class="pip"></span>Investor</span></td>
+        <td><span class="cm"><span class="lg" style="background:#1F4FA8;color:#fff;">I</span>Insight Partners</span></td>
+        <td>VP</td>
+        <td><span class="last">Mon · 6d</span></td>
+        <td><span class="owe-pill ok">She</span></td>
+        <td><span class="heat warm"><span class="bars"><i class="on"></i><i class="on"></i><i></i><i></i></span>Warm</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>3/5 references replied. Ahead of expectation.<span class="conf">0.74</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Lina -->
+      <tr>
+        <td><div class="pn"><span class="av">LK</span><span class="nm">Lina Kapoor<span class="sub">— lina.kapoor@gmail.com</span></span></div></td>
+        <td><span class="tag recruit"><span class="pip"></span>Recruiting</span></td>
+        <td><span style="color:var(--text-tertiary); font-style: italic;">— Independent</span></td>
+        <td>Principal Eng</td>
+        <td><span class="last">6d</span></td>
+        <td><span class="owe-pill warn">You</span></td>
+        <td><span class="heat warm"><span class="bars"><i class="on"></i><i class="on"></i><i></i><i></i></span>Warm</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>"Decide by Friday" — silent. Probably stuck.<span class="conf">0.69</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Dev -->
+      <tr>
+        <td><div class="pn"><span class="av">DV</span><span class="nm">Dev Varma<span class="sub">— dev@marlowe.health</span></span></div></td>
+        <td><span class="tag customer"><span class="pip"></span>Customer</span></td>
+        <td><a href="Company.html" style="text-decoration:none;color:inherit;"><span class="cm"><span class="lg" style="background:#2A6FDB;color:#fff;">M</span>Marlowe Health</span></a></td>
+        <td>CTO</td>
+        <td><span class="last">14d</span></td>
+        <td><span class="owe-pill ok">—</span></td>
+        <td><span class="heat ok"><span class="bars"><i class="on"></i><i class="on"></i><i></i><i></i></span>OK</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Economic buyer — quiet but reads weekly recap.<span class="conf">0.62</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Rohan -->
+      <tr>
+        <td><div class="pn"><span class="av">RT</span><span class="nm">Rohan Tiwari<span class="sub">— rohan@theinformation.com</span></span></div></td>
+        <td><span class="tag press"><span class="pip"></span>Press</span></td>
+        <td><span class="cm"><span class="lg" style="background:#000;color:#fff;">T</span>The Information</span></td>
+        <td>Reporter</td>
+        <td><span class="last">89d</span></td>
+        <td><span class="owe-pill you">—</span></td>
+        <td><span class="heat ok"><span class="bars"><i class="on"></i><i></i><i></i><i></i></span>Cool</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Quoted 2 competitors recently. Re-engage now.<span class="conf">0.71</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- Sara -->
+      <tr>
+        <td><div class="pn"><span class="av">SK</span><span class="nm">Sara Kapur<span class="sub">— legal@marlowe.health</span></span></div></td>
+        <td><span class="tag customer"><span class="pip"></span>Customer</span></td>
+        <td><a href="Company.html" style="text-decoration:none;color:inherit;"><span class="cm"><span class="lg" style="background:#2A6FDB;color:#fff;">M</span>Marlowe Health</span></a></td>
+        <td>Procurement</td>
+        <td><span class="last">22d</span></td>
+        <td><span class="owe-pill ok">—</span></td>
+        <td><span class="heat ok"><span class="bars"><i class="on"></i><i></i><i></i><i></i></span>Cool</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>Activates only at renewal. Don't bug.<span class="conf">0.55</span></span></td>
+        <td></td>
+      </tr>
+
+      <!-- David -->
+      <tr>
+        <td><div class="pn"><span class="av">DG</span><span class="nm">David Garcia<span class="sub">— dgarcia@gmail.com</span></span></div></td>
+        <td><span class="tag team"><span class="pip"></span>Advisor</span></td>
+        <td><span style="color:var(--text-tertiary); font-style: italic;">— ex-Stripe</span></td>
+        <td>Advisor</td>
+        <td><span class="last">42d</span></td>
+        <td><span class="owe-pill you">—</span></td>
+        <td><span class="heat ok"><span class="bars"><i class="on"></i><i></i><i></i><i></i></span>Cool</span></td>
+        <td class="ai-cell"><span class="ai-sig"><span class="spark">⊹</span>"Catch up next month" said in March. Lapsed.<span class="conf">0.66</span></span></td>
+        <td></td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <!-- Hint -->
+  <p style="margin: 14px 4px 0; font: 11px var(--font-mono); color: var(--text-tertiary); letter-spacing: .04em;">
+    — 184 of 184 shown · row-click opens person · drag column header to reorder · "+ Add column" lets the brain fill a new field for everyone
+  </p>
+
+</div>
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'people', crumbs: ['Arvya Co.', 'People'] });
+  document.querySelectorAll('.strip > div').forEach(d => {
+    d.addEventListener('click', () => {
+      document.querySelectorAll('.strip > div').forEach(x => x.classList.remove('on'));
+      d.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

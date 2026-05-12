@@ -97,6 +97,7 @@ export function hashEmailContent(content: string) {
 }
 
 export function emailConnectorItemLimit(config: ConnectorConfig) {
+  if (config.config.mode === "onboarding") return Infinity;
   const configured = Number(config.config.maxItems ?? config.config.max_items ?? config.config.itemLimit);
   if (!Number.isFinite(configured)) return 50;
   return Math.max(1, Math.min(50, Math.floor(configured)));

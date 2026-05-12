@@ -1,7 +1,9 @@
 import {
   runClosedLoopAlignmentMonitor,
   runDailyFounderBrief,
-  runOpenLoopMonitor,
+  runMeetingPrep30Min,
+  runMeetingPrepBatch,
+  runMeetingPrepDeltaWatch,
   runScheduledConnectorSync,
   runSourceIngested,
   runWeeklyLearningMemo,
@@ -9,14 +11,9 @@ import {
 import {
   handleNotetakerWebhook,
   ingestNotetakerTranscript,
-  runNotetakerCalendarSync,
+  runCalendarPipeline,
 } from "@/lib/notetaker/runtime";
-import {
-  runMarketingDriveSync,
-  runMarketingMetricsRefresh,
-  runMarketingSchedulerSync,
-  runMarketingWeeklyReport,
-} from "@/lib/marketing/runtime";
+import { runDeadlineNudgerForAllBrains } from "@/lib/slack-bot/nudge";
 import { inngest } from "../client";
 
 export const scheduledConnectorSync = inngest.createFunction(
@@ -37,12 +34,11 @@ export const sourceIngested = inngest.createFunction(
   },
 );
 
-export const openLoopMonitor = inngest.createFunction(
-  { id: "open-loop-monitor", name: "Open loop monitor", triggers: [{ cron: "0 * * * *" }] },
-  async ({ step }) => {
-    return step.run("create overdue loop alerts", runOpenLoopMonitor);
-  },
-);
+// openLoopMonitor was retired 2026-05-09. It only fired alerts after a
+// loop went overdue and never notified anyone — the new deadline nudger
+// (apps/web/lib/slack-bot/nudge.ts) covers pre-deadline, stale, and
+// outcome-uncertain in one Slack-aware function. Kept the comment so
+// future-us doesn't reinvent it.
 
 export const closedLoopAlignmentMonitor = inngest.createFunction(
   { id: "closed-loop-alignment-monitor", name: "Closed-loop alignment monitor", triggers: [{ cron: "30 */4 * * *" }] },
@@ -66,9 +62,9 @@ export const weeklyLearningMemo = inngest.createFunction(
 );
 
 export const notetakerCalendarSync = inngest.createFunction(
-  { id: "notetaker-calendar-sync", name: "Notetaker calendar sync", triggers: [{ cron: "*/10 * * * *" }] },
+  { id: "notetaker-calendar-sync", name: "Notetaker calendar sync", triggers: [{ cron: "*/3 * * * *" }] },
   async ({ step }) => {
-    return step.run("sync notetaker calendars", () => runNotetakerCalendarSync());
+    return step.run("sync notetaker calendars", () => runCalendarPipeline());
   },
 );
 
@@ -77,6 +73,17 @@ export const notetakerEventReceived = inngest.createFunction(
   async ({ event, step }) => {
     const payload = event.data as Record<string, unknown>;
     return step.run("process notetaker webhook", () => handleNotetakerWebhook(payload));
+  },
+);
+
+// Smart Nudger — runs every 30 minutes. Finds open loops with imminent
+// due dates, stale loops, and outcome-uncertain loops; posts to the
+// auto-created #arvya-brain Slack channel with interactive buttons.
+// Throttle: 1 nudge per loop per kind per 24h, digest if >5 fire at once.
+export const deadlineNudger = inngest.createFunction(
+  { id: "deadline-nudger", name: "Deadline nudger", triggers: [{ cron: "*/30 * * * *" }] },
+  async ({ step }) => {
+    return step.run("post nudges to slack", () => runDeadlineNudgerForAllBrains());
   },
 );
 
@@ -93,46 +100,38 @@ export const notetakerTranscriptReady = inngest.createFunction(
   },
 );
 
-export const marketingDriveSync = inngest.createFunction(
-  { id: "marketing-drive-sync", name: "Marketing OS Drive sync", triggers: [{ cron: "15 */2 * * *" }] },
+export const meetingPrepBatch = inngest.createFunction(
+  { id: "meeting-prep-batch", name: "Meeting prep batch", triggers: [{ cron: "0 7 * * *" }] },
   async ({ step }) => {
-    return step.run("sync marketing drive transcripts", runMarketingDriveSync);
+    return step.run("generate meeting prep briefs", runMeetingPrepBatch);
   },
 );
 
-export const marketingSchedulerSync = inngest.createFunction(
-  { id: "marketing-scheduler-sync", name: "Marketing OS scheduler sync", triggers: [{ cron: "*/30 * * * *" }] },
+export const meetingPrep30Min = inngest.createFunction(
+  { id: "meeting-prep-30min", name: "Meeting prep 30-min", triggers: [{ cron: "*/5 * * * *" }] },
   async ({ step }) => {
-    return step.run("sync marketing scheduler status", runMarketingSchedulerSync);
+    return step.run("prep meetings starting in 30 min", runMeetingPrep30Min);
   },
 );
 
-export const marketingMetricsRefresh = inngest.createFunction(
-  { id: "marketing-metrics-refresh", name: "Marketing OS metrics refresh", triggers: [{ cron: "0 9 * * *" }] },
+export const meetingPrepDeltaWatch = inngest.createFunction(
+  { id: "meeting-prep-delta-watch", name: "Meeting prep delta watch", triggers: [{ cron: "*/15 * * * *" }] },
   async ({ step }) => {
-    return step.run("refresh marketing metrics", runMarketingMetricsRefresh);
-  },
-);
-
-export const marketingWeeklyReport = inngest.createFunction(
-  { id: "marketing-weekly-report", name: "Marketing OS weekly report", triggers: [{ cron: "0 17 * * 5" }] },
-  async ({ step }) => {
-    return step.run("generate marketing weekly report", runMarketingWeeklyReport);
+    return step.run("check for material deltas", runMeetingPrepDeltaWatch);
   },
 );
 
 export const functions = [
   scheduledConnectorSync,
   sourceIngested,
-  openLoopMonitor,
   closedLoopAlignmentMonitor,
   dailyFounderBrief,
   weeklyLearningMemo,
   notetakerCalendarSync,
   notetakerEventReceived,
   notetakerTranscriptReady,
-  marketingDriveSync,
-  marketingSchedulerSync,
-  marketingMetricsRefresh,
-  marketingWeeklyReport,
+  deadlineNudger,
+  meetingPrepBatch,
+  meetingPrep30Min,
+  meetingPrepDeltaWatch,
 ];

@@ -1,6 +1,11 @@
 import { getRepository, type NotetakerCalendar, type NotetakerProvider } from "@/lib/db/repository";
 import type { NotetakerCalendarEvent } from "./runtime";
 
+export type CalendarSyncResult = {
+  events: NotetakerCalendarEvent[];
+  nextSyncToken?: string;
+};
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
@@ -269,9 +274,10 @@ async function getOutlookAccessToken(calendar: NotetakerCalendar) {
   return credentials.access_token;
 }
 
-export async function listProviderCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
+export async function listProviderCalendarEvents(calendar: NotetakerCalendar): Promise<CalendarSyncResult> {
   if (calendar.provider === "google_calendar") return listGoogleCalendarEvents(calendar);
-  return listOutlookCalendarEvents(calendar);
+  const events = await listOutlookCalendarEvents(calendar);
+  return { events };
 }
 
 export async function createGoogleMeetCalendarEvent(input: CreateGoogleMeetEventInput): Promise<NotetakerCalendarEvent> {
@@ -313,7 +319,7 @@ export async function createGoogleMeetCalendarEvent(input: CreateGoogleMeetEvent
   return event;
 }
 
-async function listGoogleCalendarEvents(calendar: NotetakerCalendar): Promise<NotetakerCalendarEvent[]> {
+async function listGoogleCalendarEventsFull(calendar: NotetakerCalendar): Promise<CalendarSyncResult> {
   const calendarId = calendar.externalCalendarId || "primary";
   const url = new URL(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`);
   url.searchParams.set("timeMin", new Date().toISOString());
@@ -324,9 +330,42 @@ async function listGoogleCalendarEvents(calendar: NotetakerCalendar): Promise<No
   const response = await fetch(url, {
     headers: { authorization: `Bearer ${await getGoogleAccessToken(calendar)}` },
   });
-  const json = await response.json() as { items?: GoogleCalendarEvent[]; error?: { message?: string } };
+  const json = await response.json() as { items?: GoogleCalendarEvent[]; nextSyncToken?: string; error?: { message?: string } };
   if (!response.ok) throw new Error(json.error?.message ?? "Google Calendar event listing failed.");
-  return (json.items ?? []).flatMap(normalizeGoogleEvent);
+  return {
+    events: (json.items ?? []).flatMap(normalizeGoogleEvent),
+    nextSyncToken: json.nextSyncToken,
+  };
+}
+
+async function listGoogleCalendarEventsIncremental(calendar: NotetakerCalendar, syncToken: string): Promise<CalendarSyncResult> {
+  const calendarId = calendar.externalCalendarId || "primary";
+  const url = new URL(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`);
+  url.searchParams.set("syncToken", syncToken);
+  url.searchParams.set("maxResults", "100");
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${await getGoogleAccessToken(calendar)}` },
+  });
+  if (response.status === 410) {
+    console.warn("[calendar] syncToken expired (410 Gone), falling back to full sync");
+    return listGoogleCalendarEventsFull(calendar);
+  }
+  const json = await response.json() as { items?: GoogleCalendarEvent[]; nextSyncToken?: string; error?: { message?: string } };
+  if (!response.ok) throw new Error(json.error?.message ?? "Google Calendar incremental sync failed.");
+  return {
+    events: (json.items ?? []).flatMap(normalizeGoogleEvent),
+    nextSyncToken: json.nextSyncToken,
+  };
+}
+
+async function listGoogleCalendarEvents(calendar: NotetakerCalendar): Promise<CalendarSyncResult> {
+  const storedToken = typeof calendar.config?.calendar_sync_token === "string"
+    ? calendar.config.calendar_sync_token
+    : undefined;
+  if (storedToken) {
+    return listGoogleCalendarEventsIncremental(calendar, storedToken);
+  }
+  return listGoogleCalendarEventsFull(calendar);
 }
 
 type GoogleCalendarEvent = {
@@ -344,6 +383,15 @@ type GoogleCalendarEvent = {
   conferenceData?: { entryPoints?: Array<{ uri?: string; entryPointType?: string }> };
 };
 
+function detectEventType(input: { meetingUrl?: string; location?: string }): "virtual" | "in_person" | "hybrid" | "unknown" {
+  const hasUrl = Boolean(input.meetingUrl);
+  const hasLocation = Boolean(input.location?.trim());
+  if (hasUrl && hasLocation) return "hybrid";
+  if (hasUrl) return "virtual";
+  if (hasLocation) return "in_person";
+  return "unknown";
+}
+
 function normalizeGoogleEvent(event: GoogleCalendarEvent): NotetakerCalendarEvent[] {
   const id = event.id;
   const start = event.start?.dateTime ?? event.start?.date;
@@ -360,12 +408,14 @@ function normalizeGoogleEvent(event: GoogleCalendarEvent): NotetakerCalendarEven
     title: event.summary ?? "Untitled meeting",
     description: event.description,
     meetingUrl,
+    location: event.location,
     startTime: new Date(start).toISOString(),
     endTime: new Date(end).toISOString(),
     participants: event.attendees ?? [],
     isCanceled: event.status === "cancelled",
     isAllDay: Boolean(event.start?.date && !event.start.dateTime),
     isPrivate: event.visibility === "private",
+    eventType: detectEventType({ meetingUrl, location: event.location }),
     metadata: {
       provider_raw_event: event,
       provider_html_link: event.htmlLink,
@@ -436,21 +486,69 @@ function normalizeOutlookEvent(event: OutlookCalendarEvent): NotetakerCalendarEv
     location: event.location?.displayName,
     meetingUrl: event.onlineMeeting?.joinUrl ?? event.onlineMeetingUrl,
   });
+  const location = event.location?.displayName;
   return [{
     id,
     title: event.subject ?? "Untitled meeting",
     description,
     meetingUrl,
+    location,
     startTime: start,
     endTime: end,
     participants: event.attendees ?? [],
     isCanceled: event.isCancelled,
     isAllDay: event.isAllDay,
     isPrivate: event.sensitivity === "private",
+    eventType: detectEventType({ meetingUrl, location }),
     metadata: {
       provider_raw_event: event,
       provider_web_link: event.webLink,
       calendar_source: "microsoft_graph_calendar_api",
     },
   }];
+}
+
+export async function listGoogleCalendarEventsForRange(
+  calendar: NotetakerCalendar,
+  timeMin: string,
+  timeMax: string,
+): Promise<NotetakerCalendarEvent[]> {
+  const calendarId = calendar.externalCalendarId || "primary";
+  const url = new URL(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`);
+  url.searchParams.set("timeMin", timeMin);
+  url.searchParams.set("timeMax", timeMax);
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("maxResults", "100");
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${await getGoogleAccessToken(calendar)}` },
+  });
+  const json = await response.json() as { items?: GoogleCalendarEvent[]; error?: { message?: string } };
+  if (!response.ok) throw new Error(json.error?.message ?? "Google Calendar event listing failed.");
+  return (json.items ?? []).flatMap(normalizeGoogleEvent);
+}
+
+export async function listOutlookCalendarEventsForRange(
+  calendar: NotetakerCalendar,
+  startDateTime: string,
+  endDateTime: string,
+): Promise<NotetakerCalendarEvent[]> {
+  const calendarSegment = calendar.externalCalendarId
+    ? `/me/calendars/${encodeURIComponent(calendar.externalCalendarId)}/calendarView`
+    : "/me/calendarView";
+  const url = new URL(`${MICROSOFT_GRAPH}${calendarSegment}`);
+  url.searchParams.set("startDateTime", startDateTime);
+  url.searchParams.set("endDateTime", endDateTime);
+  url.searchParams.set("$top", "100");
+  url.searchParams.set("$select", "id,subject,bodyPreview,body,location,isCancelled,isAllDay,sensitivity,start,end,attendees,onlineMeeting,onlineMeetingUrl,webLink");
+  url.searchParams.set("$orderby", "start/dateTime asc");
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${await getOutlookAccessToken(calendar)}`,
+      prefer: "outlook.timezone=\"UTC\"",
+    },
+  });
+  const json = await response.json() as { value?: OutlookCalendarEvent[]; error?: { message?: string } };
+  if (!response.ok) throw new Error(json.error?.message ?? "Outlook Calendar event listing failed.");
+  return (json.value ?? []).flatMap(normalizeOutlookEvent);
 }

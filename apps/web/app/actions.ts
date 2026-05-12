@@ -1,7 +1,32 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { createServerClient } from "@supabase/ssr";
+
+export async function signOutAction() {
+  // Sign the user out of Supabase. The middleware writes auth cookies on
+  // every request, so calling supabase.auth.signOut() with a server client
+  // that can write cookies clears the session cleanly.
+  const cookieStore = await cookies();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll().map(({ name, value }) => ({ name, value }));
+      },
+      setAll(toSet) {
+        for (const { name, value, options } of toSet) {
+          cookieStore.set(name, value, options);
+        }
+      },
+    },
+  });
+  await supabase.auth.signOut();
+  redirect("/login");
+}
 import {
   addSourceAndIngest,
   bulkUpdateOpenLoops,

@@ -71,6 +71,12 @@ export async function createBrain(input: {
   name: string;
   kind: BrainKind;
   thesis: string;
+  /** Optional workspace id for multi-tenant brains. Forwarded if present;
+   * silently dropped by repositories that do not yet store it. */
+  workspaceId?: string;
+  /** Optional user id of the creator. Forwarded if present; silently
+   * dropped by repositories that do not yet store it. */
+  createdByUserId?: string;
 }) {
   return getRepository().createBrain(input);
 }

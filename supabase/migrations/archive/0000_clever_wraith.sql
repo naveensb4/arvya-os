@@ -5,7 +5,7 @@ CREATE TYPE "public"."memory_kind" AS ENUM('person', 'company', 'fact', 'event',
 CREATE TYPE "public"."memory_status" AS ENUM('open', 'in_progress', 'waiting', 'done', 'closed', 'snoozed');--> statement-breakpoint
 CREATE TYPE "public"."model_provider" AS ENUM('local', 'anthropic', 'openai');--> statement-breakpoint
 CREATE TYPE "public"."open_loop_priority" AS ENUM('low', 'medium', 'high', 'critical');--> statement-breakpoint
-CREATE TYPE "public"."open_loop_status" AS ENUM('open', 'in_progress', 'waiting', 'done', 'closed');--> statement-breakpoint
+CREATE TYPE "public"."open_loop_status" AS ENUM('needs_review', 'open', 'in_progress', 'waiting', 'done', 'dismissed', 'closed');--> statement-breakpoint
 CREATE TYPE "public"."open_loop_type" AS ENUM('follow_up', 'intro', 'product', 'investor', 'sales', 'marketing', 'engineering', 'deal', 'diligence', 'crm', 'scheduling', 'other');--> statement-breakpoint
 CREATE TYPE "public"."source_type" AS ENUM('transcript', 'email', 'note', 'document', 'github', 'strategy_output', 'web', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."workflow_status" AS ENUM('started', 'running', 'waiting_for_human', 'completed', 'failed');--> statement-breakpoint
@@ -74,7 +74,7 @@ CREATE TABLE "open_loops" (
 	"description" text NOT NULL,
 	"loop_type" "open_loop_type" DEFAULT 'other' NOT NULL,
 	"owner" text,
-	"status" "open_loop_status" DEFAULT 'open' NOT NULL,
+	"status" "open_loop_status" DEFAULT 'needs_review' NOT NULL,
 	"priority" "open_loop_priority" DEFAULT 'medium' NOT NULL,
 	"due_date" timestamp with time zone,
 	"suggested_action" text,

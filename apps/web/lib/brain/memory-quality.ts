@@ -1,7 +1,13 @@
-import type { ExtractedMemoryObject, ExtractedRelationship, MemoryObject, Relationship } from "@arvya/core";
+import type { AiClient, ExtractedMemoryObject, ExtractedRelationship, MemoryObject, Relationship } from "@arvya/core";
 import type { BrainRepository, CreateMemoryObjectData, CreateRelationshipData, UpdateMemoryObjectData, UpdateRelationshipData } from "@/lib/db/repository";
+import { applyResolverDecision, resolveEntityForIngestion } from "./entity-resolver";
 
 const ENTITY_TYPES = new Set(["person", "company"]);
+const VALID_MEMORY_KINDS = new Set([
+  "person", "company", "fact", "event", "decision", "insight", "risk",
+  "question", "commitment", "task", "product_insight", "marketing_idea",
+  "outcome", "investor_feedback", "customer_feedback", "advisor_feedback", "custom",
+]);
 const COMPANY_SUFFIXES = /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|technologies|technology|labs|systems)\b\.?$/i;
 const PERSON_PREFIXES = /^(mr|mrs|ms|dr|prof)\.?\s+/i;
 const MAX_DESCRIPTION_LENGTH = 1200;
@@ -183,6 +189,11 @@ export async function mergeMemoryObjectsForIngestion(input: {
   brainId: string;
   sourceItemId: string;
   memoryObjects: ExtractedMemoryObject[];
+  // Optional: AI client for the entity resolver. When omitted (e.g. tests
+  // running against the in-memory repo), the resolver is skipped and we
+  // fall back to the legacy canonical-key dedup only.
+  ai?: AiClient;
+  workspaceId?: string;
 }) {
   const existingMemories = await input.repository.listMemoryObjects(input.brainId);
   const canonicalIndex = new Map<string, MemoryObject>();
@@ -192,8 +203,19 @@ export async function mergeMemoryObjectsForIngestion(input: {
     }
   }
 
+  // The resolver only runs when (a) we have an AI client (b) we have a
+  // workspaceId (canonical_entities is workspace-scoped) (c) we're on the
+  // supabase repo (the in-memory repo doesn't track canonical_entities).
+  const resolverEnabled =
+    Boolean(input.ai) &&
+    Boolean(input.workspaceId) &&
+    input.repository.mode === "supabase";
+
   const saved: MemoryObject[] = [];
-  for (const memory of input.memoryObjects) {
+  for (const rawMemory of input.memoryObjects) {
+    const memory: ExtractedMemoryObject = VALID_MEMORY_KINDS.has(rawMemory.objectType)
+      ? rawMemory
+      : { ...rawMemory, objectType: "custom" as const };
     if (!shouldDedupeMemory(memory)) {
       const [created] = await input.repository.createMemoryObjects([
         buildCanonicalMemory({ brainId: input.brainId, sourceItemId: input.sourceItemId, memory }),
@@ -203,22 +225,66 @@ export async function mergeMemoryObjectsForIngestion(input: {
     }
 
     const key = canonicalMemoryKey(memory);
+    let merged: MemoryObject;
     const existing = canonicalIndex.get(key);
     if (!existing) {
       const [created] = await input.repository.createMemoryObjects([
         buildCanonicalMemory({ brainId: input.brainId, sourceItemId: input.sourceItemId, memory }),
       ]);
       canonicalIndex.set(key, created);
-      saved.push(created);
-      continue;
+      merged = created;
+    } else {
+      const updated = await input.repository.updateMemoryObject(
+        existing.id,
+        buildMergedMemoryUpdate(existing, memory, input.sourceItemId),
+      );
+      merged = updated ?? existing;
+      canonicalIndex.set(key, merged);
     }
 
-    const updated = await input.repository.updateMemoryObject(
-      existing.id,
-      buildMergedMemoryUpdate(existing, memory, input.sourceItemId),
-    );
-    const merged = updated ?? existing;
-    canonicalIndex.set(key, merged);
+    // Run the entity resolver for person/company memories so the canonical
+    // graph gets populated even when the legacy canonical-key dedup creates
+    // a separate row (e.g. "Sudi" and "Sudi Mariappa" get distinct keys but
+    // the resolver should fold them under one canonical_entity_id).
+    if (resolverEnabled && (memory.objectType === "person" || memory.objectType === "company")) {
+      try {
+        const decision = await resolveEntityForIngestion({
+          ai: input.ai!,
+          brainId: input.brainId,
+          workspaceId: input.workspaceId!,
+          sourceItemId: input.sourceItemId ?? null,
+          memory,
+        });
+        const canonicalId = await applyResolverDecision({
+          ai: input.ai!,
+          brainId: input.brainId,
+          workspaceId: input.workspaceId!,
+          sourceItemId: input.sourceItemId ?? null,
+          memory: merged,
+          decision,
+        });
+        if (canonicalId) {
+          // Stamp the canonical id on the memory_object so cross-source
+          // queries can join through it without going through entity_mentions.
+          const updated = await input.repository.updateMemoryObject(merged.id, {
+            properties: {
+              ...(merged.properties ?? {}),
+              canonicalEntityId: canonicalId,
+              resolverAction: decision?.action ?? "create_new",
+              resolverConfidence: decision?.confidence ?? null,
+            },
+          });
+          if (updated) merged = updated;
+        }
+      } catch (error) {
+        // Resolver failures must never block ingestion. Log and continue.
+        console.error(
+          `[entity-resolver] failed for "${memory.name}" (${memory.objectType}):`,
+          error,
+        );
+      }
+    }
+
     saved.push(merged);
   }
 

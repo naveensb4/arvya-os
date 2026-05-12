@@ -1,0 +1,196 @@
+/* Sources page - prototype shell + existing SourceCard. Visual port of
+ * docs/prototype/Sources.html with placeholder KPIs and filter rail. */
+
+.pageHead {
+  padding: 8px 0 24px;
+  border-bottom: 1px solid var(--cream-200);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--arvya-gold-700);
+}
+.pageHead h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 36px;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  margin: 8px 0 6px;
+}
+.pageHead .sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 64ch;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 22px 0 28px;
+}
+.kpi {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.kpi .lab {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.kpi .v {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  letter-spacing: -0.01em;
+  font-weight: 500;
+  margin-top: 6px;
+  line-height: 1;
+}
+.kpi .vWarn {
+  color: #a83c3c;
+}
+.kpi .delta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--arvya-status-active);
+  margin-top: 6px;
+}
+.kpi .deltaNeg {
+  color: #a83c3c;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 22px;
+}
+.filters {
+  border-right: 1px solid var(--border-subtle);
+  padding-right: 22px;
+}
+.filters h4 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 18px 0 8px;
+}
+.filters h4:first-child {
+  margin-top: 0;
+}
+.filters a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.filters a:hover {
+  background: var(--cream-100);
+}
+.filters a.on {
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+}
+.filters a .ct {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.filters a.on .ct {
+  color: var(--arvya-gold);
+}
+
+.list {
+  min-width: 0;
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 14px;
+}
+.head .ct {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.btn {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 0;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btnPrimary {
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+}
+.btnGhost {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+.empty {
+  background: var(--cream-50);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 22px 26px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.cardGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 900px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.foot {
+  margin-top: 24px;
+  padding: 14px 18px;
+  background: var(--cream-50);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}

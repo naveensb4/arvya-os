@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Ask brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* override main content to be flex column for full-height chat */
+  .main .content { padding: 0; max-width: none; display: flex; flex-direction: column; height: calc(100vh - 60px); }
+  .chat-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+  .chat-stream {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 32px 0 180px;
+    scroll-behavior: smooth;
+  }
+  .chat-inner { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+  /* empty state */
+  .empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 80px 24px 40px;
+  }
+  .empty .mark {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: var(--arvya-gold-bg);
+    display: grid; place-items: center;
+    margin-bottom: 20px;
+  }
+  .empty h1 {
+    font-family: var(--font-serif); font-weight: 500;
+    font-size: 30px; letter-spacing: -0.015em;
+    margin: 0 0 6px;
+  }
+  .empty .sub { font-size: 14px; color: var(--text-secondary); max-width: 48ch; line-height: 1.5; }
+  .empty-prompts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 32px; max-width: 640px; width: 100%; }
+  .empty-prompts .q {
+    border: 1px solid var(--border-subtle); border-radius: 12px;
+    background: #fff;
+    padding: 14px 16px;
+    text-align: left; cursor: pointer;
+    display: flex; align-items: flex-start; gap: 10px;
+    font: 13px var(--font-sans); color: var(--text-primary);
+    transition: transform .14s, border-color .14s, box-shadow .14s;
+  }
+  .empty-prompts .q:hover { transform: translateY(-1px); border-color: var(--arvya-gold); box-shadow: var(--shadow-sm); }
+  .empty-prompts .q .num { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); padding-top: 2px; letter-spacing: .08em; }
+
+  /* turns */
+  .turn { margin-bottom: 32px; }
+  .msg-user {
+    display: inline-block;
+    padding: 10px 16px;
+    background: var(--cream-100);
+    border: 1px solid var(--cream-200);
+    border-radius: 14px;
+    margin-bottom: 18px;
+    font-size: 14.5px; line-height: 1.5;
+    color: var(--text-primary);
+    max-width: 75%;
+    align-self: flex-start;
+  }
+  .turn { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 32px; }
+
+  .msg-brain { padding: 4px 18px 4px 0; }
+
+  /* thinking + tools */
+  .think {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 12px; border-radius: 999px;
+    background: var(--cream-100);
+    font: 11.5px var(--font-mono); color: var(--text-secondary);
+    letter-spacing: .04em;
+    margin-bottom: 10px;
+  }
+  .think .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--arvya-gold); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .3; transform: scale(.85);} 50% { opacity: 1; transform: scale(1.15);} }
+
+  .tools { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+  .tool {
+    display: grid; grid-template-columns: 16px 1fr auto; gap: 10px;
+    align-items: center; padding: 6px 12px; border-radius: 8px;
+    font: 11.5px var(--font-mono); color: var(--text-secondary);
+    background: var(--cream-50);
+    border: 1px solid var(--cream-200);
+  }
+  .tool .ic { width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; }
+  .tool.run .ic { background: var(--arvya-gold-bg); }
+  .tool.run .ic::after { content:''; width: 5px; height: 5px; border-radius: 50%; background: var(--arvya-gold); animation: pulse 1.2s ease-in-out infinite; }
+  .tool.ok .ic { background: #DDEFE2; }
+  .tool.ok .ic::after { content:''; width: 6px; height: 3px; border-left: 1.5px solid #247048; border-bottom: 1.5px solid #247048; transform: rotate(-45deg) translateY(-1px); }
+  .tool .nm { color: var(--text-primary); font-weight: 500; }
+  .tool .arg { color: var(--text-tertiary); margin-left: 4px; }
+  .tool .st { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); }
+  .tool.run .st { color: var(--arvya-gold-700); }
+
+  .reasoning {
+    border-left: 2px solid var(--arvya-gold);
+    padding: 6px 0 6px 14px;
+    margin: 4px 0 16px;
+    font: italic 13px var(--font-serif);
+    color: var(--text-secondary);
+    line-height: 1.55;
+  }
+
+  .answer {
+    font: 14.5px/1.7 var(--font-sans);
+    color: var(--text-primary);
+  }
+  .answer p { margin: 0 0 12px; }
+  .answer b { font-weight: 600; }
+  .answer .word { opacity: 0; animation: word .25s ease-out forwards; }
+  @keyframes word { to { opacity: 1; } }
+  .answer .cursor { display: inline-block; width: 2px; height: 1em; background: var(--arvya-gold); vertical-align: -2px; animation: blink 1.06s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .answer .cite-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    font: 10px var(--font-mono);
+    background: var(--cream-200); color: var(--arvya-dark-700);
+    padding: 1px 6px; border-radius: 4px; border: 1px solid var(--cream-300);
+    vertical-align: 1px; margin: 0 1px; cursor: pointer;
+    text-decoration: none;
+  }
+  .answer .cite-chip:hover { background: var(--arvya-gold-bg); border-color: var(--arvya-gold-border); color: var(--arvya-gold-700); }
+
+  .ans-meta {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--cream-200);
+    font: 10.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .06em;
+  }
+  .ans-meta .meter { width: 100px; height: 4px; background: var(--cream-200); border-radius: 999px; overflow: hidden; }
+  .ans-meta .meter > i { display: block; height: 100%; background: var(--arvya-gold); }
+  .ans-meta .actions { margin-left: auto; display: flex; gap: 4px; }
+  .ans-meta .actions button { background: transparent; border: 0; padding: 4px; cursor: pointer; color: var(--text-tertiary); border-radius: 4px; }
+  .ans-meta .actions button:hover { background: var(--cream-100); color: var(--text-primary); }
+  .ans-meta .actions svg { width: 13px; height: 13px; }
+
+  .followups { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .followups a {
+    padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--border-subtle); background: #fff;
+    font: 11.5px var(--font-sans); color: var(--text-secondary);
+    text-decoration: none; cursor: pointer;
+  }
+  .followups a:hover { border-color: var(--arvya-gold); color: var(--arvya-gold-700); }
+
+  /* Composer pinned to bottom */
+  .composer-wrap {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(to bottom, transparent, var(--cream-100) 30%);
+    padding: 32px 24px 24px;
+    pointer-events: none;
+  }
+  .composer {
+    max-width: 760px; margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--border-default);
+    border-radius: 16px;
+    padding: 12px 14px 10px;
+    box-shadow: 0 8px 28px rgba(21,26,35,.06);
+    pointer-events: auto;
+    transition: border-color .15s;
+  }
+  .composer:focus-within { border-color: var(--arvya-gold); }
+  .composer textarea {
+    width: 100%; border: 0; outline: 0; resize: none;
+    font: 14px/1.5 var(--font-sans);
+    color: var(--text-primary);
+    background: transparent;
+    min-height: 22px; max-height: 200px;
+  }
+  .composer .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .chip {
+    height: 26px; padding: 0 10px; border-radius: 999px;
+    background: var(--cream-100); color: var(--text-secondary);
+    font: 11px var(--font-mono); letter-spacing: .04em;
+    border: 1px solid var(--cream-200);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .chip:hover { border-color: var(--arvya-gold); color: var(--arvya-gold-700); }
+  .chip.on { background: var(--arvya-dark-900); color: var(--cream-50); border-color: var(--arvya-dark-900); }
+  .composer .send {
+    margin-left: auto;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--arvya-dark-900); color: var(--cream-50);
+    border: 0; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .composer .send:hover { background: var(--arvya-gold); color: var(--arvya-dark-900); }
+  .composer .send:disabled { opacity: .35; cursor: default; }
+
+  .composer-hint {
+    max-width: 760px; margin: 8px auto 0;
+    font: 10px var(--font-mono); letter-spacing: .08em; color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  /* Sources panel inside answer */
+  .src-panel {
+    margin-top: 14px;
+    background: var(--cream-50);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .src-panel h4 { font: 10px var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--arvya-gold-700); margin: 0 0 10px; }
+  .src-panel ol { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .src-panel li { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; font-size: 12.5px; line-height: 1.5; align-items: baseline; }
+  .src-panel li .n { font: 10px var(--font-mono); color: var(--arvya-gold-700); padding-top: 2px; }
+  .src-panel li .ttl { color: var(--text-primary); font-weight: 500; font-size: 12.5px; }
+  .src-panel li .ex { color: var(--text-secondary); font-style: italic; font-family: var(--font-serif); margin-top: 2px; display: block; font-weight: 400; font-size: 12.5px; }
+  .src-panel li .meta { font: 9.5px var(--font-mono); color: var(--text-tertiary); letter-spacing: .04em; text-align: right; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Ask brain">
+  <div class="chat-shell" style="position: relative;">
+
+    <div class="chat-stream" id="stream">
+      <div class="chat-inner" id="inner">
+        <div class="empty" id="empty">
+          <div class="mark"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#BC8530" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <h1>Ask the brain anything.</h1>
+          <p class="sub">1,284 artifacts · 38 entity pages · 12 graph chains. Every answer is sourced and confidence-scored.</p>
+          <div class="empty-prompts">
+            <button class="q" data-q="What did we promise customers this week?"><span class="num">01</span><span>What did we promise customers this week?</span></button>
+            <button class="q" data-q="Which investors need follow-up?"><span class="num">02</span><span>Which investors need follow-up?</span></button>
+            <button class="q" data-q="What is drifting from the roadmap?"><span class="num">03</span><span>What is drifting from the roadmap?</span></button>
+            <button class="q" data-q="Catch me up on Marlowe."><span class="num">04</span><span>Catch me up on Marlowe.</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer-wrap">
+      <div class="composer" id="composer">
+        <textarea id="input" placeholder="Ask anything — a person, a company, a decision, a number, a promise…" rows="1"></textarea>
+        <div class="row">
+          <button class="chip on" data-skill="all">All sources</button>
+          <button class="chip" data-skill="email">Email</button>
+          <button class="chip" data-skill="calls">Calls</button>
+          <button class="chip" data-skill="docs">Docs</button>
+          <button class="chip" data-skill="30d">Last 30d</button>
+          <button class="send" id="send" title="Send · ⌘↵"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5"/><polyline points="6 11 12 5 18 11"/></svg></button>
+        </div>
+      </div>
+      <div class="composer-hint">— Brain searches every answer. Press ⌘↵ or click send.</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'ask', crumbs: ['Arvya Co.', 'Ask brain'] });
+
+  (function chat(){
+    const stream = document.getElementById('stream');
+    const inner = document.getElementById('inner');
+    const empty = document.getElementById('empty');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+
+    // accept handoff from dashboard (?q=...)
+    const params = new URLSearchParams(location.search);
+    const initialQ = params.get('q');
+
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(200, input.scrollHeight) + 'px';
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    });
+    send.addEventListener('click', submit);
+    document.querySelectorAll('.empty-prompts .q').forEach(b => b.addEventListener('click', () => { input.value = b.dataset.q; submit(); }));
+    document.querySelectorAll('.composer .chip').forEach(c => c.addEventListener('click', () => {
+      if (c.dataset.skill === 'all') {
+        document.querySelectorAll('.composer .chip').forEach(x => x.classList.remove('on'));
+        c.classList.add('on');
+      } else {
+        document.querySelector('.composer .chip[data-skill="all"]').classList.remove('on');
+        c.classList.toggle('on');
+      }
+    }));
+
+    const SCENARIOS = {
+      promise: {
+        match: /promise|customer|week|commit/i,
+        reasoning: 'Searching call transcripts and email drafts from the last 7 days for kind=commitment, then cross-referencing Linear and open loops.',
+        tools: [
+          { name: 'search_memory', arg: 'kind:commitment audience:customer 7d', t: 1.4 },
+          { name: 'compile_truth', arg: 'view:customer-promises 7d', t: 2.1 },
+          { name: 'check_actions', arg: 'audience:customer status:open', t: 0.6 },
+        ],
+        answer: `<p>This week you made <b>4 commitments</b> to customers — <b>2 are still open</b>:</p>
+          <p><b>① Marlowe</b> · "We'll send a graph spec by Thu" — promised Mon on the BlackRock call. <a class="cite-chip">⌕ call · BlackRock</a> 3 days, no draft yet.</p>
+          <p><b>② Caffeinated</b> · "Slack connector live for your pilot." Maya asked Wed; engineering started but not shipped. <a class="cite-chip">⌕ DM · Maya · Wed</a> <a class="cite-chip">⌕ Linear · #340</a></p>
+          <p><b>③ ✓ Marlowe bug fix</b> shipped Fri (PR #482) — they don't know yet. 1-liner drafted.</p>
+          <p><b>④ ✓ Nimbus reference call</b> · scheduled for Thu 11:00.</p>`,
+        followups: ['Send the Marlowe spec', 'Draft Caffeinated update', 'Tell Marlowe about the bug fix'],
+        confidence: 0.92,
+        sources: [
+          { n:'[1]', ttl:'Call · BlackRock diligence · Mon 14:02', ex:'"We\'ll send a graph spec by Thursday so you can have legal look at it."', meta:'transcript · 1.00' },
+          { n:'[2]', ttl:'DM · Maya Chen → Naveen · Wed 18:14', ex:'"Need Slack connector live for our pilot kickoff next week — can we count on it?"', meta:'slack · 1.00' },
+          { n:'[3]', ttl:'Linear #340 · "Slack connector"', ex:'Status: in progress. PR open. Last update Mon.', meta:'linear · 1.00' },
+        ]
+      },
+      investor: {
+        match: /investor|sequoia|usv|blackrock|founders|term|roelof/i,
+        reasoning: 'Pulling open investor conversations, ranking by patience window, then checking each contact\'s behavioral model for context.',
+        tools: [
+          { name: 'search_memory', arg: 'audience:investor status:awaiting-reply', t: 1.1 },
+          { name: 'rank_actions', arg: 'category:investor', t: 0.7 },
+          { name: 'fetch_behavioral', arg: 'roelof, jon, andy', t: 1.3 },
+        ],
+        answer: `<p><b>3 investors waiting on you</b>, ordered by their typical patience window:</p>
+          <p><b>① Sequoia (Roelof)</b> — 3 questions sent 06:04 today. Roelof's avg reply window is 9h, you have <b>~3h left</b> before you "feel slow." <a class="cite-chip">⌕ email · 6:04</a> <a class="cite-chip">⌕ Roelof · model</a></p>
+          <p><b>② BlackRock (Jon)</b> — "graph spec by Thu" promised Mon. <b>3 days drift.</b> Jon usually nudges before complaining. <a class="cite-chip">⌕ call · Mon</a></p>
+          <p><b>③ USV (Andy)</b> — partner intro pending. Soft. Can wait until Wed.</p>
+          <p>Brain has draft replies ready for ① and ②.</p>`,
+        followups: ['Open Sequoia draft', 'Open BlackRock draft', 'Show all in loops'],
+        confidence: 0.88,
+        sources: [
+          { n:'[1]', ttl:'Email · Roelof Botha → Naveen · 06:04', ex:'"Three things before partnership: SOC 2 timing, Anthropic lock-in, customer relationship in vertical templates."', meta:'gmail · 1.00' },
+          { n:'[2]', ttl:'Behavioral model · Roelof · n=23 emails over 18mo', ex:'Median reply window: 9h. Decision-mode: short paragraphs + numbered list.', meta:'compiled · 0.78' },
+          { n:'[3]', ttl:'Call · BlackRock · Mon 14:02', ex:'"Send a graph spec by Thursday so legal can look at it."', meta:'transcript · 1.00' },
+        ]
+      },
+      drift: {
+        match: /drift|roadmap|narrative|ship/i,
+        reasoning: 'Listing active drift signals, validating each against current roadmap and recent activity, ranking by impact × age.',
+        tools: [
+          { name: 'list_drift', arg: 'severity:>=0.5', t: 0.9 },
+          { name: 'verify_drift', arg: '3 candidates', t: 1.6 },
+          { name: 'rank_drift', arg: 'by impact × age', t: 0.4 },
+        ],
+        answer: `<p><b>3 drifts active</b> right now:</p>
+          <p><b>① Sales narrative.</b> Investor deck still says "Brain for consulting" — but 4 of last 6 customer calls were VC firms, and 2 cited "Deal Brain" as their reason. <a class="cite-chip">⌕ deck · v3</a> <a class="cite-chip">⌕ 4 calls · 14d</a></p>
+          <p><b>② Outlook connector.</b> Promised Q1 — no commits, no designs, no standup mentions for <b>21 days</b>. Either silently shipped or silently dropped. <a class="cite-chip">⌕ Linear · #220</a></p>
+          <p><b>③ "Where does data live?"</b> — 3rd time it's come up across VC, customer, and partner conversations. Currently answered three different ways across the team. Not in the FAQ.</p>`,
+        followups: ['Open drift review', 'Update deck narrative', 'Draft FAQ entry'],
+        confidence: 0.84,
+        sources: [
+          { n:'[1]', ttl:'Investor deck v3 · slide 4 "Who it\'s for"', ex:'"Built for boutique consulting firms with 50-200 knowledge workers."', meta:'notion · 0.95' },
+          { n:'[2]', ttl:'4 customer call transcripts · 14d', ex:'2 of 4 explicitly said "we\'re using this as a Deal Brain."', meta:'aggregated · 0.91' },
+        ]
+      },
+      marlowe: {
+        match: /marlowe|catch.?me.?up/i,
+        reasoning: 'Pulling the Marlowe entity page, all interactions in last 30 days, the open commitment, and any related promises.',
+        tools: [
+          { name: 'fetch_entity', arg: 'company/marlowe', t: 0.5 },
+          { name: 'compile_history', arg: 'marlowe 30d', t: 1.7 },
+          { name: 'check_promises', arg: 'company:marlowe', t: 0.6 },
+          { name: 'embed_search', arg: 'topic:diligence audience:marlowe', t: 1.2 },
+        ],
+        answer: `<p><b>Marlowe — last 30 days, in one breath:</b></p>
+          <p>• <b>Status:</b> Pilot signed 12 Apr, 2 active users, weekly check-ins on Wed.</p>
+          <p>• <b>Open promise:</b> Bug they reported in Oct 14 shipped Fri (PR #482) — they don't know yet. 1-liner drafted.</p>
+          <p>• <b>Last touch:</b> Tue 8d ago — Eli (PM) sent diligence notes, asked for our <b>data residency answer</b>. You replied with the generic FAQ. He hasn't responded. <a class="cite-chip">⌕ email · Eli · Tue</a></p>
+          <p><b>Behavioral note:</b> Eli replies in long bursts (avg 180w). Reply length dropped 40% over last 3 messages — usually means decision is close.</p>`,
+        followups: ['Tell them the fix shipped', 'Open Marlowe page', 'Schedule sync'],
+        confidence: 0.84,
+        sources: [
+          { n:'[1]', ttl:'Marlowe entity page · compiled', ex:'2 active users, weekly check-ins, $42k ARR.', meta:'compiled · 0.92' },
+          { n:'[2]', ttl:'PR #482 · merged Fri', ex:'"Fix indexing race in graph compile"', meta:'github · 1.00' },
+          { n:'[3]', ttl:'Email · Eli Park → Naveen · Tue', ex:'"Where does the data live? Trying to get our security team comfortable."', meta:'gmail · 1.00' },
+        ]
+      },
+      default: {
+        reasoning: 'Open question. Searching memory, compiling, ranking by recency × confidence.',
+        tools: [
+          { name: 'search_memory', arg: 'semantic · top-12', t: 1.4 },
+          { name: 'compile_truth', arg: 'aggregate', t: 2.0 },
+          { name: 'rank_sources', arg: 'recency × confidence', t: 0.5 },
+        ],
+        answer: `<p>Searched <b>1,284 memory objects</b> across all sources. The brain has indexed everything you mentioned plus 8 related sources.</p>
+          <p>Top signal: <b>this came up 3 times in 14 days</b> across calls, email, and the standup — strong pattern. <a class="cite-chip">⌕ 3 sources</a></p>
+          <p>I can dig deeper on any thread, draft a response, or open the related entity pages.</p>`,
+        followups: ['Open in graph', 'Show evidence', 'Draft response'],
+        confidence: 0.71,
+        sources: [
+          { n:'[1]', ttl:'Memory store · semantic top-12', ex:'12 candidate memories matched, top 3 used.', meta:'compiled · 0.71' },
+        ]
+      }
+    };
+
+    function pickScenario(q) {
+      for (const k of ['promise','investor','drift','marlowe']) {
+        if (SCENARIOS[k].match.test(q)) return SCENARIOS[k];
+      }
+      return SCENARIOS.default;
+    }
+
+    function streamWords(el, html, wps, done) {
+      const tokens = html.split(/(<[^>]+>|\s+)/).filter(Boolean);
+      el.innerHTML = '';
+      let i = 0;
+      const tick = () => {
+        if (i >= tokens.length) { el.insertAdjacentHTML('beforeend', '<span class="cursor"></span>'); done && done(); return; }
+        const t = tokens[i++];
+        if (/^<[^>]+>$/.test(t) || /^\s+$/.test(t)) {
+          el.insertAdjacentHTML('beforeend', t);
+        } else {
+          const sp = document.createElement('span');
+          sp.className = 'word'; sp.textContent = t;
+          el.appendChild(sp);
+        }
+        autoscroll();
+        setTimeout(tick, 1000/wps + (Math.random()-.5)*30);
+      };
+      tick();
+    }
+
+    let userScrolled = false;
+    stream.addEventListener('scroll', () => {
+      const atBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60;
+      userScrolled = !atBottom;
+    });
+    function autoscroll() {
+      if (!userScrolled) stream.scrollTop = stream.scrollHeight;
+    }
+
+    let busy = false;
+    async function submit() {
+      const q = input.value.trim();
+      if (!q || busy) return;
+      busy = true;
+      input.value = ''; input.style.height = 'auto';
+      empty.style.display = 'none';
+      userScrolled = false;
+
+      const turn = document.createElement('div');
+      turn.className = 'turn';
+
+      const u = document.createElement('div');
+      u.className = 'msg-user';
+      u.textContent = q;
+      turn.appendChild(u);
+
+      const b = document.createElement('div');
+      b.className = 'msg-brain';
+      turn.appendChild(b);
+      inner.appendChild(turn);
+      autoscroll();
+
+      const scn = pickScenario(q);
+
+      // thinking pill
+      const think = document.createElement('div');
+      think.className = 'think';
+      think.innerHTML = `<span class="dot"></span> Thinking…`;
+      b.appendChild(think);
+      autoscroll();
+
+      await new Promise(r => setTimeout(r, 700));
+      think.remove();
+
+      // reasoning
+      const reasoning = document.createElement('div');
+      reasoning.className = 'reasoning';
+      b.appendChild(reasoning);
+      await new Promise(r => streamWords(reasoning, scn.reasoning, 30, () => {
+        reasoning.querySelector('.cursor')?.remove(); r();
+      }));
+
+      // tools
+      const toolsHost = document.createElement('div');
+      toolsHost.className = 'tools';
+      b.appendChild(toolsHost);
+
+      for (const tool of scn.tools) {
+        const el = document.createElement('div');
+        el.className = 'tool run';
+        el.innerHTML = `<span class="ic"></span><span><span class="nm">${tool.name}</span><span class="arg">${tool.arg}</span></span><span class="st">running</span>`;
+        toolsHost.appendChild(el);
+        autoscroll();
+        await new Promise(r => setTimeout(r, 400 + tool.t * 250));
+        el.classList.remove('run'); el.classList.add('ok');
+        el.querySelector('.st').textContent = tool.t.toFixed(1) + 's';
+      }
+
+      // answer
+      const ans = document.createElement('div');
+      ans.className = 'answer';
+      b.appendChild(ans);
+      await new Promise(r => streamWords(ans, scn.answer, 22, () => {
+        ans.querySelector('.cursor')?.remove(); r();
+      }));
+
+      // sources
+      if (scn.sources && scn.sources.length) {
+        const src = document.createElement('div');
+        src.className = 'src-panel';
+        src.innerHTML = `<h4>— Sources cited (${scn.sources.length})</h4>
+          <ol>${scn.sources.map(s => `<li><span class="n">${s.n}</span><div><div class="ttl">${s.ttl}</div><span class="ex">"${s.ex}"</span></div><span class="meta">${s.meta}</span></li>`).join('')}</ol>`;
+        b.appendChild(src);
+      }
+
+      // meta
+      const meta = document.createElement('div');
+      meta.className = 'ans-meta';
+      meta.innerHTML = `
+        <span>Confidence</span>
+        <div class="meter"><i style="width: ${(scn.confidence*100).toFixed(0)}%"></i></div>
+        <span>${scn.confidence.toFixed(2)}</span>
+        <span class="actions">
+          <button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          <button title="Share"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>
+          <button title="Good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>
+        </span>
+      `;
+      b.appendChild(meta);
+
+      // followups
+      if (scn.followups && scn.followups.length) {
+        const fu = document.createElement('div');
+        fu.className = 'followups';
+        fu.innerHTML = scn.followups.map(t => `<a>${t}</a>`).join('');
+        b.appendChild(fu);
+      }
+
+      autoscroll();
+      busy = false;
+      input.focus();
+    }
+
+    // handoff: if ?q= present, submit it after mount
+    if (initialQ) {
+      input.value = initialQ;
+      setTimeout(submit, 200);
+    }
+  })();
+</script>
+</body>
+</html>

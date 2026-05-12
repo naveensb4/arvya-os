@@ -186,10 +186,21 @@ export const extractedRelationshipSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const meetingTypeSchema = z.enum([
+  "investor_call",
+  "customer_call",
+  "advisor_call",
+  "internal_sync",
+  "partner_call",
+  "product_review",
+  "other",
+]);
+
 export const sourceClassificationSchema = z.object({
   summary: z.string().min(1).max(2400),
   sourceCategory: z.string().min(1).max(80),
   confidence: z.number().min(0).max(1),
+  meetingType: meetingTypeSchema.optional(),
 });
 
 export const extractedSuggestedActionSchema = z.object({
@@ -631,3 +642,80 @@ export type MarketingWeeklyAnalysisResultSchemaType = z.infer<typeof marketingWe
 export const memoryKindSchema = memoryObjectTypeSchema;
 export const memoryStatusSchema = memoryObjectStatusSchema;
 export const extractedMemoryItemSchema = legacyExtractedMemoryItemSchema;
+
+// Meeting Prep Brief schema
+export const sourceRefSchema = z.object({
+  kind: z.enum(["brain_source", "memory_object", "open_loop", "web_url", "linkedin_url"]),
+  id_or_url: z.string().min(1),
+  excerpt: z.string().max(400).optional(),
+  fetched_at: z.string().optional(),
+});
+
+export const meetingPrepAttendeeSchema = z.object({
+  name: z.string().min(1).max(160),
+  email: z.string().max(240).optional(),
+  company: z.string().max(160).optional(),
+  role: z.string().max(160).optional(),
+  linkedin_url: z.string().max(500).optional(),
+  mini_dossier: z.object({
+    recent_mentions: z.array(z.object({
+      snippet: z.string().max(400),
+      source_id: z.string(),
+    })).max(5).default([]),
+  }),
+  confidence: z.number().min(0).max(1),
+});
+
+export const meetingPrepBriefSchema = z.object({
+  meeting_id: z.string().min(1),
+  generated_at: z.string().min(1),
+  meeting_window: z.object({
+    start: z.string().min(1),
+    end: z.string().min(1),
+    live_in_minutes: z.number(),
+  }),
+  attendees: z.array(meetingPrepAttendeeSchema).max(20).default([]),
+  why_now: z.object({
+    reason: z.string().min(1).max(800),
+    sources: z.array(sourceRefSchema).max(8).default([]),
+    confidence: z.number().min(0).max(1),
+  }),
+  tone_calibration: z.object({
+    description: z.string().max(400).default(""),
+    based_on_n_messages: z.number().default(0),
+    confidence: z.number().min(0).max(1).default(0),
+  }).default({ description: "", based_on_n_messages: 0, confidence: 0 }),
+  things_to_know: z.array(z.object({
+    point: z.string().min(1).max(600),
+    sources: z.array(sourceRefSchema).max(8).default([]),
+    origin: z.enum(["brain", "web", "linkedin"]),
+    freshness_label: z.string().max(40).default(""),
+    confidence: z.number().min(0).max(1),
+  })).max(5).default([]),
+  questions_to_ask: z.array(z.object({
+    question: z.string().min(1).max(400),
+    rationale: z.string().max(400).default(""),
+    sources: z.array(sourceRefSchema).max(8).default([]),
+    confidence: z.number().min(0).max(1),
+  })).max(5).default([]),
+  risks_to_dodge: z.array(z.object({
+    risk: z.string().min(1).max(400),
+    sources: z.array(sourceRefSchema).max(8).default([]),
+    confidence: z.number().min(0).max(1),
+    trust_label: z.enum(["fact", "inference", "judgment_call"]),
+  })).max(5).default([]),
+  open_loops_with_attendees: z.array(z.object({
+    loop_id: z.string().min(1),
+    title: z.string().min(1).max(240),
+    due_date: z.string().optional(),
+    overdue: z.boolean(),
+  })).max(10).default([]),
+  overall_confidence: z.number().min(0).max(1),
+  uncertainty_notes: z.array(z.string().max(400)).max(10).default([]),
+  source_count: z.number().default(0),
+  slack_message_ts: z.string().optional(),
+});
+
+export type MeetingPrepBrief = z.infer<typeof meetingPrepBriefSchema>;
+export type SourceRef = z.infer<typeof sourceRefSchema>;
+export type MeetingPrepAttendee = z.infer<typeof meetingPrepAttendeeSchema>;

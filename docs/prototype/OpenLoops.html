@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Arvya OS — Open loops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .lp-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  .lp-toolbar .seg {
+    display: inline-flex; background: #fff; border: 1px solid var(--border-subtle);
+    border-radius: 8px; overflow: hidden;
+  }
+  .lp-toolbar .seg button {
+    border: 0; background: transparent; padding: 7px 14px;
+    font-family: var(--font-sans); font-size: 12.5px; color: var(--text-secondary);
+    cursor: pointer;
+    border-right: 1px solid var(--border-subtle);
+  }
+  .lp-toolbar .seg button:last-child { border-right: 0; }
+  .lp-toolbar .seg button.on { background: var(--arvya-dark-900); color: var(--cream-50); }
+  .lp-toolbar .seg button .ct { font-family: var(--font-mono); font-size: 10px; opacity: .7; margin-left: 6px; }
+
+  .lp-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .lp-col { background: var(--cream-50); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 12px; min-height: 700px; }
+  .lp-col h3 {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-tertiary);
+    margin: 4px 6px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .lp-col h3 .ct {
+    background: var(--cream-200); padding: 2px 7px; border-radius: 999px;
+    font-size: 10px; color: var(--text-secondary);
+  }
+  .lp-col.warn h3 .ct { background: #F9DCDC; color: #A83C3C; }
+  .lp-col.go h3 .ct { background: #DDEFE2; color: #247048; }
+
+  .loop {
+    background: #fff;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .loop:hover { border-color: var(--arvya-gold); }
+  .loop.late { border-left: 3px solid #C75050; padding-left: 11px; }
+  .loop .top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .loop .age { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .08em; color: var(--text-tertiary); text-transform: uppercase; }
+  .loop .age.late { color: #A83C3C; font-weight: 500; }
+  .loop .who-pill {
+    margin-left: auto;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em;
+    background: var(--cream-200); padding: 1px 6px; border-radius: 4px;
+    color: var(--text-secondary);
+  }
+  .loop .what { font-size: 13px; line-height: 1.4; color: var(--text-primary); margin-bottom: 8px; font-weight: 500; }
+  .loop .ctx { font-size: 11.5px; line-height: 1.45; color: var(--text-secondary); margin-bottom: 8px; }
+  .loop .src { display: flex; gap: 5px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--cream-200); }
+  .loop .src .ow { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-right: auto; align-self: center; }
+
+  .lp-summary {
+    background: var(--arvya-dark-900); color: var(--cream-50);
+    border-radius: 14px; padding: 22px 26px;
+    margin-bottom: 28px;
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 30px;
+    align-items: center;
+  }
+  .lp-summary .lede { font-family: var(--font-serif); font-size: 19px; line-height: 1.4; letter-spacing: -0.005em; }
+  .lp-summary .lede b { color: var(--arvya-gold); font-weight: 500; }
+  .lp-summary .stat .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.5); margin-bottom: 6px; }
+  .lp-summary .stat .v { font-family: var(--font-serif); font-size: 30px; font-weight: 500; line-height: 1; }
+  .lp-summary .stat .delta { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.6); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div data-shell data-screen-label="Open loops">
+
+  <div class="page-head">
+    <div>
+      <span class="eyebrow gold">— Closed-loop tracking</span>
+      <h1>Open loops.</h1>
+      <p class="sub">Every promise the brain has heard you make, with proof of fulfilment. Three things stay true here: nothing falls through the cracks silently, every promise has an owner, and "done" needs a source.</p>
+    </div>
+    <div class="right">
+      <button class="btn primary">+ Add loop manually</button>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="lp-summary">
+    <div class="lede">— <b>14 open loops.</b> 3 are overdue, 6 are quiet (the brain hasn't heard a status update in &gt; 5 days), and 5 are tracking.</div>
+    <div class="stat"><div class="lab">— Overdue</div><div class="v" style="color:#FB8B8B;">3</div><div class="delta">+1 since Mon</div></div>
+    <div class="stat"><div class="lab">— Quiet</div><div class="v">6</div><div class="delta">avg 4.2d silent</div></div>
+    <div class="stat"><div class="lab">— Closed (7d)</div><div class="v" style="color:var(--arvya-gold);">22</div><div class="delta">+18% v. last week</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="lp-toolbar">
+    <div class="seg">
+      <button class="on">All <span class="ct">14</span></button>
+      <button>Mine <span class="ct">8</span></button>
+      <button>PB <span class="ct">5</span></button>
+      <button>Eng <span class="ct">3</span></button>
+    </div>
+    <div class="seg">
+      <button class="on">Board view</button>
+      <button>List</button>
+      <button>Timeline</button>
+    </div>
+    <div style="margin-left:auto; display: flex; gap: 8px;">
+      <span class="cite">⌕ stage</span>
+      <span class="cite">⌕ owner</span>
+      <span class="cite">⌕ tag: investors</span>
+      <span class="cite">⌕ + filter</span>
+    </div>
+  </div>
+
+  <!-- Board -->
+  <div class="lp-board">
+
+    <!-- Promised -->
+    <div class="lp-col">
+      <h3>— Promised <span class="ct">5</span></h3>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">3h ago</span>
+          <span class="who-pill">→ Lonne, Insight</span>
+        </div>
+        <div class="what">"Send retention cohort data after we meet."</div>
+        <div class="ctx">Said at end of Apr 23 call. No artifact yet. Calendar shows mtg today 14:00.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ call</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">8h ago</span>
+          <span class="who-pill">→ Jon, BlackRock</span>
+        </div>
+        <div class="what">"We'll send the graph spec by today."</div>
+        <div class="ctx">Re-asked this morning (07:14). Brain has v0 drafted.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ thread</a>
+          <a class="cite">⌕ draft</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">11h ago</span>
+          <span class="who-pill">→ Sequoia, Roelof</span>
+        </div>
+        <div class="what">Three answers — SOC 2, model lock-in, ownership.</div>
+        <div class="ctx">Drafted in Gmail, awaiting NA edit on q3.</div>
+        <div class="src">
+          <span class="ow">— NA · PB</span>
+          <a class="cite">⌕ email</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">Yesterday</span>
+          <span class="who-pill">→ 22 angels</span>
+        </div>
+        <div class="what">April investor update.</div>
+        <div class="ctx">Outline drafted. Brain pulled wins/learnings/asks from the last 30d.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ draft</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">2d ago</span>
+          <span class="who-pill">→ Joel, Verdant</span>
+        </div>
+        <div class="what">Intro Maya → Joel (double-opt).</div>
+        <div class="ctx">Forwarder drafted, awaiting both opt-ins.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ draft</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- In flight -->
+    <div class="lp-col">
+      <h3>— In flight <span class="ct">3</span></h3>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">3d ago</span>
+          <span class="who-pill">→ 2 customer pilots</span>
+        </div>
+        <div class="what">Slack connector beta.</div>
+        <div class="ctx">PR open · 8/12 acceptance criteria green · target Fri.</div>
+        <div class="src">
+          <span class="ow">— PB · eng</span>
+          <a class="cite">⌕ #482</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">5d ago</span>
+          <span class="who-pill">→ Maya · Caffeinated</span>
+        </div>
+        <div class="what">Quarterly portfolio review.</div>
+        <div class="ctx">Maya's brief is being assembled. Brain has 6 of 8 sections.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ doc</a>
+        </div>
+      </div>
+
+      <div class="loop">
+        <div class="top">
+          <span class="age">2w ago</span>
+          <span class="who-pill">→ DPDP regulator</span>
+        </div>
+        <div class="what">DPDP Schedule II response.</div>
+        <div class="ctx">Counsel reviewing draft. Due May 22.</div>
+        <div class="src">
+          <span class="ow">— NA · counsel</span>
+          <a class="cite">⌕ draft</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiet -->
+    <div class="lp-col warn">
+      <h3>— Quiet · stalled <span class="ct">3</span></h3>
+
+      <div class="loop late">
+        <div class="top">
+          <span class="age late">12d late · advisor sync</span>
+          <span class="who-pill">→ 3 advisors</span>
+        </div>
+        <div class="what">Q3 advisor sync.</div>
+        <div class="ctx">Promised at seed close. Hasn't moved. Brain suggests today.</div>
+        <div class="src">
+          <span class="ow">— PB</span>
+          <a class="cite">⌕ promise</a>
+        </div>
+      </div>
+
+      <div class="loop late">
+        <div class="top">
+          <span class="age late">4d late · bug ack</span>
+          <span class="who-pill">→ Marlowe</span>
+        </div>
+        <div class="what">Tell Marlowe bug #482 shipped Friday.</div>
+        <div class="ctx">PR closed. No outbound message. Customer not yet aware.</div>
+        <div class="src">
+          <span class="ow">— PB</span>
+          <a class="cite">⌕ PR</a>
+          <a class="cite">⌕ ticket</a>
+        </div>
+      </div>
+
+      <div class="loop late">
+        <div class="top">
+          <span class="age late">6d late · pricing draft</span>
+          <span class="who-pill">→ board</span>
+        </div>
+        <div class="what">Updated pricing model.</div>
+        <div class="ctx">Internal doc lives in 3 inconsistent versions. Brain flagged drift.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ docs</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Closed -->
+    <div class="lp-col go">
+      <h3>— Closed (last 7d) <span class="ct">22</span></h3>
+
+      <div class="loop" style="opacity: .8;">
+        <div class="top">
+          <span class="age">2h · closed</span>
+          <span class="who-pill">→ Caffeinated</span>
+        </div>
+        <div class="what">"Pull retention cohort for Q1." → ✓ delivered.</div>
+        <div class="ctx">Closed by inbound email "thanks, this is super useful" from Maya, 09:14.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ proof</a>
+        </div>
+      </div>
+
+      <div class="loop" style="opacity: .8;">
+        <div class="top">
+          <span class="age">Yesterday</span>
+          <span class="who-pill">→ Sumit · eng</span>
+        </div>
+        <div class="what">Model adapter audit. → ✓ shipped.</div>
+        <div class="ctx">Closed by GH PR #471 merging.</div>
+        <div class="src">
+          <span class="ow">— eng</span>
+          <a class="cite">⌕ #471</a>
+        </div>
+      </div>
+
+      <div class="loop" style="opacity: .8;">
+        <div class="top">
+          <span class="age">2d · closed</span>
+          <span class="who-pill">→ Notion (sales)</span>
+        </div>
+        <div class="what">Send security questionnaire response. → ✓ delivered.</div>
+        <div class="ctx">Closed by Drive doc "vendor-questionnaire-notion-v2" being shared 14:22.</div>
+        <div class="src">
+          <span class="ow">— PB</span>
+          <a class="cite">⌕ proof</a>
+        </div>
+      </div>
+
+      <div class="loop" style="opacity: .8;">
+        <div class="top">
+          <span class="age">3d · closed</span>
+          <span class="who-pill">→ Lonne, Insight</span>
+        </div>
+        <div class="what">Send updated deck. → ✓ delivered.</div>
+        <div class="ctx">Closed by Gmail send to lonne@insight.com.</div>
+        <div class="src">
+          <span class="ow">— NA</span>
+          <a class="cite">⌕ proof</a>
+        </div>
+      </div>
+
+      <div class="loop" style="opacity: .8;">
+        <div class="top">
+          <span class="age">5d · closed</span>
+          <span class="who-pill">→ Stripe</span>
+        </div>
+        <div class="what">Send tax forms (W-9). → ✓ delivered.</div>
+        <div class="ctx">Closed by Drive doc upload + outbound email.</div>
+        <div class="src">
+          <span class="ow">— PB</span>
+          <a class="cite">⌕ proof</a>
+        </div>
+      </div>
+
+      <div style="text-align:center; padding: 14px 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); letter-spacing: .08em;">
+        — 17 more closed this week ↓
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Audit -->
+  <div style="margin-top: 36px; padding: 20px 24px; background: var(--cream-50); border: 1px solid var(--border-subtle); border-radius: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+    <div style="font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--arvya-gold-700); margin-bottom: 8px;">— How loops get opened &amp; closed</div>
+    The brain opens a loop when it detects a forward-looking commitment in any source — "I'll send", "we'll get back", "by Friday", "let me circle back", an issue assigned, a calendar promise. It closes a loop when it sees evidence — outbound email matching the recipient, a doc shared, a PR merged, a contract signed, an inbound thank-you. <a href="Agents.html" class="cite">⌕ see compile_truth runs</a>
+  </div>
+</div>
+
+<script src="assets/shell.js"></script>
+<script>
+  ArvyaShell.mount({ active: 'loops', crumbs: ['Arvya Co.', 'Open loops'] });
+</script>
+</body>
+</html>

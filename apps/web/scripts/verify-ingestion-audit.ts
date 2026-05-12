@@ -60,7 +60,7 @@ async function runDriveSafetyCases() {
   });
   await expectsConnectorRejection(
     syncConnectorConfig(broadConfig, {
-      googleDriveClient: { listFiles: async () => [], downloadText: async () => "" },
+      googleDriveClient: { listFiles: async () => [], listRecentFiles: async () => [], downloadText: async () => "", exportText: async () => "" },
     }),
     /top-level\/shared root/,
     "Drive root folder rejection",
@@ -82,7 +82,14 @@ async function runDriveSafetyCases() {
       assert.equal(folderId, "arvya-brain-folder");
       return files;
     },
+    async listRecentFiles() {
+      return files;
+    },
     async downloadText(fileId) {
+      const index = Number(fileId.split("-").pop());
+      return flatDriveContent(index);
+    },
+    async exportText(fileId) {
       const index = Number(fileId.split("-").pop());
       return flatDriveContent(index);
     },

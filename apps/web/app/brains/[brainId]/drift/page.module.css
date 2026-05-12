@@ -1,0 +1,316 @@
+/* Drift review - 1:1 port of docs/prototype/Drift.html <style> block.
+ * Prototype is the visual source of truth. */
+
+.pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.pageHead h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 36px;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  margin: 8px 0 6px;
+  color: var(--text-primary);
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--arvya-gold-700);
+}
+.headRight {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+}
+
+.driftStmt {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.3;
+  letter-spacing: -0.014em;
+  color: var(--text-primary);
+  max-width: 920px;
+  margin: 8px 0 22px;
+}
+.driftStmt b {
+  font-weight: 500;
+  color: var(--arvya-gold-700);
+}
+
+.driftMeta {
+  display: flex;
+  gap: 22px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding-bottom: 22px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+.driftMeta b {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.driftMeta .gold b {
+  color: var(--arvya-gold-700);
+}
+.driftMeta .pip {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--arvya-gold);
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.driftMetaRight {
+  margin-left: auto;
+}
+
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin-bottom: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.compare .col {
+  padding: 22px 24px;
+  background: #fff;
+}
+.compare .col + .col {
+  border-left: 1px solid var(--border-subtle);
+  background: var(--cream-50);
+}
+.compare h3 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 0 0 14px;
+}
+.compare .col + .col h3 {
+  color: var(--arvya-gold-700);
+}
+.compare ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.compare li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--cream-300);
+}
+.compare li:last-child {
+  border: 0;
+  padding-bottom: 0;
+}
+.compare li b {
+  font-weight: 500;
+}
+.compare li .small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.compare li .pct {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.compare li .pctLate {
+  color: #a83c3c;
+}
+
+.patternsHead {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0 0 16px;
+}
+.pattern {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 12px;
+}
+.patternWarn {
+  border-left: 3px solid var(--arvya-gold);
+  padding-left: 21px;
+}
+.patternHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.pattern h3 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.005em;
+  margin: 0;
+  line-height: 1.35;
+}
+.patternConf {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.patternConf b {
+  color: var(--arvya-gold-700);
+  font-weight: 500;
+}
+.patternBody {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.patternBody b {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.patternFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cream-200);
+  flex-wrap: wrap;
+}
+.ev {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--cream-200);
+  color: var(--arvya-dark-700);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cream-300);
+  text-decoration: none;
+}
+.reco {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  flex: 1;
+  min-width: 200px;
+}
+.reco b {
+  color: var(--arvya-gold-700);
+  font-weight: 500;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+}
+.actions button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-default);
+  background: #fff;
+  color: var(--text-secondary);
+}
+.actions button.primary {
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+  border-color: var(--arvya-dark-900);
+}
+
+.runForm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  background: var(--cream-50);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+.runForm .lab {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.runForm .small {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.runForm button {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--arvya-dark-900);
+  color: var(--cream-50);
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.empty {
+  background: var(--arvya-status-ok-bg);
+  border: 1px solid #bbe0c7;
+  color: #247048;
+  padding: 18px 22px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}

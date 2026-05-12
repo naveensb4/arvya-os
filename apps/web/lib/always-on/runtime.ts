@@ -2,6 +2,7 @@ import { generateDailyFounderBrief } from "@/lib/brain/store";
 import { syncGmailConnector, type GmailClient } from "@/lib/connectors/gmail";
 import { syncGoogleDriveConnector, type GoogleDriveClient } from "@/lib/connectors/google-drive";
 import { syncOutlookConnector, type OutlookClient } from "@/lib/connectors/outlook";
+import { listSlackChannels, syncChannelHistory, type SlackConfig } from "@/lib/connectors/slack";
 import type { MemoryObject, OpenLoop, SourceItem } from "@arvya/core";
 import { getRepository, type BrainAlertSeverity, type ConnectorConfig, type ConnectorType } from "@/lib/db/repository";
 import { processSourceItemIntoBrain } from "@/lib/workflows/source-ingestion";
@@ -54,9 +55,11 @@ const alignmentStopWords = new Set([
 ]);
 
 export const CONNECTOR_TYPES: ConnectorType[] = [
+  "slack",
   "google_drive",
   "gmail",
   "outlook",
+  "onedrive",
   "recall",
   "mock",
 ];
@@ -257,7 +260,7 @@ function minutesSince(value?: string | null) {
 
 function shouldRunConnector(config: ConnectorConfig) {
   if (!config.syncEnabled || config.status === "paused") return false;
-  if (["google_drive", "gmail", "outlook"].includes(config.connectorType) && config.status !== "connected") return false;
+  if (["google_drive", "gmail", "outlook", "slack"].includes(config.connectorType) && config.status !== "connected") return false;
   const interval = config.syncIntervalMinutes ?? DEFAULT_SYNC_INTERVAL_MINUTES;
   return minutesSince(config.lastSyncAt) >= interval;
 }
@@ -377,6 +380,68 @@ async function createConnectorSource(input: {
   return { duplicate: false, sourceItem, ingested };
 }
 
+type SlackSyncResult = {
+  itemsFound: number;
+  itemsIngested: number;
+  itemsSkipped: number;
+  itemsFailed: number;
+  sourceItemIds: string[];
+  nextWatermark?: string;
+};
+
+async function syncSlackConnector(config: ConnectorConfig): Promise<SlackSyncResult> {
+  const credentials = config.credentials as SlackConfig | null;
+  if (!credentials?.botToken) throw new Error("Slack is not connected. No bot token found.");
+  const channels = await listSlackChannels(credentials.botToken);
+  const since = typeof config.config.watermark === "string" ? config.config.watermark : undefined;
+  const result: SlackSyncResult = { itemsFound: 0, itemsIngested: 0, itemsSkipped: 0, itemsFailed: 0, sourceItemIds: [] };
+  let nextWatermark = since;
+
+  for (const channel of channels) {
+    try {
+      const messages = await syncChannelHistory(credentials.botToken, channel.id, since);
+      result.itemsFound += messages.length;
+      if (messages.length === 0) continue;
+
+      const grouped = new Map<string, typeof messages>();
+      for (const msg of messages) {
+        const day = new Date(Number(msg.ts) * 1000).toISOString().slice(0, 10);
+        const key = `${channel.id}:${day}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(msg);
+        if (!nextWatermark || msg.ts > nextWatermark) nextWatermark = msg.ts;
+      }
+
+      for (const [key, dayMessages] of grouped) {
+        const [, day] = key.split(":");
+        const title = `#${channel.name} — ${day}`;
+        const content = dayMessages.map((m) => `${m.user}: ${m.text}`).join("\n");
+        const externalId = `slack:${config.config.teamId ?? "team"}:${channel.id}:${day}`;
+        const created = await createConnectorSource({
+          config,
+          title,
+          content,
+          externalId,
+          domainType: "slack_message",
+          sourceType: "note",
+        });
+        if (created.duplicate) {
+          result.itemsSkipped += dayMessages.length;
+        } else {
+          result.itemsIngested += dayMessages.length;
+          result.sourceItemIds.push(created.sourceItem.id);
+        }
+      }
+    } catch (err) {
+      result.itemsFailed += 1;
+      console.error(`[slack-sync] Failed to sync channel #${channel.name}:`, err);
+    }
+  }
+
+  if (nextWatermark) result.nextWatermark = nextWatermark;
+  return result;
+}
+
 function verifierContent(config: ConnectorConfig) {
   const connector = humanConnectorName(config.connectorType);
   return [
@@ -460,12 +525,15 @@ export async function syncConnectorConfig(
   });
 
   try {
-    if (config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook") {
+    if (config.connectorType === "google_drive" || config.connectorType === "gmail" || config.connectorType === "outlook" || config.connectorType === "slack") {
       const synced = config.connectorType === "google_drive"
         ? await syncGoogleDriveConnector(config, options.googleDriveClient)
         : config.connectorType === "gmail"
           ? await syncGmailConnector(config, options.gmailClient)
-          : await syncOutlookConnector(config, options.outlookClient);
+          : config.connectorType === "slack"
+            ? await syncSlackConnector(config)
+            : await syncOutlookConnector(config, options.outlookClient);
+      const syncedAny = synced as Record<string, unknown>;
       const completedAt = nowIso();
       await repository.updateConnectorSyncRun(run.id, {
         status: "completed",
@@ -476,8 +544,8 @@ export async function syncConnectorConfig(
         metadata: {
           sourceItemIds: synced.sourceItemIds,
           itemsFailed: synced.itemsFailed,
-          skippedItems: "skippedItems" in synced ? synced.skippedItems : synced.skippedFiles,
-          failedItems: "failedItems" in synced ? synced.failedItems : synced.failedFiles,
+          skippedItems: syncedAny.skippedItems ?? syncedAny.skippedFiles ?? [],
+          failedItems: syncedAny.failedItems ?? syncedAny.failedFiles ?? [],
         },
       });
       await repository.createBrainEvent({
@@ -499,9 +567,11 @@ export async function syncConnectorConfig(
         },
       });
       const nextWatermark = "nextWatermark" in synced ? synced.nextWatermark : undefined;
-      const mergedConfig = nextWatermark
-        ? { ...config.config, watermark: nextWatermark }
-        : config.config;
+      const mergedConfig = {
+        ...config.config,
+        ...(nextWatermark ? { watermark: nextWatermark } : {}),
+        ...(config.config.mode === "onboarding" ? { mode: "live", maxItemTestMode: true } : {}),
+      };
       await repository.updateConnectorConfig(config.id, {
         lastSyncAt: nowIso(),
         lastSuccessAt: synced.itemsFailed === 0 ? nowIso() : config.lastSuccessAt ?? null,
@@ -635,6 +705,15 @@ export async function runSourceIngested(input: { brainId: string; sourceItemId: 
   return processSourceItemIntoBrain(input);
 }
 
+/**
+ * @deprecated 2026-05-09. Replaced by the smart nudger in
+ * apps/web/lib/slack-bot/nudge.ts. The old monitor only fired
+ * `overdue_open_loop` brain_alerts AFTER a loop slipped, never notified
+ * anyone, and never closed loops. The new path posts pre-deadline /
+ * stale / outcome-uncertain prompts to the auto-created #arvya-brain
+ * Slack channel with interactive buttons. Kept for now because eval
+ * scripts (verify-always-on.ts) still reference it.
+ */
 export async function runOpenLoopMonitor() {
   const repository = getRepository();
   const brains = await repository.listBrains();
@@ -861,4 +940,168 @@ export async function handleRecallTranscriptWebhook(payload: Record<string, unkn
     domainType: "recall_transcript",
     sourceType: "transcript",
   });
+}
+
+export async function runMeetingPrepBatch() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = new Date();
+
+  let totalPrepped = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: todayStart.toISOString(),
+      to: todayEnd.toISOString(),
+    });
+
+    if (meetings.length === 0) continue;
+
+    const { wasMeetingPreppedForBrain, runMeetingPrep, IdempotencyHitError } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      try {
+        const alreadyPrepped = await wasMeetingPreppedForBrain(brain.id, meeting.id);
+        if (alreadyPrepped) continue;
+
+        await runMeetingPrep(brain.id, meeting.id, { skipIdempotency: true });
+        totalPrepped++;
+      } catch (error) {
+        if (error instanceof IdempotencyHitError) continue;
+        console.error(`[meeting-prep-batch] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalPrepped };
+}
+
+export async function runMeetingPrep30Min() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = Date.now();
+  const windowStart = new Date(now + 25 * 60 * 1000);
+  const windowEnd = new Date(now + 35 * 60 * 1000);
+
+  let totalPrepped = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: windowStart.toISOString(),
+      to: windowEnd.toISOString(),
+    });
+
+    const { runMeetingPrep, IdempotencyHitError } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      const meetingStart = new Date(meeting.startTime).getTime();
+      const cutoff = meetingStart - 40 * 60 * 1000;
+
+      const existingDocs = await repository.listBrainDocs(brain.id, {
+        meetingId: meeting.id,
+        docType: "meeting_prep",
+        limit: 1,
+      });
+      const recentDoc = existingDocs.find(
+        (d) => new Date(d.createdAt).getTime() > cutoff,
+      );
+      if (recentDoc) continue;
+
+      try {
+        await runMeetingPrep(brain.id, meeting.id, { skipIdempotency: true });
+        totalPrepped++;
+      } catch (error) {
+        if (error instanceof IdempotencyHitError) continue;
+        console.error(`[meeting-prep-30min] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalPrepped };
+}
+
+export async function runMeetingPrepDeltaWatch() {
+  const repository = getRepository();
+  const brains = await repository.listBrains();
+  const now = new Date();
+  const fifteenMinAgo = new Date(now.getTime() - 15 * 60 * 1000);
+
+  let totalRegenerated = 0;
+  for (const brain of brains) {
+    const config = (brain.metadata ?? {}) as Record<string, unknown>;
+    if (config.meeting_prep_enabled !== true) continue;
+
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const meetings = await repository.listNotetakerMeetings({
+      brainId: brain.id,
+      from: now.toISOString(),
+      to: todayEnd.toISOString(),
+    });
+
+    const runs = await repository.listAgentRuns(brain.id, 200);
+    const { runMeetingPrep, getRegenCount } = await import("@/lib/agents/meeting-prep");
+
+    for (const meeting of meetings) {
+      const prepDocs = await repository.listBrainDocs(brain.id, {
+        meetingId: meeting.id,
+        docType: "meeting_prep",
+        limit: 1,
+      });
+      if (prepDocs.length === 0) continue;
+
+      const regenCount = getRegenCount(brain.id, meeting.id, runs);
+      if (regenCount >= 3) continue;
+
+      const recentSources = await repository.listSourceItems(brain.id, { limit: 50 });
+      const newSourcesSinceLastPrep = recentSources.filter(
+        (s) => new Date(s.createdAt) > fifteenMinAgo,
+      );
+
+      const participants = meeting.participants as Array<Record<string, unknown>> | undefined;
+      const attendeeEmails = (participants ?? [])
+        .map((p) => (p.email as string)?.toLowerCase())
+        .filter(Boolean);
+      const attendeeNames = (participants ?? [])
+        .map((p) => ((p.name as string) ?? "").toLowerCase())
+        .filter(Boolean);
+
+      const hasMaterialDelta = newSourcesSinceLastPrep.some((source) => {
+        const content = `${source.title} ${source.content}`.toLowerCase();
+        return (
+          attendeeEmails.some((email) => content.includes(email)) ||
+          attendeeNames.some((name) => content.includes(name))
+        );
+      });
+
+      if (!hasMaterialDelta) continue;
+
+      const slackTs = (prepDocs[0].content as Record<string, unknown>)?.slack_message_ts as string | undefined;
+
+      try {
+        await runMeetingPrep(brain.id, meeting.id, {
+          skipIdempotency: true,
+          regenCount: regenCount + 1,
+          existingSlackTs: slackTs,
+        });
+        totalRegenerated++;
+      } catch (error) {
+        console.error(`[meeting-prep-delta] Failed for meeting ${meeting.id}:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return { totalRegenerated };
 }

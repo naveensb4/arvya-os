@@ -2,10 +2,10 @@ import type {
   AgentRun,
   AgentRunStatus,
   Brain,
+  BrainDoc,
+  BrainDocFeedback,
+  BrainDocType,
   BrainKind,
-  MemoryObject,
-  MemoryObjectStatus,
-  MemoryObjectType,
   MarketingChannel,
   MarketingChannelPost,
   MarketingConfidentiality,
@@ -25,6 +25,9 @@ import type {
   MarketingSourceType,
   MarketingTargetIcp,
   MarketingWeeklyReport,
+  MemoryObject,
+  MemoryObjectStatus,
+  MemoryObjectType,
   ModelProvider,
   OpenLoop,
   OpenLoopPriority,
@@ -38,6 +41,11 @@ import type {
   SourceEmbedding,
   SourceItem,
   SourceType,
+  User,
+  Workspace,
+  WorkspaceInvite,
+  WorkspaceMember,
+  WorkspaceMemberRole,
   Workflow,
   WorkflowStatus,
 } from "@arvya/core";
@@ -49,6 +57,8 @@ export type CreateBrainData = {
   name: string;
   kind: BrainKind;
   thesis: string;
+  workspaceId?: string;
+  createdByUserId?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -211,8 +221,30 @@ export type UpdateAgentRunData = {
   completedAt?: string;
 };
 
-export type ConnectorType = "google_drive" | "gmail" | "outlook" | "recall" | "mock";
-export type ConnectorStatus = "active" | "connected" | "paused" | "error";
+export type CreateBrainDocData = {
+  brainId: string;
+  docType: BrainDocType;
+  title: string;
+  content: Record<string, unknown>;
+  contentText?: string;
+  agentRunId?: string;
+  externalEventId?: string;
+  meetingId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateBrainDocFeedbackData = {
+  feedback: BrainDocFeedback;
+};
+
+export type ListBrainDocsOptions = {
+  meetingId?: string;
+  docType?: BrainDocType;
+  limit?: number;
+};
+
+export type ConnectorType = "google_drive" | "gmail" | "outlook" | "recall" | "mock" | "onedrive" | "slack" | "hubspot" | "github" | "notion";
+export type ConnectorStatus = "active" | "connected" | "paused" | "error" | "needs_reauth";
 export type ConnectorSyncRunStatus = "started" | "completed" | "failed";
 export type BrainAlertSeverity = "info" | "warning" | "error" | "critical";
 export type BrainAlertStatus = "unread" | "read" | "dismissed";
@@ -299,7 +331,10 @@ export type NotetakerCalendar = {
   updatedAt?: string;
 };
 
-export type NotetakerMeeting = {
+export type CalendarEventStatus = "active" | "cancelled" | "deleted";
+export type CalendarEventType = "virtual" | "in_person" | "hybrid" | "unknown";
+
+export type CalendarEvent = {
   id: string;
   brainId: string;
   notetakerCalendarId?: string | null;
@@ -309,17 +344,21 @@ export type NotetakerMeeting = {
   provider: NotetakerProvider;
   title: string;
   meetingUrl?: string | null;
+  location?: string | null;
   startTime: string;
   endTime: string;
   participants: unknown[];
   autoJoinDecision: NotetakerAutoJoinDecision;
   autoJoinReason?: string | null;
   botStatus: NotetakerBotStatus;
+  eventStatus: CalendarEventStatus;
+  eventType: CalendarEventType;
   sourceItemId?: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt?: string;
 };
+export type NotetakerMeeting = CalendarEvent;
 
 export type NotetakerEvent = {
   id: string;
@@ -330,6 +369,30 @@ export type NotetakerEvent = {
   payload: Record<string, unknown>;
   processedAt?: string;
   createdAt: string;
+};
+
+export type CreateUserData = {
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+};
+
+export type CreateWorkspaceData = {
+  name: string;
+};
+
+export type CreateWorkspaceMemberData = {
+  workspaceId: string;
+  userId: string;
+  role?: WorkspaceMemberRole;
+};
+
+export type CreateWorkspaceInviteData = {
+  workspaceId: string;
+  email: string;
+  role?: WorkspaceMemberRole;
+  token: string;
+  expiresAt: string;
 };
 
 export type CreateConnectorConfigData = {
@@ -411,7 +474,7 @@ export type UpdateNotetakerCalendarData = Partial<{
   lastError: string | null;
 }>;
 
-export type CreateNotetakerMeetingData = {
+export type CreateCalendarEventData = {
   brainId: string;
   notetakerCalendarId?: string | null;
   recallCalendarEventId?: string | null;
@@ -420,30 +483,38 @@ export type CreateNotetakerMeetingData = {
   provider: NotetakerProvider;
   title: string;
   meetingUrl?: string | null;
+  location?: string | null;
   startTime: string;
   endTime: string;
   participants?: unknown[];
   autoJoinDecision?: NotetakerAutoJoinDecision;
   autoJoinReason?: string | null;
   botStatus?: NotetakerBotStatus;
+  eventStatus?: CalendarEventStatus;
+  eventType?: CalendarEventType;
   sourceItemId?: string | null;
   metadata?: Record<string, unknown>;
 };
+export type CreateNotetakerMeetingData = CreateCalendarEventData;
 
-export type UpdateNotetakerMeetingData = Partial<{
+export type UpdateCalendarEventData = Partial<{
   recallCalendarEventId: string | null;
   recallBotId: string | null;
   title: string;
   meetingUrl: string | null;
+  location: string | null;
   startTime: string;
   endTime: string;
   participants: unknown[];
   autoJoinDecision: NotetakerAutoJoinDecision;
   autoJoinReason: string | null;
   botStatus: NotetakerBotStatus;
+  eventStatus: CalendarEventStatus;
+  eventType: CalendarEventType;
   sourceItemId: string | null;
   metadata: Record<string, unknown>;
 }>;
+export type UpdateNotetakerMeetingData = UpdateCalendarEventData;
 
 export type CreateNotetakerEventData = {
   brainId: string;
@@ -544,7 +615,9 @@ export type CreateMarketingChannelPostData = {
   metadata?: Record<string, unknown>;
 };
 
-export type UpdateMarketingChannelPostData = Partial<Omit<CreateMarketingChannelPostData, "brainId" | "contentItemId" | "contentInsightId" | "channel">>;
+export type UpdateMarketingChannelPostData = Partial<
+  Omit<CreateMarketingChannelPostData, "brainId" | "contentItemId" | "contentInsightId" | "channel">
+>;
 
 export type CreateMarketingPostMetricData = {
   brainId: string;
@@ -615,12 +688,25 @@ export type CreateMarketingLlmUsageData = {
 export interface BrainRepository {
   readonly mode: "in_memory" | "supabase";
 
+  getUserByEmail(email: string): Promise<User | null>;
+  listUsers(): Promise<User[]>;
+  createUser(input: CreateUserData): Promise<User>;
+
+  getWorkspace(workspaceId: string): Promise<Workspace | null>;
+  listWorkspaces(): Promise<Workspace[]>;
+  createWorkspace(input: CreateWorkspaceData): Promise<Workspace>;
+
+  listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]>;
+  createWorkspaceMember(input: CreateWorkspaceMemberData): Promise<WorkspaceMember>;
+
   listBrains(): Promise<Brain[]>;
   getBrain(brainId: string): Promise<Brain | null>;
   createBrain(input: CreateBrainData): Promise<Brain>;
+  updateBrain(brainId: string, update: { metadata?: Record<string, unknown> }): Promise<Brain | null>;
 
   createSourceItem(input: CreateSourceData): Promise<SourceItem>;
   getSourceItem(sourceItemId: string): Promise<SourceItem | null>;
+  getSourceItemsByIds(ids: string[]): Promise<SourceItem[]>;
   listSourceItems(brainId: string, options?: ListOptions): Promise<SourceItem[]>;
 
   createMemoryObjects(items: CreateMemoryObjectData[]): Promise<MemoryObject[]>;
@@ -655,6 +741,12 @@ export interface BrainRepository {
   createAgentRun(input: CreateAgentRunData): Promise<AgentRun>;
   updateAgentRun(runId: string, update: UpdateAgentRunData): Promise<AgentRun | null>;
 
+  createBrainDoc(input: CreateBrainDocData): Promise<BrainDoc>;
+  getBrainDoc(docId: string): Promise<BrainDoc | null>;
+  listBrainDocs(brainId: string, opts?: ListBrainDocsOptions): Promise<BrainDoc[]>;
+  updateBrainDocFeedback(docId: string, update: UpdateBrainDocFeedbackData): Promise<BrainDoc | null>;
+  listBrainDocsForMeetings(brainId: string, meetingIds: string[]): Promise<BrainDoc[]>;
+
   listConnectorConfigs(brainId?: string): Promise<ConnectorConfig[]>;
   createConnectorConfig(input: CreateConnectorConfigData): Promise<ConnectorConfig>;
   updateConnectorConfig(configId: string, update: UpdateConnectorConfigData): Promise<ConnectorConfig | null>;
@@ -670,12 +762,26 @@ export interface BrainRepository {
   createNotetakerCalendar(input: CreateNotetakerCalendarData): Promise<NotetakerCalendar>;
   updateNotetakerCalendar(calendarId: string, update: UpdateNotetakerCalendarData): Promise<NotetakerCalendar | null>;
   deleteNotetakerCalendar(calendarId: string): Promise<boolean>;
-  listNotetakerMeetings(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number }): Promise<NotetakerMeeting[]>;
-  createNotetakerMeeting(input: CreateNotetakerMeetingData): Promise<NotetakerMeeting>;
-  updateNotetakerMeeting(meetingId: string, update: UpdateNotetakerMeetingData): Promise<NotetakerMeeting | null>;
+  listCalendarEvents(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number; eventStatus?: CalendarEventStatus }): Promise<CalendarEvent[]>;
+  createCalendarEvent(input: CreateCalendarEventData): Promise<CalendarEvent>;
+  updateCalendarEvent(eventId: string, update: UpdateCalendarEventData): Promise<CalendarEvent | null>;
+  listNotetakerMeetings(input?: { brainId?: string; calendarId?: string; from?: string; to?: string; limit?: number }): Promise<CalendarEvent[]>;
+  createNotetakerMeeting(input: CreateCalendarEventData): Promise<CalendarEvent>;
+  updateNotetakerMeeting(meetingId: string, update: UpdateCalendarEventData): Promise<CalendarEvent | null>;
   listNotetakerEvents(input?: { brainId?: string; providerEventId?: string; limit?: number }): Promise<NotetakerEvent[]>;
   createNotetakerEvent(input: CreateNotetakerEventData): Promise<NotetakerEvent>;
   updateNotetakerEvent(eventId: string, update: UpdateNotetakerEventData): Promise<NotetakerEvent | null>;
+
+  getWorkspaceMemberRole(workspaceId: string, userId: string): Promise<WorkspaceMemberRole | null>;
+  updateWorkspaceMemberRole(workspaceId: string, userId: string, role: WorkspaceMemberRole): Promise<WorkspaceMember | null>;
+  removeWorkspaceMember(workspaceId: string, userId: string): Promise<boolean>;
+
+  getWorkspaceForUser(userId: string): Promise<Workspace | null>;
+  listBrainsForWorkspace(workspaceId: string): Promise<Brain[]>;
+
+  createWorkspaceInvite(input: CreateWorkspaceInviteData): Promise<WorkspaceInvite>;
+  getWorkspaceInviteByToken(token: string): Promise<WorkspaceInvite | null>;
+  acceptWorkspaceInvite(token: string, userId: string): Promise<WorkspaceMember>;
 
   createMarketingContentItem(input: CreateMarketingContentItemData): Promise<MarketingContentItem>;
   updateMarketingContentItem(contentItemId: string, update: UpdateMarketingContentItemData): Promise<MarketingContentItem | null>;
@@ -687,7 +793,10 @@ export interface BrainRepository {
   getMarketingContentInsight(insightId: string): Promise<MarketingContentInsight | null>;
   createMarketingChannelPosts(items: CreateMarketingChannelPostData[]): Promise<MarketingChannelPost[]>;
   updateMarketingChannelPost(postId: string, update: UpdateMarketingChannelPostData): Promise<MarketingChannelPost | null>;
-  listMarketingChannelPosts(brainId: string, options?: ListOptions & { status?: MarketingPostStatus | MarketingPostStatus[]; exemplarOnly?: boolean }): Promise<MarketingChannelPost[]>;
+  listMarketingChannelPosts(
+    brainId: string,
+    options?: ListOptions & { status?: MarketingPostStatus | MarketingPostStatus[]; exemplarOnly?: boolean },
+  ): Promise<MarketingChannelPost[]>;
   getMarketingChannelPost(postId: string): Promise<MarketingChannelPost | null>;
   createMarketingPostMetric(input: CreateMarketingPostMetricData): Promise<MarketingPostMetric>;
   listMarketingPostMetrics(brainId: string, options?: ListOptions): Promise<MarketingPostMetric[]>;

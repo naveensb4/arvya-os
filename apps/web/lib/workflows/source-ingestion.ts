@@ -1,9 +1,11 @@
 import { runSourceIngestionWorkflow } from "@arvya/agents/ingestion-agent";
-import type { IngestSourceInput, ModelProvider } from "@arvya/core";
+import type { ExtractedMemoryObject, IngestSourceInput, ModelProvider } from "@arvya/core";
 import { getAiClient } from "@/lib/ai";
 import { mergeMemoryObjectsForIngestion, mergeRelationshipsForIngestion } from "@/lib/brain/memory-quality";
+import { runOutcomeDetectionForSource } from "@/lib/brain/outcome-detector";
 import { getRepository } from "@/lib/db/repository";
 import { buildEmbeddingText } from "@/lib/retrieval";
+import type { EmailParticipant } from "@/lib/connectors/email-cleaning";
 import {
   buildDedupeKeys,
   buildSourceTraceMetadata,
@@ -24,6 +26,82 @@ function chunkText(content: string, maxLength = 1200): string[] {
   return chunks.length ? chunks : [content];
 }
 
+function readParticipantsFromMetadata(metadata: Record<string, unknown> | undefined): EmailParticipant[] {
+  if (!metadata) return [];
+  const raw = metadata.participants;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): EmailParticipant[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const e = entry as Record<string, unknown>;
+    const email = typeof e.email === "string" ? e.email : undefined;
+    const name = typeof e.name === "string" ? e.name : undefined;
+    const rawValue = typeof e.raw === "string" ? e.raw : `${name ?? ""}${email ? ` <${email}>` : ""}`.trim();
+    if (!email && !name) return [];
+    return [{ email, name, raw: rawValue }];
+  });
+}
+
+function nameTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z\s'-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+// Match a person name against the list of email participants. We prefer
+// exact name match; if no exact match, fall back to first-name match
+// (handles "Naveen" vs "Naveen Siva"). Returns the matching participant
+// or undefined.
+function findParticipantForPerson(
+  personName: string,
+  participants: EmailParticipant[],
+): EmailParticipant | undefined {
+  const tokens = nameTokens(personName);
+  if (tokens.length === 0) return undefined;
+  // Exact full-name match.
+  for (const participant of participants) {
+    if (!participant.name) continue;
+    const participantTokens = nameTokens(participant.name);
+    if (participantTokens.length === 0) continue;
+    if (participantTokens.join(" ") === tokens.join(" ")) return participant;
+  }
+  // First-token match (handles short names extracted by the LLM).
+  const firstToken = tokens[0];
+  for (const participant of participants) {
+    if (!participant.name) continue;
+    const participantTokens = nameTokens(participant.name);
+    if (participantTokens[0] === firstToken) return participant;
+  }
+  return undefined;
+}
+
+// Fill in properties.email / properties.name on extracted person memories
+// when a matching participant is in the source's metadata. The LLM may not
+// always grab the email from "From: Naveen <naveen@arvya.ai>" if the
+// header is far from the body; this gives us a deterministic fallback.
+function enrichPersonsWithParticipants(
+  memoryObjects: ExtractedMemoryObject[],
+  participants: EmailParticipant[],
+): ExtractedMemoryObject[] {
+  if (participants.length === 0) return memoryObjects;
+  return memoryObjects.map((memory) => {
+    if (memory.objectType !== "person") return memory;
+    const properties = (memory.properties ?? {}) as Record<string, unknown>;
+    if (typeof properties.email === "string" && properties.email) return memory;
+    const match = findParticipantForPerson(memory.name, participants);
+    if (!match?.email) return memory;
+    return {
+      ...memory,
+      properties: {
+        ...properties,
+        email: match.email,
+        ...(match.name && !properties.name ? { name: match.name } : {}),
+      },
+    };
+  });
+}
+
 export type IngestSourceIntoBrainInput = IngestSourceInput & {
   storagePath?: string;
   metadata?: Record<string, unknown>;
@@ -42,11 +120,14 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
     throw new Error(`Source item not found: ${input.sourceItemId}`);
   }
   const ai = getAiClient();
-  const connectorType = sourceItem.metadata?.connector_type;
+  // Emails (gmail/outlook) used to be force-routed through the deterministic
+  // regex extractor for token-cost reasons, but the regex pulled greetings
+  // ("Hi Sudi"), timezone abbreviations ("PM"), and email reply markers as
+  // "people", and turned every sentence with a trigger phrase into an open
+  // loop. Now we always go through the LLM when one is configured; the size
+  // guard below still kicks in for unusually large source bodies.
   const shouldUseDeterministicExtraction =
-    sourceItem.content.length > LIVE_EXTRACTION_MAX_CHARS ||
-    connectorType === "gmail" ||
-    connectorType === "outlook";
+    sourceItem.content.length > LIVE_EXTRACTION_MAX_CHARS;
   const extractionAi = shouldUseDeterministicExtraction ? undefined : ai;
 
   const existingCompletedWorkflow = (await repository.listWorkflows(brain.id)).find(
@@ -157,11 +238,19 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       rawInput: { sourceItemId: sourceItem.id },
     });
 
+    const participants = readParticipantsFromMetadata(sourceItem.metadata as Record<string, unknown> | undefined);
+    const enrichedMemoryObjects = enrichPersonsWithParticipants(result.memoryObjects, participants);
+
     const memoryObjects = await mergeMemoryObjectsForIngestion({
       repository,
       brainId: brain.id,
       sourceItemId: sourceItem.id,
-      memoryObjects: result.memoryObjects,
+      memoryObjects: enrichedMemoryObjects,
+      // Entity resolver runs only when both AI and a workspace are present.
+      // Brains without a workspace fall back to the legacy canonical-key
+      // dedup path (no canonical_entities writes).
+      ai: ai.available ? ai : undefined,
+      workspaceId: brain.workspaceId ?? undefined,
     });
 
     const relationships = await mergeRelationshipsForIngestion({
@@ -172,13 +261,18 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       relationships: result.relationships,
     });
 
+    const VALID_LOOP_TYPES = new Set([
+      "follow_up", "intro", "product", "investor", "sales", "marketing",
+      "engineering", "deal", "diligence", "crm", "scheduling", "task",
+      "investor_ask", "customer_ask", "strategic_question", "other",
+    ]);
     const openLoops = await repository.createOpenLoops(
       result.openLoops.map((loop) => ({
         brainId: brain.id,
         sourceItemId: sourceItem.id,
         title: loop.title,
         description: loop.description,
-        loopType: loop.loopType,
+        loopType: VALID_LOOP_TYPES.has(loop.loopType) ? loop.loopType : "other",
         owner: loop.owner,
         status: loop.status,
         priority: loop.priority,
@@ -192,8 +286,39 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
       })),
     );
 
+    // Closed-loop matcher: does this new source resolve any pre-existing
+    // open loops? Runs after openLoops are saved (so loops created BY this
+    // source can be filtered out), before embedding chunks (so the user
+    // sees the closures fast). Failures are non-fatal — if the matcher
+    // breaks, ingestion still succeeds and we just don't auto-close.
+    let outcomeDetectionSummary: { decisionsLogged: number; loopsClosed: number; loopsUncertain: number; loopsAdvanced: number } = {
+      decisionsLogged: 0,
+      loopsClosed: 0,
+      loopsUncertain: 0,
+      loopsAdvanced: 0,
+    };
+    try {
+      if (ai.available) {
+        outcomeDetectionSummary = await runOutcomeDetectionForSource({
+          ai,
+          repository,
+          brainId: brain.id,
+          source: sourceItem,
+          newMemoryObjects: memoryObjects,
+          agentRunId: workflowRun.id,
+        });
+      }
+    } catch (error) {
+      console.error("[outcome-detector] failed:", error);
+    }
+
     const chunks = chunkText(sourceItem.content);
-    const embeddings = await ai.embed(chunks);
+    let embeddings: number[][] | null = null;
+    try {
+      embeddings = await ai.embed(chunks);
+    } catch (error) {
+      console.warn(`[source-ingestion] embed() failed for ${sourceItem.id}, saving chunks without vectors:`, error instanceof Error ? error.message : error);
+    }
     await repository.createSourceEmbeddings(
       chunks.map((content, index) => ({
         brainId: brain.id,
@@ -214,6 +339,7 @@ export async function processSourceItemIntoBrain(input: { brainId: string; sourc
         openLoopIds: openLoops.map((loop) => loop.id),
         relationshipIds: relationships.map((relationship) => relationship.id),
         sourceEmbeddingChunks: chunks.length,
+        outcomeDetection: outcomeDetectionSummary,
       },
       modelProvider: result.classification ? extractionAi?.preferredProvider ?? "local" : "local",
     });

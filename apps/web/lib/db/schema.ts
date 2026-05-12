@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   vector,
 } from "drizzle-orm/pg-core";
@@ -16,17 +17,6 @@ export const brainKindEnum = pgEnum("brain_kind", [
   "company",
   "sell_side",
   "buy_side",
-]);
-
-export const sourceTypeEnum = pgEnum("source_type", [
-  "transcript",
-  "email",
-  "note",
-  "document",
-  "github",
-  "strategy_output",
-  "web",
-  "manual",
 ]);
 
 export const memoryKindEnum = pgEnum("memory_kind", [
@@ -115,12 +105,11 @@ export const modelProviderEnum = pgEnum("model_provider", [
   "openai",
 ]);
 
-export const connectorTypeEnum = pgEnum("connector_type", [
-  "google_drive",
-  "gmail",
-  "outlook",
-  "recall",
-  "mock",
+export const workspaceMemberRoleEnum = pgEnum("workspace_member_role", [
+  "owner",
+  "admin",
+  "member",
+  "viewer",
 ]);
 
 export const connectorStatusEnum = pgEnum("connector_status", [
@@ -128,6 +117,7 @@ export const connectorStatusEnum = pgEnum("connector_status", [
   "connected",
   "paused",
   "error",
+  "needs_reauth",
 ]);
 
 export const connectorSyncRunStatusEnum = pgEnum("connector_sync_run_status", [
@@ -202,128 +192,62 @@ export const notetakerBotStatusEnum = pgEnum("notetaker_bot_status", [
   "canceled",
 ]);
 
-export const marketingSourcePlatformEnum = pgEnum("marketing_source_platform", [
-  "google_drive",
-  "manual",
-  "slack",
-  "gmail",
-  "outlook",
-  "voice",
-  "blog",
+export const calendarEventStatusEnum = pgEnum("calendar_event_status", [
+  "active",
+  "cancelled",
+  "deleted",
 ]);
 
-export const marketingSourceTypeEnum = pgEnum("marketing_source_type", [
-  "google_drive_transcript",
-  "manual_note",
-  "voice_note",
-  "slack_thread",
-  "gmail_email",
-  "outlook_email",
-  "blog",
-  "demo_form",
-  "investor_question",
-  "customer_objection",
-  "product_update",
-]);
-
-export const marketingConfidentialityEnum = pgEnum("marketing_confidentiality", [
-  "public",
-  "internal",
-  "customer_sensitive",
-  "investor_sensitive",
-  "confidential",
-]);
-
-export const marketingSensitivityLevelEnum = pgEnum("marketing_sensitivity_level", [
-  "low",
-  "medium",
-  "high",
-  "blocked",
-]);
-
-export const marketingChannelEnum = pgEnum("marketing_channel", [
-  "linkedin_company",
-  "x",
-  "linkedin_founder",
-  "linkedin_pb",
-]);
-
-export const marketingPostStatusEnum = pgEnum("marketing_post_status", [
-  "draft",
-  "needs_revision",
-  "approved",
-  "scheduled",
-  "published",
-  "archived",
-  "failed_schedule",
-]);
-
-export const marketingFormatTypeEnum = pgEnum("marketing_format_type", [
-  "teardown",
-  "founder_story",
-  "list",
-  "contrarian",
-  "product_pov",
-  "case_study",
-  "memo",
-  "other",
-]);
-
-export const marketingHookTypeEnum = pgEnum("marketing_hook_type", [
-  "pain",
-  "insight",
-  "mistake",
-  "lesson",
-  "workflow",
-  "future_of_work",
-  "other",
-]);
-
-export const marketingTargetIcpEnum = pgEnum("marketing_target_icp", [
-  "ib",
-  "pe",
-  "hf",
-  "investor",
-  "founder",
-  "operator",
-  "other",
-]);
-
-export const marketingFunnelStageEnum = pgEnum("marketing_funnel_stage", [
-  "awareness",
-  "problem_aware",
-  "solution_aware",
-  "conversion",
-]);
-
-export const marketingEventTypeEnum = pgEnum("marketing_event_type", [
-  "demo",
-  "dm",
-  "reply",
-  "qualified_lead",
-  "website_visit",
-  "manual_attribution",
-]);
-
-export const marketingExperimentStatusEnum = pgEnum("marketing_experiment_status", [
-  "planned",
-  "running",
-  "completed",
-  "paused",
-]);
-
-export const marketingAttributionConfidenceEnum = pgEnum("marketing_attribution_confidence", [
-  "direct",
-  "assisted",
-  "manual",
+export const calendarEventTypeEnum = pgEnum("calendar_event_type", [
+  "virtual",
+  "in_person",
+  "hybrid",
   "unknown",
 ]);
+
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  avatarUrl: text("avatar_url"),
+  authProvider: text("auth_provider"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: workspaceMemberRoleEnum("role").notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("workspace_members_workspace_id_idx").on(table.workspaceId),
+    index("workspace_members_user_id_idx").on(table.userId),
+  ],
+);
 
 export const brains = pgTable("brains", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   kind: brainKindEnum("kind").notNull().default("company"),
   thesis: text("thesis").notNull().default(""),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+  createdByUserId: uuid("created_by_user_id"),
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -350,17 +274,47 @@ export const sourceItems = pgTable(
     brainId: uuid("brain_id")
       .notNull()
       .references(() => brains.id, { onDelete: "cascade" }),
-    type: sourceTypeEnum("type").notNull(),
+    type: text("type").notNull(),
     title: text("title").notNull(),
     content: text("content").notNull(),
     externalUri: text("external_uri"),
     storagePath: text("storage_path"),
+    createdByUserId: uuid("created_by_user_id"),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("source_items_brain_id_idx").on(table.brainId),
     index("source_items_brain_created_at_idx").on(table.brainId, table.createdAt),
+  ],
+);
+
+export const canonicalEntities = pgTable(
+  "canonical_entities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id").notNull().references(() => brains.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    displayName: text("display_name"),
+    aliases: text("aliases").array().default([]),
+    externalIds: jsonb("external_ids").notNull().default({}),
+    properties: jsonb("properties").notNull().default({}),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    mergedFrom: uuid("merged_from").array().default([]),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("canonical_entities_brain_id_idx").on(table.brainId),
+    index("canonical_entities_workspace_id_idx").on(table.workspaceId),
+    index("canonical_entities_entity_type_idx").on(table.entityType),
+    index("canonical_entities_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
   ],
 );
 
@@ -381,6 +335,8 @@ export const memoryObjects = pgTable(
     sourceQuote: text("source_quote"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
     status: memoryStatusEnum("status"),
+    canonicalEntityId: uuid("canonical_entity_id").references(() => canonicalEntities.id, { onDelete: "set null" }),
+    embedding: vector("embedding", { dimensions: 1536 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -390,6 +346,32 @@ export const memoryObjects = pgTable(
     index("memory_objects_source_item_id_idx").on(table.sourceItemId),
     index("memory_objects_type_idx").on(table.objectType),
     index("memory_objects_status_idx").on(table.status),
+    index("memory_objects_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+  ],
+);
+
+export const entityMentions = pgTable(
+  "entity_mentions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id").notNull().references(() => brains.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    canonicalEntityId: uuid("canonical_entity_id").notNull().references(() => canonicalEntities.id, { onDelete: "cascade" }),
+    memoryObjectId: uuid("memory_object_id").references(() => memoryObjects.id, { onDelete: "set null" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
+    mentionText: text("mention_text").notNull(),
+    contextSnippet: text("context_snippet"),
+    mentionedAt: timestamp("mentioned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("entity_mentions_brain_id_idx").on(table.brainId),
+    index("entity_mentions_canonical_entity_id_idx").on(table.canonicalEntityId),
+    index("entity_mentions_memory_object_id_idx").on(table.memoryObjectId),
+    index("entity_mentions_source_item_id_idx").on(table.sourceItemId),
   ],
 );
 
@@ -403,6 +385,7 @@ export const openLoops = pgTable(
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, {
       onDelete: "set null",
     }),
+    createdByUserId: uuid("created_by_user_id"),
     title: text("title").notNull(),
     description: text("description").notNull(),
     loopType: openLoopTypeEnum("loop_type").notNull().default("other"),
@@ -418,6 +401,7 @@ export const openLoops = pgTable(
     sourceQuote: text("source_quote"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
     properties: jsonb("properties").notNull().default({}),
+    embedding: vector("embedding", { dimensions: 1536 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -428,6 +412,50 @@ export const openLoops = pgTable(
     index("open_loops_source_item_id_idx").on(table.sourceItemId),
     index("open_loops_status_idx").on(table.status),
     index("open_loops_priority_idx").on(table.priority),
+    index("open_loops_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+  ],
+);
+
+export const loopOutcomeDecisionEnum = pgEnum("loop_outcome_decision", [
+  "closed",
+  "advanced",
+  "contradicts",
+  "no_match",
+  "uncertain",
+]);
+
+// Audit trail for the closed-loop matcher. Every match attempt writes a row
+// so the team can review what the brain auto-closed, override it if wrong,
+// and (in C-week voice learning) train future matches on the corrections.
+export const loopOutcomeLog = pgTable(
+  "loop_outcome_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    loopId: uuid("loop_id")
+      .notNull()
+      .references(() => openLoops.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, {
+      onDelete: "set null",
+    }),
+    decision: loopOutcomeDecisionEnum("decision").notNull(),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    evidenceQuote: text("evidence_quote"),
+    agentRunId: uuid("agent_run_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+    humanOverrode: boolean("human_overrode").notNull().default(false),
+    humanOverrideAt: timestamp("human_override_at", { withTimezone: true }),
+    properties: jsonb("properties").notNull().default({}),
+  },
+  (table) => [
+    index("loop_outcome_log_brain_decided_at_idx").on(table.brainId, table.decidedAt),
+    index("loop_outcome_log_loop_id_idx").on(table.loopId),
+    index("loop_outcome_log_source_item_id_idx").on(table.sourceItemId),
   ],
 );
 
@@ -451,6 +479,11 @@ export const relationships = pgTable(
     sourceQuote: text("source_quote"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
     properties: jsonb("properties").notNull().default({}),
+    validFrom: timestamp("valid_from", { withTimezone: true }),
+    validTo: timestamp("valid_to", { withTimezone: true }),
+    isCurrent: boolean("is_current").default(true),
+    strength: numeric("strength", { precision: 3, scale: 2 }),
+    lastObservedAt: timestamp("last_observed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -547,6 +580,38 @@ export const agentRuns = pgTable(
   ],
 );
 
+export const brainDocs = pgTable(
+  "brain_docs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    docType: text("doc_type").notNull(),
+    title: text("title").notNull(),
+    content: jsonb("content").notNull(),
+    contentText: text("content_text"),
+    feedback: text("feedback"),
+    feedbackAt: timestamp("feedback_at", { withTimezone: true }),
+    agentRunId: uuid("agent_run_id").references(() => agentRuns.id, {
+      onDelete: "set null",
+    }),
+    externalEventId: text("external_event_id"),
+    meetingId: uuid("meeting_id").references(() => notetakerMeetings.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_brain_docs_meeting").on(table.brainId, table.meetingId),
+    index("idx_brain_docs_type").on(table.brainId, table.docType),
+    index("idx_brain_docs_ext_event").on(table.brainId, table.externalEventId),
+    index("idx_brain_docs_agent_run").on(table.agentRunId),
+  ],
+);
+
 export const connectorConfigs = pgTable(
   "connector_configs",
   {
@@ -554,7 +619,7 @@ export const connectorConfigs = pgTable(
     brainId: uuid("brain_id")
       .notNull()
       .references(() => brains.id, { onDelete: "cascade" }),
-    connectorType: connectorTypeEnum("connector_type").notNull(),
+    connectorType: text("connector_type").notNull(),
     status: connectorStatusEnum("status").notNull().default("active"),
     config: jsonb("config").notNull().default({}),
     credentials: jsonb("credentials"),
@@ -582,7 +647,7 @@ export const connectorSyncRuns = pgTable(
     connectorConfigId: uuid("connector_config_id").references(() => connectorConfigs.id, {
       onDelete: "set null",
     }),
-    connectorType: connectorTypeEnum("connector_type").notNull(),
+    connectorType: text("connector_type").notNull(),
     status: connectorSyncRunStatusEnum("status").notNull().default("started"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -622,26 +687,6 @@ export const brainAlerts = pgTable(
   ],
 );
 
-export const brainEvents = pgTable(
-  "brain_events",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    brainId: uuid("brain_id")
-      .notNull()
-      .references(() => brains.id, { onDelete: "cascade" }),
-    eventType: text("event_type").notNull(),
-    sourceSystem: text("source_system"),
-    payload: jsonb("payload").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("brain_events_brain_id_idx").on(table.brainId),
-    index("brain_events_type_idx").on(table.eventType),
-    index("brain_events_source_system_idx").on(table.sourceSystem),
-    index("brain_events_created_at_idx").on(table.createdAt),
-  ],
-);
-
 export const notetakerCalendars = pgTable(
   "notetaker_calendars",
   {
@@ -669,7 +714,7 @@ export const notetakerCalendars = pgTable(
   ],
 );
 
-export const notetakerMeetings = pgTable(
+export const calendarEvents = pgTable(
   "notetaker_meetings",
   {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -685,12 +730,15 @@ export const notetakerMeetings = pgTable(
     provider: notetakerProviderEnum("provider").notNull(),
     title: text("title").notNull(),
     meetingUrl: text("meeting_url"),
+    location: text("location"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),
     endTime: timestamp("end_time", { withTimezone: true }).notNull(),
     participants: jsonb("participants").notNull().default([]),
     autoJoinDecision: notetakerAutoJoinDecisionEnum("auto_join_decision").notNull().default("needs_review"),
     autoJoinReason: text("auto_join_reason"),
     botStatus: notetakerBotStatusEnum("bot_status").notNull().default("not_scheduled"),
+    eventStatus: calendarEventStatusEnum("event_status").notNull().default("active"),
+    eventType: calendarEventTypeEnum("event_type").notNull().default("unknown"),
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -704,8 +752,10 @@ export const notetakerMeetings = pgTable(
     index("notetaker_meetings_external_event_id_idx").on(table.externalEventId),
     index("notetaker_meetings_start_time_idx").on(table.startTime),
     index("notetaker_meetings_source_item_id_idx").on(table.sourceItemId),
+    index("notetaker_meetings_event_status_idx").on(table.eventStatus),
   ],
 );
+export const notetakerMeetings = calendarEvents;
 
 export const notetakerEvents = pgTable(
   "notetaker_events",
@@ -755,6 +805,194 @@ export const priorities = pgTable(
   ],
 );
 
+export const nudges = pgTable(
+  "nudges",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id").notNull().references(() => brains.id, { onDelete: "cascade" }),
+    nudgeType: text("nudge_type").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    severity: text("severity").notNull().default("info"),
+    relatedEntityId: uuid("related_entity_id").references(() => canonicalEntities.id, { onDelete: "set null" }),
+    relatedOpenLoopId: uuid("related_open_loop_id").references(() => openLoops.id, { onDelete: "set null" }),
+    suggestedAction: text("suggested_action"),
+    deliveryChannels: text("delivery_channels").array().default([]),
+    deliveredAt: jsonb("delivered_at").notNull().default({}),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("nudges_brain_id_idx").on(table.brainId),
+    index("nudges_nudge_type_idx").on(table.nudgeType),
+    index("nudges_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: workspaceMemberRoleEnum("role").notNull().default("member"),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("workspace_invites_workspace_id_idx").on(table.workspaceId),
+    index("workspace_invites_token_idx").on(table.token),
+    index("workspace_invites_email_idx").on(table.email),
+  ],
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    notificationType: text("notification_type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: uuid("related_entity_id"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    deliveryError: text("delivery_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("notifications_brain_id_idx").on(table.brainId),
+    index("notifications_user_id_idx").on(table.userId),
+    index("notifications_created_at_idx").on(table.createdAt),
+    index("notifications_read_at_idx").on(table.readAt),
+  ],
+);
+
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    notificationType: text("notification_type").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    config: jsonb("config").notNull().default({}),
+  },
+  (table) => [
+    index("notification_preferences_user_id_idx").on(table.userId),
+    uniqueIndex("notification_preferences_unique_idx").on(
+      table.userId,
+      table.workspaceId,
+      table.channel,
+      table.notificationType,
+    ),
+  ],
+);
+
+export const pendingActions = pgTable(
+  "pending_actions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    createdByAgent: text("created_by_agent").notNull(),
+    actionType: text("action_type").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    status: text("status").notNull().default("pending"),
+    requiresApproval: boolean("requires_approval").notNull().default(true),
+    approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    executionResult: jsonb("execution_result"),
+    executionError: text("execution_error"),
+    relatedOpenLoopId: uuid("related_open_loop_id").references(() => openLoops.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pending_actions_brain_id_idx").on(table.brainId),
+    index("pending_actions_status_idx").on(table.status),
+    index("pending_actions_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const skills = pgTable(
+  "skills",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    trigger: jsonb("trigger").notNull().default({}),
+    procedure: jsonb("procedure").notNull().default([]),
+    outputTemplate: jsonb("output_template"),
+    learnedFromSources: text("learned_from_sources").array().default([]),
+    version: integer("version").notNull().default(1),
+    isSystem: boolean("is_system").notNull().default(false),
+    status: text("status").notNull().default("active"),
+    executionCount: integer("execution_count").notNull().default(0),
+    lastExecutedAt: timestamp("last_executed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("skills_brain_id_idx").on(table.brainId),
+    index("skills_status_idx").on(table.status),
+  ],
+);
+
+export const brainEvents = pgTable(
+  "brain_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    sourceSystem: text("source_system"),
+    entityId: uuid("entity_id").references(() => canonicalEntities.id, { onDelete: "set null" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
+    memoryObjectId: uuid("memory_object_id").references(() => memoryObjects.id, { onDelete: "set null" }),
+    relationshipId: uuid("relationship_id").references(() => relationships.id, { onDelete: "set null" }),
+    openLoopId: uuid("open_loop_id").references(() => openLoops.id, { onDelete: "set null" }),
+    actor: text("actor").notNull().default("system"),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("brain_events_brain_id_idx").on(table.brainId),
+    index("brain_events_source_system_idx").on(table.sourceSystem),
+    index("brain_events_event_type_idx").on(table.eventType),
+    index("brain_events_entity_id_idx").on(table.entityId),
+    index("brain_events_source_item_id_idx").on(table.sourceItemId),
+    index("brain_events_created_at_idx").on(table.createdAt),
+    index("brain_events_brain_created_at_idx").on(table.brainId, table.createdAt),
+  ],
+);
+
 export const marketingContentItems = pgTable(
   "marketing_content_items",
   {
@@ -763,13 +1001,13 @@ export const marketingContentItems = pgTable(
       .notNull()
       .references(() => brains.id, { onDelete: "cascade" }),
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
-    sourcePlatform: marketingSourcePlatformEnum("source_platform").notNull(),
-    sourceType: marketingSourceTypeEnum("source_type").notNull(),
+    sourcePlatform: text("source_platform").notNull(),
+    sourceType: text("source_type").notNull(),
     sourceUrl: text("source_url"),
     sourceExternalId: text("source_external_id"),
     sourceOwner: text("source_owner"),
     sourceDate: timestamp("source_date", { withTimezone: true }),
-    sourceConfidentiality: marketingConfidentialityEnum("source_confidentiality").notNull().default("internal"),
+    sourceConfidentiality: text("source_confidentiality").notNull().default("internal"),
     rawText: text("raw_text").notNull(),
     cleanedSummary: text("cleaned_summary"),
     contentSafeSummary: text("content_safe_summary"),
@@ -782,7 +1020,6 @@ export const marketingContentItems = pgTable(
   (table) => [
     index("marketing_content_items_brain_id_idx").on(table.brainId),
     index("marketing_content_items_source_item_id_idx").on(table.sourceItemId),
-    index("marketing_content_items_external_id_idx").on(table.sourcePlatform, table.sourceExternalId),
     index("marketing_content_items_created_at_idx").on(table.createdAt),
   ],
 );
@@ -799,9 +1036,9 @@ export const marketingContentInsights = pgTable(
       .references(() => marketingContentItems.id, { onDelete: "cascade" }),
     rawInsight: text("raw_insight").notNull(),
     contentSafeInsight: text("content_safe_insight").notNull(),
-    sensitivityLevel: marketingSensitivityLevelEnum("sensitivity_level").notNull().default("medium"),
+    sensitivityLevel: text("sensitivity_level").notNull().default("medium"),
     suggestedPillar: text("suggested_pillar"),
-    suggestedChannels: jsonb("suggested_channels").notNull().default([]),
+    suggestedChannels: text("suggested_channels").array().notNull().default([]),
     approvedForContent: boolean("approved_for_content").notNull().default(false),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -809,8 +1046,8 @@ export const marketingContentInsights = pgTable(
   },
   (table) => [
     index("marketing_content_insights_brain_id_idx").on(table.brainId),
-    index("marketing_content_insights_item_id_idx").on(table.contentItemId),
-    index("marketing_content_insights_approved_idx").on(table.approvedForContent),
+    index("marketing_content_insights_content_item_id_idx").on(table.contentItemId),
+    index("marketing_content_insights_created_at_idx").on(table.createdAt),
   ],
 );
 
@@ -823,8 +1060,8 @@ export const marketingChannelPosts = pgTable(
       .references(() => brains.id, { onDelete: "cascade" }),
     contentItemId: uuid("content_item_id").references(() => marketingContentItems.id, { onDelete: "set null" }),
     contentInsightId: uuid("content_insight_id").references(() => marketingContentInsights.id, { onDelete: "set null" }),
-    channel: marketingChannelEnum("channel").notNull(),
-    status: marketingPostStatusEnum("status").notNull().default("draft"),
+    channel: text("channel").notNull(),
+    status: text("status").notNull().default("draft"),
     bodyText: text("body_text").notNull(),
     mediaType: text("media_type"),
     mediaReference: text("media_reference"),
@@ -837,13 +1074,13 @@ export const marketingChannelPosts = pgTable(
     schedulerPostId: text("scheduler_post_id"),
     campaignTag: text("campaign_tag"),
     pillar: text("pillar"),
-    formatType: marketingFormatTypeEnum("format_type"),
-    hookType: marketingHookTypeEnum("hook_type"),
-    targetIcp: marketingTargetIcpEnum("target_icp"),
-    funnelStage: marketingFunnelStageEnum("funnel_stage"),
+    formatType: text("format_type"),
+    hookType: text("hook_type"),
+    targetIcp: text("target_icp"),
+    funnelStage: text("funnel_stage"),
     experimentTag: text("experiment_tag"),
     requiresReview: boolean("requires_review").notNull().default(true),
-    sensitivityLevel: marketingSensitivityLevelEnum("sensitivity_level").notNull().default("medium"),
+    sensitivityLevel: text("sensitivity_level").notNull().default("medium"),
     approvedBy: text("approved_by"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     revisionReason: text("revision_reason"),
@@ -861,11 +1098,9 @@ export const marketingChannelPosts = pgTable(
   },
   (table) => [
     index("marketing_channel_posts_brain_id_idx").on(table.brainId),
-    index("marketing_channel_posts_item_id_idx").on(table.contentItemId),
-    index("marketing_channel_posts_insight_id_idx").on(table.contentInsightId),
     index("marketing_channel_posts_status_idx").on(table.status),
-    index("marketing_channel_posts_scheduled_idx").on(table.scheduledAt),
-    index("marketing_channel_posts_scheduler_idx").on(table.schedulerProvider, table.schedulerPostId),
+    index("marketing_channel_posts_channel_idx").on(table.channel),
+    index("marketing_channel_posts_created_at_idx").on(table.createdAt),
   ],
 );
 
@@ -893,8 +1128,38 @@ export const marketingPostMetrics = pgTable(
   },
   (table) => [
     index("marketing_post_metrics_brain_id_idx").on(table.brainId),
-    index("marketing_post_metrics_post_id_idx").on(table.channelPostId),
-    index("marketing_post_metrics_date_idx").on(table.metricDate),
+    index("marketing_post_metrics_channel_post_id_idx").on(table.channelPostId),
+    index("marketing_post_metrics_metric_date_idx").on(table.metricDate),
+  ],
+);
+
+export const marketingEvents = pgTable(
+  "marketing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    channelPostId: uuid("channel_post_id").references(() => marketingChannelPosts.id, { onDelete: "set null" }),
+    eventType: text("event_type").notNull(),
+    eventSource: text("event_source").notNull(),
+    eventAt: timestamp("event_at", { withTimezone: true }).notNull(),
+    description: text("description").notNull(),
+    contactName: text("contact_name"),
+    companyName: text("company_name"),
+    value: numeric("value"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    attributionConfidence: text("attribution_confidence").notNull().default("unknown"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("marketing_events_brain_id_idx").on(table.brainId),
+    index("marketing_events_channel_post_id_idx").on(table.channelPostId),
+    index("marketing_events_event_at_idx").on(table.eventAt),
   ],
 );
 
@@ -908,7 +1173,7 @@ export const marketingExperiments = pgTable(
     tag: text("tag").notNull(),
     title: text("title").notNull(),
     hypothesis: text("hypothesis").notNull(),
-    status: marketingExperimentStatusEnum("status").notNull().default("planned"),
+    status: text("status").notNull().default("planned"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     metadata: jsonb("metadata").notNull().default({}),
@@ -917,38 +1182,7 @@ export const marketingExperiments = pgTable(
   },
   (table) => [
     index("marketing_experiments_brain_id_idx").on(table.brainId),
-    index("marketing_experiments_tag_idx").on(table.brainId, table.tag),
-  ],
-);
-
-export const marketingEvents = pgTable(
-  "marketing_events",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    brainId: uuid("brain_id")
-      .notNull()
-      .references(() => brains.id, { onDelete: "cascade" }),
-    channelPostId: uuid("channel_post_id").references(() => marketingChannelPosts.id, { onDelete: "set null" }),
-    eventType: marketingEventTypeEnum("event_type").notNull(),
-    eventSource: text("event_source").notNull(),
-    eventAt: timestamp("event_at", { withTimezone: true }).notNull(),
-    description: text("description").notNull(),
-    contactName: text("contact_name"),
-    companyName: text("company_name"),
-    value: numeric("value", { precision: 12, scale: 2 }),
-    utmSource: text("utm_source"),
-    utmMedium: text("utm_medium"),
-    utmCampaign: text("utm_campaign"),
-    utmContent: text("utm_content"),
-    attributionConfidence: marketingAttributionConfidenceEnum("attribution_confidence").notNull().default("unknown"),
-    metadata: jsonb("metadata").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("marketing_events_brain_id_idx").on(table.brainId),
-    index("marketing_events_post_id_idx").on(table.channelPostId),
-    index("marketing_events_type_idx").on(table.eventType),
-    index("marketing_events_at_idx").on(table.eventAt),
+    uniqueIndex("marketing_experiments_brain_tag_idx").on(table.brainId, table.tag),
   ],
 );
 
@@ -971,7 +1205,7 @@ export const marketingWeeklyReports = pgTable(
   },
   (table) => [
     index("marketing_weekly_reports_brain_id_idx").on(table.brainId),
-    index("marketing_weekly_reports_week_idx").on(table.brainId, table.weekStart, table.weekEnd),
+    index("marketing_weekly_reports_week_start_idx").on(table.weekStart),
   ],
 );
 
@@ -983,11 +1217,11 @@ export const marketingLlmUsage = pgTable(
       .notNull()
       .references(() => brains.id, { onDelete: "cascade" }),
     jobType: text("job_type").notNull(),
-    modelProvider: modelProviderEnum("model_provider").notNull().default("local"),
+    modelProvider: text("model_provider").notNull(),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
-    estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }).notNull().default("0"),
+    estimatedCostUsd: numeric("estimated_cost_usd").notNull().default("0"),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -997,9 +1231,106 @@ export const marketingLlmUsage = pgTable(
   ],
 );
 
+export const entityPages = pgTable(
+  "entity_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => canonicalEntities.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    kind: text("kind").notNull().default("entity"),
+    title: text("title").notNull(),
+    bodyMd: text("body_md").notNull().default(""),
+    summary: text("summary").notNull().default(""),
+    aliases: text("aliases").array().default([]),
+    evidenceIds: uuid("evidence_ids").array().default([]),
+    compiledAt: timestamp("compiled_at", { withTimezone: true }),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    stale: boolean("stale").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("entity_pages_brain_id_idx").on(table.brainId),
+    index("entity_pages_entity_id_idx").on(table.entityId),
+    index("entity_pages_slug_idx").on(table.slug),
+    uniqueIndex("entity_pages_brain_slug_idx").on(table.brainId, table.slug),
+  ],
+);
+
+export const pageChunks = pgTable(
+  "page_chunks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    entityPageId: uuid("entity_page_id")
+      .notNull()
+      .references(() => entityPages.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => canonicalEntities.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(),
+    chunkKind: text("chunk_kind").notNull().default("compiled_truth"),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("page_chunks_brain_id_idx").on(table.brainId),
+    index("page_chunks_entity_page_id_idx").on(table.entityPageId),
+    index("page_chunks_entity_id_idx").on(table.entityId),
+    index("page_chunks_chunk_kind_idx").on(table.chunkKind),
+    index("page_chunks_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+  ],
+);
+
+export const skillExecutions = pgTable(
+  "skill_executions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    brainId: uuid("brain_id")
+      .notNull()
+      .references(() => brains.id, { onDelete: "cascade" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    triggeredBy: text("triggered_by").notNull(),
+    triggerPayload: jsonb("trigger_payload").default({}),
+    status: text("status").notNull().default("running"),
+    stepsCompleted: jsonb("steps_completed").default([]),
+    currentStep: integer("current_step").notNull().default(0),
+    output: jsonb("output"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("skill_executions_brain_id_idx").on(table.brainId),
+    index("skill_executions_skill_id_idx").on(table.skillId),
+    index("skill_executions_status_idx").on(table.status),
+  ],
+);
+
 export type PriorityRow = typeof priorities.$inferSelect;
 export type NewPriorityRow = typeof priorities.$inferInsert;
 
+export type UserRow = typeof users.$inferSelect;
+export type NewUserRow = typeof users.$inferInsert;
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type NewWorkspaceRow = typeof workspaces.$inferInsert;
+export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
+export type NewWorkspaceMemberRow = typeof workspaceMembers.$inferInsert;
 export type BrainRow = typeof brains.$inferSelect;
 export type NewBrainRow = typeof brains.$inferInsert;
 export type SourceItemRow = typeof sourceItems.$inferSelect;
@@ -1022,27 +1353,48 @@ export type ConnectorSyncRunRow = typeof connectorSyncRuns.$inferSelect;
 export type NewConnectorSyncRunRow = typeof connectorSyncRuns.$inferInsert;
 export type BrainAlertRow = typeof brainAlerts.$inferSelect;
 export type NewBrainAlertRow = typeof brainAlerts.$inferInsert;
-export type BrainEventRow = typeof brainEvents.$inferSelect;
-export type NewBrainEventRow = typeof brainEvents.$inferInsert;
 export type NotetakerCalendarRow = typeof notetakerCalendars.$inferSelect;
 export type NewNotetakerCalendarRow = typeof notetakerCalendars.$inferInsert;
-export type NotetakerMeetingRow = typeof notetakerMeetings.$inferSelect;
-export type NewNotetakerMeetingRow = typeof notetakerMeetings.$inferInsert;
+export type CalendarEventRow = typeof calendarEvents.$inferSelect;
+export type NewCalendarEventRow = typeof calendarEvents.$inferInsert;
+export type NotetakerMeetingRow = CalendarEventRow;
+export type NewNotetakerMeetingRow = NewCalendarEventRow;
 export type NotetakerEventRow = typeof notetakerEvents.$inferSelect;
 export type NewNotetakerEventRow = typeof notetakerEvents.$inferInsert;
+export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
+export type NewWorkspaceInviteRow = typeof workspaceInvites.$inferInsert;
+export type CanonicalEntityRow = typeof canonicalEntities.$inferSelect;
+export type NewCanonicalEntityRow = typeof canonicalEntities.$inferInsert;
+export type EntityMentionRow = typeof entityMentions.$inferSelect;
+export type NewEntityMentionRow = typeof entityMentions.$inferInsert;
+export type LoopOutcomeLogRow = typeof loopOutcomeLog.$inferSelect;
+export type NewLoopOutcomeLogRow = typeof loopOutcomeLog.$inferInsert;
+export type NudgeRow = typeof nudges.$inferSelect;
+export type NewNudgeRow = typeof nudges.$inferInsert;
+export type NotificationRow = typeof notifications.$inferSelect;
+export type NewNotificationRow = typeof notifications.$inferInsert;
+export type NotificationPreferenceRow = typeof notificationPreferences.$inferSelect;
+export type NewNotificationPreferenceRow = typeof notificationPreferences.$inferInsert;
+export type PendingActionRow = typeof pendingActions.$inferSelect;
+export type NewPendingActionRow = typeof pendingActions.$inferInsert;
+export type SkillRow = typeof skills.$inferSelect;
+export type NewSkillRow = typeof skills.$inferInsert;
+export type SkillExecutionRow = typeof skillExecutions.$inferSelect;
+export type NewSkillExecutionRow = typeof skillExecutions.$inferInsert;
+
+export type BrainDocRow = typeof brainDocs.$inferSelect;
+export type NewBrainDocRow = typeof brainDocs.$inferInsert;
+export type BrainEventRow = typeof brainEvents.$inferSelect;
+export type NewBrainEventRow = typeof brainEvents.$inferInsert;
 export type MarketingContentItemRow = typeof marketingContentItems.$inferSelect;
-export type NewMarketingContentItemRow = typeof marketingContentItems.$inferInsert;
 export type MarketingContentInsightRow = typeof marketingContentInsights.$inferSelect;
-export type NewMarketingContentInsightRow = typeof marketingContentInsights.$inferInsert;
 export type MarketingChannelPostRow = typeof marketingChannelPosts.$inferSelect;
-export type NewMarketingChannelPostRow = typeof marketingChannelPosts.$inferInsert;
 export type MarketingPostMetricRow = typeof marketingPostMetrics.$inferSelect;
-export type NewMarketingPostMetricRow = typeof marketingPostMetrics.$inferInsert;
-export type MarketingExperimentRow = typeof marketingExperiments.$inferSelect;
-export type NewMarketingExperimentRow = typeof marketingExperiments.$inferInsert;
 export type MarketingEventRow = typeof marketingEvents.$inferSelect;
-export type NewMarketingEventRow = typeof marketingEvents.$inferInsert;
+export type MarketingExperimentRow = typeof marketingExperiments.$inferSelect;
 export type MarketingWeeklyReportRow = typeof marketingWeeklyReports.$inferSelect;
-export type NewMarketingWeeklyReportRow = typeof marketingWeeklyReports.$inferInsert;
 export type MarketingLlmUsageRow = typeof marketingLlmUsage.$inferSelect;
-export type NewMarketingLlmUsageRow = typeof marketingLlmUsage.$inferInsert;
+export type EntityPageRow = typeof entityPages.$inferSelect;
+export type NewEntityPageRow = typeof entityPages.$inferInsert;
+export type PageChunkRow = typeof pageChunks.$inferSelect;
+export type NewPageChunkRow = typeof pageChunks.$inferInsert;
