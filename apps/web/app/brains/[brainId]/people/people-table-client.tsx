@@ -100,22 +100,47 @@ function sourceTypeLabel(type: string): string {
   return type;
 }
 
-export function PeopleTable({ rows }: { rows: PersonRow[] }) {
+type Filter = "all" | "owe" | "hot" | "cooling" | "investors";
+
+type StripCounts = {
+  total: number;
+  oweCount: number;
+  hotCount: number;
+  coolCount: number;
+  investorCount: number;
+};
+
+function matchesFilter(row: PersonRow, filter: Filter): boolean {
+  switch (filter) {
+    case "owe": return row.owe.variant !== "ok";
+    case "hot": return row.heat.variant === "hot";
+    case "cooling": return row.heat.variant === "ok";
+    case "investors": return row.relation.variant === "investor";
+    default: return true;
+  }
+}
+
+export function PeopleTable({ rows, counts }: { rows: PersonRow[]; counts: StripCounts }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
   const filtered = useMemo(() => {
+    let result = rows;
+    if (filter !== "all") {
+      result = result.filter((row) => matchesFilter(row, filter));
+    }
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => {
-      return (
+    if (q) {
+      result = result.filter((row) =>
         row.name.toLowerCase().includes(q) ||
         row.email.toLowerCase().includes(q) ||
         (row.company?.name ?? "").toLowerCase().includes(q) ||
         row.role.toLowerCase().includes(q)
       );
-    });
-  }, [rows, query]);
+    }
+    return result;
+  }, [rows, query, filter]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.id === selectedId) ?? null,
@@ -134,6 +159,26 @@ export function PeopleTable({ rows }: { rows: PersonRow[] }) {
 
   return (
     <>
+      <div className={styles.strip}>
+        {([
+          { key: "all" as Filter, lab: "All", value: counts.total, sub: "extracted from your sources" },
+          { key: "owe" as Filter, lab: "Owe a reply", value: counts.oweCount, sub: counts.oweCount === 0 ? "all clear" : "open loops linked to person", warn: true },
+          { key: "hot" as Filter, lab: "Hot this week", value: counts.hotCount, sub: "touched in last 7d" },
+          { key: "cooling" as Filter, lab: "Cooling", value: counts.coolCount, sub: "no touch over 30d" },
+          { key: "investors" as Filter, lab: "Investors", value: counts.investorCount, sub: "tagged as investor" },
+        ]).map((card) => (
+          <div
+            key={card.key}
+            className={filter === card.key ? styles.stripOn : undefined}
+            onClick={() => setFilter(card.key)}
+          >
+            <div className={styles.lab}>{card.lab}</div>
+            <div className={`${styles.v} ${card.warn && card.value > 0 ? styles.vWarn : ""}`}>{card.value}</div>
+            <div className={styles.sub}>{card.sub}</div>
+          </div>
+        ))}
+      </div>
+
       <div className={styles.ppBar}>
         <div className={styles.seg}>
           <span className={styles.segOn}>Table</span>

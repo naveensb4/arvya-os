@@ -1,63 +1,52 @@
 import type { OpenLoop } from "@arvya/core";
 import { getOpenLoopReviewSnapshot } from "@/lib/brain/store";
+import { detectDismissPatterns } from "@/lib/brain/dismiss-patterns";
 import styles from "./page.module.css";
-import { OpenLoopsViews } from "./views-client";
-
-// Renders the prototype's 4-column kanban (Promised / In flight / Quiet stalled
-// / Closed last 7d) on top of the existing getOpenLoopReviewSnapshot data.
-//
-// The legacy bulk-review form (bulkReviewOpenLoopsAction) is intentionally
-// dropped from this view to keep the kanban clean. That action is still
-// wired into the repository; if you need bulk review during the transition,
-// use the prior page in git history (or rehome it as a separate "review
-// queue" route in a follow-up). TODO: bring back inline approve/dismiss
-// per-card once the prototype's interaction model is locked.
+import { OpenLoopsClient } from "./views-client";
 
 type PageProps = {
   params: Promise<{ brainId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type Bucket = "promised" | "in_flight" | "quiet" | "closed";
-
-function bucketFor(loop: OpenLoop): Bucket {
-  const status = loop.status;
-  if (status === "done" || status === "closed" || status === "dismissed") {
-    return "closed";
-  }
-  if (loop.dueDate) {
-    const dueMs = new Date(loop.dueDate).getTime();
-    if (dueMs < Date.now()) return "quiet";
-  }
-  if (status === "needs_review") return "promised";
-  return "in_flight";
+function isActive(loop: OpenLoop): boolean {
+  return !["closed", "done", "dismissed"].includes(loop.status);
 }
 
 function isQuiet(l: OpenLoop): boolean {
   const ref = l.updatedAt ?? l.createdAt;
   if (!ref) return false;
-  const now = Date.now();
-  return now - new Date(ref).getTime() > 5 * 24 * 60 * 60 * 1000;
+  return Date.now() - new Date(ref).getTime() > 5 * 24 * 60 * 60 * 1000;
 }
 
-export default async function OpenLoopsPage({ params }: PageProps) {
+const STALE_DAYS = 14;
+function isStale(loop: OpenLoop): boolean {
+  if (!["needs_review", "open"].includes(loop.status)) return false;
+  const ageDays = (Date.now() - new Date(loop.createdAt).getTime()) / (24 * 60 * 60 * 1000);
+  if (ageDays < STALE_DAYS) return false;
+  if (loop.updatedAt) {
+    const updateDelta = new Date(loop.updatedAt).getTime() - new Date(loop.createdAt).getTime();
+    if (updateDelta > 60_000) return false;
+  }
+  return true;
+}
+
+export default async function OpenLoopsPage({ params, searchParams }: PageProps) {
   const { brainId } = await params;
+  const sp = await searchParams;
   const snapshot = await getOpenLoopReviewSnapshot(brainId);
 
-  const buckets: Record<Bucket, OpenLoop[]> = {
-    promised: [],
-    in_flight: [],
-    quiet: [],
-    closed: [],
-  };
-  for (const loop of snapshot.openLoops) {
-    buckets[bucketFor(loop)].push(loop);
-  }
+  const activeLoops = snapshot.openLoops.filter(isActive);
+  const closedLoops = snapshot.openLoops.filter((l) => !isActive(l));
+  const overdueCount = activeLoops.filter(
+    (l) => l.dueDate && new Date(l.dueDate).getTime() < Date.now(),
+  ).length;
+  const quietCount = activeLoops.filter(isQuiet).length;
+  const totalOpen = activeLoops.length;
 
-  const overdueCount = buckets.quiet.length;
-  const quietCount = buckets.in_flight.filter(isQuiet).length;
-  const closedAllCount = buckets.closed.length;
-  const totalOpen =
-    buckets.promised.length + buckets.in_flight.length + buckets.quiet.length;
+  const staleLoopIds = activeLoops.filter(isStale).map((l) => l.id);
+  const dismissPatterns = detectDismissPatterns(snapshot.openLoops);
+  const topPattern = dismissPatterns[0] ?? null;
 
   return (
     <div>
@@ -67,17 +56,15 @@ export default async function OpenLoopsPage({ params }: PageProps) {
           <h1>Open loops.</h1>
           <p className={styles.sub}>
             Every promise the brain has heard you make, with proof of fulfilment.
-            Three things stay true here: nothing falls through the cracks
-            silently, every promise has an owner, and done needs a source.
+            Nothing falls through the cracks silently.
           </p>
         </div>
       </header>
 
       <div className={styles.summary}>
         <div className={styles.lede}>
-          <b>{totalOpen} open loops.</b>{" "}
-          {overdueCount} overdue, {quietCount} quiet (over 5 days no update),{" "}
-          {buckets.in_flight.length - quietCount} tracking.
+          <b>{totalOpen} open loop{totalOpen !== 1 ? "s" : ""}.</b>{" "}
+          {overdueCount} overdue, {quietCount} quiet, {totalOpen - overdueCount - quietCount} tracking.
         </div>
         <div className={styles.stat}>
           <div className={styles.lab}>Overdue</div>
@@ -90,13 +77,13 @@ export default async function OpenLoopsPage({ params }: PageProps) {
           <div className={styles.delta}>over 5 days silent</div>
         </div>
         <div className={styles.stat}>
-          <div className={styles.lab}>Closed (7d)</div>
-          <div className={`${styles.v} ${styles.vGold}`}>{closedAllCount}</div>
-          <div className={styles.delta}>shipped recently</div>
+          <div className={styles.lab}>Closed</div>
+          <div className={`${styles.v} ${styles.vGold}`}>{closedLoops.length}</div>
+          <div className={styles.delta}>resolved</div>
         </div>
       </div>
 
-      <OpenLoopsViews
+      <OpenLoopsClient
         loops={snapshot.openLoops}
         sourcesById={Object.fromEntries(
           snapshot.sourceItems.map((s) => [
@@ -104,14 +91,10 @@ export default async function OpenLoopsPage({ params }: PageProps) {
             { id: s.id, title: s.title, externalUri: s.externalUri ?? null },
           ]),
         )}
-        myOwnerName="Naveen"
         brainId={brainId}
-        buckets={{
-          promised: buckets.promised,
-          in_flight: buckets.in_flight,
-          quiet: buckets.quiet,
-          closed: buckets.closed,
-        }}
+        staleLoopIds={staleLoopIds}
+        dismissPattern={topPattern}
+        initialSearchParams={sp}
       />
     </div>
   );
